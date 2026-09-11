@@ -1,0 +1,1026 @@
+import express from "express";
+import path from "path";
+import fs from "fs";
+import crypto from "crypto";
+import type { User, Campaign, Transaction } from "./src/types.ts";
+
+const app = express();
+const PORT = 3000;
+
+app.use(express.json());
+
+// Cloud Run & Load Balancer Health Probes (MUST BE FIRST)
+app.get(["/api/health", "/healthz"], (_req, res) => {
+  res.status(200).json({ status: "ok", uptime: process.uptime() });
+});
+
+// In-Memory Database State
+const users: Record<string, User> = {};
+let currentSessionUser: User | null = null;
+
+let campaigns: Campaign[] = [];
+
+// Track which campaigns each user has watched so they are permanently removed from their feed
+const userWatchedCampaigns: Record<string, Set<string>> = {};
+
+let transactions: Transaction[] = [];
+
+// Referral code registry: code -> userId
+const referralCodes: Record<string, string> = {};
+
+// Helper to generate a clean 6-character referral code (e.g. REF-A482)
+function generateUserReferralCode(user: User): string {
+  const cleanId = (user.id || '').replace(/[^a-zA-Z0-9]/g, '');
+  const suffix = cleanId.length >= 4 ? cleanId.slice(-4).toUpperCase() : Math.floor(1000 + Math.random() * 9000).toString();
+  let code = `REF-${suffix}`;
+  let counter = 1;
+  while (referralCodes[code] && referralCodes[code] !== user.id) {
+    code = `REF-${suffix}${counter}`;
+    counter++;
+  }
+  referralCodes[code] = user.id;
+  return code;
+}
+
+// Secure Watch Sessions storage for Anti-Cheat & Replay Protection
+interface ServerWatchSession {
+  sessionId: string;
+  sessionToken: string;
+  userId: string;
+  campaignId: string;
+  startTime: number;
+  durationSeconds: number;
+  claimed: boolean;
+  aborted: boolean;
+  expiresAt: number;
+}
+const watchSessions: Record<string, ServerWatchSession> = {};
+
+function getActiveUser(req: express.Request): User | null {
+  const uid = (req.headers['x-user-id'] as string) || (req.body && req.body.userId) || (req.query && (req.query.uid as string));
+  if (uid && users[uid]) {
+    return users[uid];
+  }
+  return currentSessionUser;
+}
+
+// API Routes
+app.get("/api/user", (req, res) => {
+  const user = getActiveUser(req);
+  if (!user) {
+    return res.status(401).json({ success: false, user: null, message: "User not authenticated. Please log in with Google." });
+  }
+  if (!user.referralCode) {
+    user.referralCode = generateUserReferralCode(user);
+  }
+  res.json({ success: true, user });
+});
+
+app.post("/api/auth/firebase-login", (req, res) => {
+  const { uid, email, name, avatar, referralCode: inputReferralCode } = req.body;
+  if (!uid || !email) {
+    return res.status(400).json({ success: false, message: "Missing uid or email" });
+  }
+
+  let user = users[uid];
+  let isNewUser = false;
+
+  if (!user) {
+    isNewUser = true;
+    user = {
+      id: uid,
+      name: name || email.split('@')[0],
+      email: email,
+      coins: 300, // 300 Welcome Bonus coins on initial Google signup
+      avatar: avatar || `https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80`,
+      streak: 1,
+      lastCheckIn: new Date().toISOString().split('T')[0],
+      createdAt: new Date().toISOString(),
+      referralsCount: 0,
+      referralEarnings: 0
+    };
+    user.referralCode = generateUserReferralCode(user);
+    users[uid] = user;
+
+    transactions.push({
+      id: `tx_${Date.now()}`,
+      userId: uid,
+      type: "bonus_signup",
+      amount: 300,
+      description: "Welcome Bonus Coins on Google Signup",
+      createdAt: new Date().toISOString(),
+    });
+
+    // Check if new user was referred by a friend
+    if (inputReferralCode) {
+      const cleanRef = String(inputReferralCode).trim().toUpperCase();
+      const referrerId = referralCodes[cleanRef];
+      const referrer = referrerId ? users[referrerId] : null;
+
+      if (referrer && referrer.id !== uid) {
+        user.referredBy = referrer.id;
+        // Referrer earns 250 coins
+        referrer.coins += 250;
+        referrer.referralsCount = (referrer.referralsCount || 0) + 1;
+        referrer.referralEarnings = (referrer.referralEarnings || 0) + 250;
+
+        transactions.unshift({
+          id: `tx_${Date.now()}_ref`,
+          userId: referrer.id,
+          type: "referral_bonus",
+          amount: 250,
+          description: `Referral Reward: Friend ${user.name} joined via your link!`,
+          createdAt: new Date().toISOString(),
+        });
+
+        // New user also gets 250 bonus coins
+        user.coins += 250;
+        transactions.unshift({
+          id: `tx_${Date.now()}_ref_inv`,
+          userId: user.id,
+          type: "referral_received",
+          amount: 250,
+          description: `Referral Bonus for using link: ${cleanRef}`,
+          createdAt: new Date().toISOString(),
+        });
+      }
+    }
+  } else {
+    if (name) user.name = name;
+    if (avatar) user.avatar = avatar;
+    if (!user.referralCode) user.referralCode = generateUserReferralCode(user);
+  }
+
+  currentSessionUser = user;
+  res.json({ 
+    success: true, 
+    user, 
+    isNewUser,
+    message: isNewUser ? "Welcome! 300 bonus coins added." : "Authenticated successfully with Google" 
+  });
+});
+
+app.post("/api/auth/logout", (req, res) => {
+  currentSessionUser = null;
+  res.json({ success: true, message: "Logged out successfully" });
+});
+
+app.get("/api/campaigns", (req, res) => {
+  const filter = req.query.filter; // 'my' or 'all'
+  const activeUser = getActiveUser(req);
+
+  if (filter === 'my') {
+    const myCampaigns = activeUser ? campaigns.filter(c => c.userId === activeUser.id) : [];
+    return res.json({ success: true, campaigns: myCampaigns });
+  }
+
+  // Home feed:
+  // 1. Must be active and have remaining views (completedViews < targetViews)
+  // 2. Hide creator's own campaigns from their own home feed
+  // 3. Hide videos that this specific user has already watched and earned coins from
+  // 4. For all other users, campaign remains visible until its target views are reached
+  const queueCampaigns = campaigns.filter(c => {
+    if (c.status !== 'active' || c.completedViews >= c.targetViews) return false;
+    if (activeUser) {
+      // Don't show creator's own campaign in their home feed
+      if (c.userId === activeUser.id) return false;
+      // Don't show video if user has already watched it
+      if (userWatchedCampaigns[activeUser.id]?.has(c.id)) return false;
+    }
+    return true;
+  });
+
+  res.json({ success: true, campaigns: queueCampaigns });
+});
+
+// Helper to decode HTML entities
+function decodeHtmlEntities(text: string): string {
+  return text
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&#039;/g, "'")
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&#x2F;/g, '/')
+    .replace(/&#x27;/g, "'")
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// Helper to generate clean 4-character video ID
+function generate4CharId(raw?: string): string {
+  if (raw) {
+    const clean = raw.replace(/[^a-zA-Z0-9]/g, '');
+    if (clean.length >= 4) {
+      // Use last 4 alphanumeric chars in uppercase
+      return clean.slice(-4).toUpperCase();
+    }
+  }
+  return String(Math.floor(1000 + Math.random() * 9000));
+}
+
+// Enhanced Helper to extract real metadata from video URL (AtoPlay, YouTube, etc.)
+async function extractVideoMetadata(videoUrl: string) {
+  let displayId = generate4CharId();
+  let title = "AtoPlay Video Promotion";
+  let thumbnailUrl = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=600&q=80";
+
+  try {
+    const trimmedUrl = videoUrl.trim();
+    const urlObj = new URL(trimmedUrl);
+    
+    // Validate hostname format before attempting any network fetch
+    const hostname = urlObj.hostname;
+    const isValidHostname = /^[a-zA-Z0-9-]+(\.[a-zA-Z0-9-]+)*\.[a-zA-Z]{2,}$/.test(hostname) || hostname === 'localhost';
+
+    // Check for YouTube URLs (including shorts, youtu.be, etc.)
+    if (isValidHostname && (hostname.includes('youtube.com') || hostname.includes('youtu.be'))) {
+      let videoId = '';
+      if (hostname.includes('youtu.be')) {
+        videoId = urlObj.pathname.slice(1).split('?')[0];
+      } else if (urlObj.pathname.includes('/shorts/')) {
+        const parts = urlObj.pathname.split('/shorts/');
+        videoId = parts[1]?.split('/')[0]?.split('?')[0] || '';
+      } else {
+        videoId = urlObj.searchParams.get('v') || '';
+      }
+
+      if (videoId) {
+        displayId = generate4CharId(videoId);
+        thumbnailUrl = `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
+        try {
+          const oembedRes = await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(trimmedUrl)}&format=json`);
+          if (oembedRes.ok) {
+            const data = await oembedRes.json();
+            if (data.title) {
+              title = decodeHtmlEntities(data.title);
+            }
+          }
+        } catch {
+          title = `YouTube Video (${videoId})`;
+        }
+        return { displayId, title, thumbnailUrl };
+      }
+    }
+
+    // For AtoPlay and other video platforms:
+    // Extract display ID from URL path or query params (ensure 4 chars)
+    const vParam = urlObj.searchParams.get('v') || urlObj.searchParams.get('id') || urlObj.searchParams.get('video_id');
+    if (vParam) {
+      displayId = generate4CharId(vParam);
+    } else {
+      const segments = urlObj.pathname.split('/').filter(Boolean);
+      if (segments.length > 0) {
+        displayId = generate4CharId(segments[segments.length - 1]);
+      }
+    }
+
+    // Only attempt live network scrape if hostname is valid and has at least 2 path segments or a video query
+    if (isValidHostname && (urlObj.pathname.length > 1 || urlObj.search.length > 1)) {
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 6000);
+
+        const res = await fetch(trimmedUrl, {
+          signal: controller.signal,
+          redirect: 'follow',
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.9,hi;q=0.8',
+            'Cache-Control': 'no-cache'
+          }
+        });
+        clearTimeout(timeout);
+
+        if (res.ok) {
+          const html = await res.text();
+
+          // 1. Scrape Title: check og:title, twitter:title, meta name=title, <title>, or JSON-LD
+          const ogTitleMatch = html.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)["']/i) ||
+                               html.match(/<meta[^>]*content=["']([^"']+)["'][^>]*property=["']og:title["']/i) ||
+                               html.match(/<meta[^>]*name=["']twitter:title["'][^>]*content=["']([^"']+)["']/i) ||
+                               html.match(/<meta[^>]*content=["']([^"']+)["'][^>]*name=["']twitter:title["']/i) ||
+                               html.match(/<meta[^>]*name=["']title["'][^>]*content=["']([^"']+)["']/i);
+
+          if (ogTitleMatch && ogTitleMatch[1]) {
+            title = decodeHtmlEntities(ogTitleMatch[1]);
+          } else {
+            const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+            if (titleMatch && titleMatch[1]) {
+              title = decodeHtmlEntities(titleMatch[1]);
+            }
+          }
+
+          // Clean up common suffix
+          title = title
+            .replace(/\s*\|\s*AtoPlay.*$/i, '')
+            .replace(/\s*-\s*AtoPlay.*$/i, '')
+            .replace(/\s*\|\s*YouTube.*$/i, '')
+            .replace(/\s*-\s*YouTube.*$/i, '')
+            .trim();
+
+          // 2. Scrape Thumbnail: check og:image, og:image:secure_url, twitter:image, video poster, link rel="image_src", JSON-LD
+          const ogImageMatch = html.match(/<meta[^>]*property=["']og:image(?::secure_url)?["'][^>]*content=["']([^"']+)["']/i) ||
+                               html.match(/<meta[^>]*content=["']([^"']+)["'][^>]*property=["']og:image(?::secure_url)?["']/i) ||
+                               html.match(/<meta[^>]*name=["']twitter:image(?::src)?["'][^>]*content=["']([^"']+)["']/i) ||
+                               html.match(/<meta[^>]*content=["']([^"']+)["'][^>]*name=["']twitter:image(?::src)?["']/i) ||
+                               html.match(/<link[^>]*rel=["']image_src["'][^>]*href=["']([^"']+)["']/i) ||
+                               html.match(/<video[^>]*poster=["']([^"']+)["']/i);
+
+          if (ogImageMatch && ogImageMatch[1]) {
+            let rawImg = ogImageMatch[1].trim();
+            try {
+              thumbnailUrl = new URL(rawImg, trimmedUrl).href;
+            } catch {
+              thumbnailUrl = rawImg;
+            }
+          } else {
+            // Check for JSON-LD structured data or Next.js state
+            const jsonLdMatch = html.match(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/i);
+            if (jsonLdMatch && jsonLdMatch[1]) {
+              try {
+                const parsed = JSON.parse(jsonLdMatch[1]);
+                const item = Array.isArray(parsed) ? parsed[0] : parsed;
+                if (item.thumbnailUrl) {
+                  thumbnailUrl = Array.isArray(item.thumbnailUrl) ? item.thumbnailUrl[0] : item.thumbnailUrl;
+                } else if (item.image) {
+                  thumbnailUrl = typeof item.image === 'string' ? item.image : (item.image.url || thumbnailUrl);
+                }
+                if (item.name && title === "AtoPlay Video Promotion") {
+                  title = decodeHtmlEntities(item.name);
+                }
+              } catch {
+                // ignore json parse error
+              }
+            }
+
+            // Check for image tags with thumbnail/poster in class or id or atoplay video thumb
+            if (thumbnailUrl.includes('unsplash.com')) {
+              const imgTagMatch = html.match(/<img[^>]+(?:class|id)=["'][^"']*(?:thumb|poster|video-img)[^"']*["'][^>]+src=["']([^"']+)["']/i) ||
+                                  html.match(/<img[^>]+src=["']([^"']+(?:thumb|poster|\/uploads\/videos\/)[^"']*)["']/i);
+              if (imgTagMatch && imgTagMatch[1]) {
+                try {
+                  thumbnailUrl = new URL(imgTagMatch[1], trimmedUrl).href;
+                } catch {
+                  thumbnailUrl = imgTagMatch[1];
+                }
+              }
+            }
+          }
+        }
+      } catch {
+        // Fallback gracefully without dumping DNS errors to log
+      }
+    }
+
+    // If title is still default, extract clean slug from URL
+    if (title === "AtoPlay Video Promotion" || !title) {
+      const pathSlug = urlObj.pathname.split('/').filter(Boolean).pop();
+      if (pathSlug && pathSlug !== 'watch' && pathSlug !== 'v' && pathSlug !== 'video') {
+        title = decodeURIComponent(pathSlug).replace(/[-_]/g, ' ');
+      } else {
+        title = `AtoPlay Video #${displayId}`;
+      }
+    }
+
+    // Capitalize first letter of title if lowercase
+    if (title && title.length > 0) {
+      title = title.charAt(0).toUpperCase() + title.slice(1);
+    }
+
+    // If thumbnail still not found, select a high-resolution video-styled card
+    if (thumbnailUrl.includes('unsplash.com')) {
+      const thumbs = [
+        "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80",
+        "https://images.unsplash.com/photo-1538481199705-c710c4e965fc?auto=format&fit=crop&w=800&q=80",
+        "https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=800&q=80",
+        "https://images.unsplash.com/photo-1511512578047-dfb367046420?auto=format&fit=crop&w=800&q=80",
+        "https://images.unsplash.com/photo-1574717024653-61fd2cf4d44d?auto=format&fit=crop&w=800&q=80"
+      ];
+      const hash = displayId.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+      thumbnailUrl = thumbs[hash % thumbs.length];
+    }
+  } catch (err) {
+    displayId = generate4CharId();
+    title = `AtoPlay Video #${displayId}`;
+  }
+
+  return { displayId, title, thumbnailUrl };
+}
+
+// Route to live-extract metadata for preview in frontend
+app.get("/api/campaigns/extract-metadata", async (req, res) => {
+  const url = req.query.url as string;
+  if (!url) {
+    return res.status(400).json({ success: false, message: "URL parameter is required" });
+  }
+  try {
+    const metadata = await extractVideoMetadata(url);
+    res.json({ success: true, metadata });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message || "Failed to extract metadata" });
+  }
+});
+
+app.post("/api/campaigns", async (req, res) => {
+  const activeUser = getActiveUser(req);
+  if (!activeUser) {
+    return res.status(401).json({ success: false, message: "Please log in with Google to create a campaign." });
+  }
+
+  const { videoUrl, targetViews, durationSeconds, title: customTitle, thumbnailUrl: customThumbnail } = req.body;
+  
+  if (!videoUrl || !targetViews) {
+    return res.status(400).json({ success: false, message: "Missing required campaign fields" });
+  }
+
+  // Rule: Cannot create a new campaign until the first/current active campaign completes
+  const hasActiveCampaign = campaigns.some(c => 
+    c.userId === activeUser.id && 
+    c.status === 'active' && 
+    c.completedViews < c.targetViews
+  );
+
+  if (hasActiveCampaign) {
+    return res.status(400).json({ 
+      success: false, 
+      message: "You already have an active campaign running. You can only create a new campaign after your first campaign completes its target views." 
+    });
+  }
+
+  const coinRate = 1;
+  const totalCost = Math.ceil(Number(targetViews) * coinRate);
+
+  if (activeUser.coins < totalCost) {
+    return res.status(400).json({ 
+      success: false, 
+      message: `Insufficient coins! Required: ${totalCost} coins, Your Balance: ${activeUser.coins} coins.` 
+    });
+  }
+
+  activeUser.coins -= totalCost;
+
+  const metadata = await extractVideoMetadata(videoUrl);
+
+  const finalTitle = (customTitle && typeof customTitle === 'string' && customTitle.trim()) 
+    ? customTitle.trim() 
+    : metadata.title;
+
+  const finalThumbnail = (customThumbnail && typeof customThumbnail === 'string' && customThumbnail.trim() && !customThumbnail.includes('placeholder')) 
+    ? customThumbnail.trim() 
+    : metadata.thumbnailUrl;
+
+  const newCampaign: Campaign = {
+    id: `camp_${Date.now()}`,
+    userId: activeUser.id,
+    userName: activeUser.name,
+    videoUrl,
+    title: finalTitle,
+    thumbnailUrl: finalThumbnail,
+    targetViews: Number(targetViews),
+    completedViews: 0,
+    durationSeconds: Number(durationSeconds) || 45,
+    totalCoinsCost: totalCost,
+    status: "active",
+    createdAt: new Date().toISOString(),
+    displayId: generate4CharId(metadata.displayId),
+    countryFlag: "🇧🇷"
+  };
+
+  campaigns.unshift(newCampaign);
+
+  const tx: Transaction = {
+    id: `tx_${Date.now()}`,
+    userId: activeUser.id,
+    type: "spent_campaign",
+    amount: -totalCost,
+    description: `Created campaign for "${newCampaign.title}" (${targetViews} views)`,
+    createdAt: new Date().toISOString(),
+  };
+  transactions.unshift(tx);
+
+  res.json({ success: true, campaign: newCampaign, user: activeUser });
+});
+
+app.delete("/api/campaigns/:id", (req, res) => {
+  const activeUser = getActiveUser(req);
+  if (!activeUser) {
+    return res.status(401).json({ success: false, message: "Unauthorized" });
+  }
+
+  const { id } = req.params;
+  const campaignIndex = campaigns.findIndex(c => c.id === id && c.userId === activeUser.id);
+
+  if (campaignIndex === -1) {
+    return res.status(404).json({ success: false, message: "Campaign not found or unauthorized" });
+  }
+
+  const campaign = campaigns[campaignIndex];
+  if (campaign.status === 'active') {
+    const remainingViews = campaign.targetViews - campaign.completedViews;
+    const coinRate = 1;
+    const refundAmount = Math.floor(remainingViews * coinRate);
+    if (refundAmount > 0) {
+      activeUser.coins += refundAmount;
+      transactions.unshift({
+        id: `tx_${Date.now()}`,
+        userId: activeUser.id,
+        type: "refund_campaign",
+        amount: refundAmount,
+        description: `Refund for deleted campaign (${remainingViews} views remaining)`,
+        createdAt: new Date().toISOString(),
+      });
+    }
+  }
+
+  campaigns.splice(campaignIndex, 1);
+  res.json({ success: true, user: activeUser, message: "Campaign deleted and refund processed" });
+});
+
+// 1. Secure Watch Session Start (Records start timestamp on server)
+app.post("/api/watch/start-session", (req, res) => {
+  const activeUser = getActiveUser(req);
+  if (!activeUser) {
+    return res.status(401).json({ success: false, message: "Please log in to start watching" });
+  }
+
+  const { campaignId } = req.body;
+  if (!campaignId) {
+    return res.status(400).json({ success: false, message: "Campaign ID required" });
+  }
+
+  const campaign = campaigns.find(c => c.id === campaignId);
+  if (!campaign || campaign.status !== 'active') {
+    return res.status(400).json({ success: false, message: "Campaign is no longer active" });
+  }
+
+  if (campaign.userId === activeUser.id) {
+    return res.status(400).json({ success: false, message: "You cannot watch your own campaign to earn coins." });
+  }
+
+  if (userWatchedCampaigns[activeUser.id]?.has(campaignId)) {
+    return res.status(400).json({ success: false, message: "You have already watched this video." });
+  }
+
+  // Generate cryptographically unique session ID and single-use security token
+  const sessionId = `ws_${Date.now()}_${crypto.randomBytes(8).toString('hex')}`;
+  const sessionToken = `sec_tok_${crypto.randomBytes(24).toString('hex')}`;
+  const startTime = Date.now();
+
+  watchSessions[sessionId] = {
+    sessionId,
+    sessionToken,
+    userId: activeUser.id,
+    campaignId,
+    startTime,
+    durationSeconds: 60,
+    claimed: false,
+    aborted: false,
+    expiresAt: startTime + 15 * 60 * 1000 // 15 min expiry
+  };
+
+  res.json({
+    success: true,
+    sessionId,
+    sessionToken,
+    startTime,
+    durationSeconds: 60,
+    message: "Secure watch session started"
+  });
+});
+
+// 2. Watch Session Abort (If user explicitly cancels before 60s)
+app.post("/api/watch/abort-session", (req, res) => {
+  const { sessionId, sessionToken } = req.body;
+  if (sessionId && watchSessions[sessionId]) {
+    const session = watchSessions[sessionId];
+    if (session.sessionToken === sessionToken) {
+      session.aborted = true;
+      delete watchSessions[sessionId];
+    }
+  }
+  res.json({ success: true, message: "Watch session aborted. Zero coins granted." });
+});
+
+// 3. Watch Session Expire (If user returns to app before 60 seconds have elapsed)
+app.post("/api/watch/expire-session", (req, res) => {
+  const { sessionId, sessionToken, reason } = req.body;
+  if (sessionId && watchSessions[sessionId]) {
+    const session = watchSessions[sessionId];
+    if (session.sessionToken === sessionToken) {
+      delete watchSessions[sessionId];
+    }
+  }
+  res.json({ success: true, message: "Session expired on server. Token invalidated. Zero coins granted." });
+});
+
+// 4. Watch Verification & Anti-Cheat Coin Credit
+app.post("/api/watch/verify", (req, res) => {
+  const activeUser = getActiveUser(req);
+  if (!activeUser) {
+    return res.status(401).json({ success: false, message: "Please log in to earn coins" });
+  }
+
+  const { campaignId, sessionId, sessionToken, watchDuration } = req.body;
+
+  if (!campaignId) {
+    return res.status(400).json({ success: false, message: "Campaign ID required" });
+  }
+
+  const campaign = campaigns.find(c => c.id === campaignId);
+  if (!campaign || campaign.status !== 'active') {
+    return res.status(400).json({ success: false, message: "Campaign is no longer active" });
+  }
+
+  // 1. Cannot watch own campaign
+  if (campaign.userId === activeUser.id) {
+    return res.status(400).json({ success: false, message: "You cannot watch your own campaign to earn coins." });
+  }
+
+  // 2. Cannot watch the same video multiple times
+  if (userWatchedCampaigns[activeUser.id]?.has(campaignId)) {
+    return res.status(400).json({ success: false, message: "You have already watched this video and earned coins for it." });
+  }
+
+  // 3. Strict Server-Side Session & Replay Attack Verification
+  if (!sessionId || !sessionToken) {
+    return res.status(400).json({ success: false, message: "Missing secure session credentials. Please start watch session normally." });
+  }
+
+  const session = watchSessions[sessionId];
+  if (!session) {
+    return res.status(400).json({ 
+      success: false, 
+      expired: true,
+      message: "Invalid or expired watch session. Session may have already expired, been claimed, or aborted." 
+    });
+  }
+
+  // Prevent token mismatch or hijacked session
+  if (session.sessionToken !== sessionToken || session.userId !== activeUser.id || session.campaignId !== campaignId) {
+    return res.status(403).json({ success: false, message: "Security token verification failed." });
+  }
+
+  // Prevent multiple triggers or replay attacks on the same view session
+  if (session.claimed) {
+    return res.status(400).json({ success: false, message: "Replay attack detected: This watch session has already been claimed." });
+  }
+
+  if (session.aborted) {
+    delete watchSessions[sessionId];
+    return res.status(400).json({ success: false, expired: true, message: "This session was aborted earlier. Zero coins granted." });
+  }
+
+  // 4. Server-Side Timestamp Verification: Verify at least 60 seconds have elapsed since start timestamp
+  const now = Date.now();
+  const elapsedSeconds = (now - session.startTime) / 1000;
+
+  // If less than 60 seconds (with sub-second tolerance >= 59.0s), EXPIRE the session immediately!
+  if (elapsedSeconds < 59) {
+    // Delete session immediately so this token cannot be reused or retried
+    delete watchSessions[sessionId];
+    return res.status(400).json({ 
+      success: false, 
+      expired: true,
+      elapsedSeconds: Math.floor(elapsedSeconds),
+      message: `Session expired: Server verified only ${Math.floor(elapsedSeconds)}s elapsed. Full 60 seconds are strictly required to earn coins. Session token has been destroyed.` 
+    });
+  }
+
+  // Immediately mark claimed and invalidate single-use session to prevent replay
+  session.claimed = true;
+  delete watchSessions[sessionId];
+
+  // Exactly 100 coins per video as requested
+  const earnedCoins = 100;
+
+  // Credit coins to viewer
+  activeUser.coins += earnedCoins;
+
+  // Mark this campaign as permanently watched by this user
+  if (!userWatchedCampaigns[activeUser.id]) {
+    userWatchedCampaigns[activeUser.id] = new Set<string>();
+  }
+  userWatchedCampaigns[activeUser.id].add(campaignId);
+
+  // Increment campaign view
+  campaign.completedViews += 1;
+  if (campaign.completedViews >= campaign.targetViews) {
+    campaign.status = "completed";
+  }
+
+  // Log transaction
+  transactions.unshift({
+    id: `tx_${Date.now()}`,
+    userId: activeUser.id,
+    type: "earned_watch",
+    amount: earnedCoins,
+    description: `Watched AtoPlay video: "${campaign.title.substring(0, 30)}..."`,
+    createdAt: new Date().toISOString(),
+  });
+
+  res.json({
+    success: true,
+    earnedCoins,
+    user: activeUser,
+    campaign: {
+      id: campaign.id,
+      completedViews: campaign.completedViews,
+      targetViews: campaign.targetViews,
+      status: campaign.status
+    },
+    message: `Successfully earned ${earnedCoins} coins!`
+  });
+});
+
+// 4. Referral System API Endpoints (250 coins per referral)
+app.get("/api/referral", (req, res) => {
+  const activeUser = getActiveUser(req);
+  if (!activeUser) {
+    return res.status(401).json({ success: false, message: "Please log in to view referral details" });
+  }
+
+  if (!activeUser.referralCode) {
+    activeUser.referralCode = generateUserReferralCode(activeUser);
+  }
+
+  res.json({
+    success: true,
+    referralCode: activeUser.referralCode,
+    referralsCount: activeUser.referralsCount || 0,
+    referralEarnings: activeUser.referralEarnings || 0,
+    rewardPerReferral: 250,
+    referredBy: activeUser.referredBy || null,
+    user: activeUser
+  });
+});
+
+app.post("/api/referral/redeem", (req, res) => {
+  const activeUser = getActiveUser(req);
+  if (!activeUser) {
+    return res.status(401).json({ success: false, message: "Please log in to redeem code" });
+  }
+
+  const { referralCode } = req.body;
+  if (!referralCode) {
+    return res.status(400).json({ success: false, message: "Please provide a referral code" });
+  }
+
+  if (activeUser.referredBy) {
+    return res.status(400).json({ success: false, message: "You have already redeemed a referral code!" });
+  }
+
+  const cleanCode = String(referralCode).trim().toUpperCase();
+  if (cleanCode === activeUser.referralCode) {
+    return res.status(400).json({ success: false, message: "You cannot redeem your own referral code!" });
+  }
+
+  const referrerId = referralCodes[cleanCode];
+  const referrer = referrerId ? users[referrerId] : null;
+
+  if (!referrer) {
+    return res.status(404).json({ success: false, message: "Invalid referral code. Please check and try again." });
+  }
+
+  // Credit 250 coins to referrer
+  referrer.coins += 250;
+  referrer.referralsCount = (referrer.referralsCount || 0) + 1;
+  referrer.referralEarnings = (referrer.referralEarnings || 0) + 250;
+
+  transactions.unshift({
+    id: `tx_${Date.now()}_ref_bon`,
+    userId: referrer.id,
+    type: "referral_bonus",
+    amount: 250,
+    description: `Referral Reward: ${activeUser.name} joined with your code ${cleanCode}!`,
+    createdAt: new Date().toISOString(),
+  });
+
+  // Credit 250 coins to active user
+  activeUser.coins += 250;
+  activeUser.referredBy = referrer.id;
+
+  transactions.unshift({
+    id: `tx_${Date.now()}_ref_wel`,
+    userId: activeUser.id,
+    type: "referral_received",
+    amount: 250,
+    description: `Welcome Referral Reward: Used friend's code ${cleanCode}`,
+    createdAt: new Date().toISOString(),
+  });
+
+  res.json({
+    success: true,
+    user: activeUser,
+    rewardCoins: 250,
+    message: "Referral code applied! You and your friend both earned 250 Coins!"
+  });
+});
+
+// Daily check-in
+app.post("/api/wallet/checkin", (req, res) => {
+  const activeUser = getActiveUser(req);
+  if (!activeUser) {
+    return res.status(401).json({ success: false, message: "Please log in" });
+  }
+
+  const today = new Date().toISOString().split('T')[0];
+  if (activeUser.lastCheckIn === today) {
+    return res.status(400).json({ success: false, message: "Already checked in today! Come back tomorrow." });
+  }
+
+  activeUser.streak += 1;
+  activeUser.lastCheckIn = today;
+  const rewardCoins = Math.min(200, 50 + (activeUser.streak * 10));
+  activeUser.coins += rewardCoins;
+
+  transactions.unshift({
+    id: `tx_${Date.now()}`,
+    userId: activeUser.id,
+    type: "daily_checkin",
+    amount: rewardCoins,
+    description: `Daily Check-in Streak Day ${activeUser.streak} Reward`,
+    createdAt: new Date().toISOString(),
+  });
+
+  res.json({ success: true, user: activeUser, rewardCoins, message: `Checked in! Earned ${rewardCoins} coins.` });
+});
+
+// AdMob Rewarded Ad Simulation
+app.post("/api/wallet/reward-ad", (req, res) => {
+  const activeUser = getActiveUser(req);
+  if (!activeUser) {
+    return res.status(401).json({ success: false, message: "Please log in" });
+  }
+
+  const rewardCoins = 100;
+  activeUser.coins += rewardCoins;
+
+  transactions.unshift({
+    id: `tx_${Date.now()}`,
+    userId: activeUser.id,
+    type: "rewarded_ad",
+    amount: rewardCoins,
+    description: "Watched AdMob Rewarded Video",
+    createdAt: new Date().toISOString(),
+  });
+
+  res.json({ success: true, user: activeUser, rewardCoins, message: `Ad completed! Earned ${rewardCoins} coins.` });
+});
+
+// In-App Purchase (IAP) Simulation
+app.post("/api/wallet/purchase", (req, res) => {
+  const activeUser = getActiveUser(req);
+  if (!activeUser) {
+    return res.status(401).json({ success: false, message: "Please log in" });
+  }
+
+  const { packId, coins, price } = req.body;
+  if (!coins) {
+    return res.status(400).json({ success: false, message: "Invalid coin pack" });
+  }
+
+  activeUser.coins += Number(coins);
+
+  transactions.unshift({
+    id: `tx_${Date.now()}`,
+    userId: activeUser.id,
+    type: "iap_purchase",
+    amount: Number(coins),
+    description: `Purchased Coin Pack (${coins} Coins for $${price || '2.99'})`,
+    createdAt: new Date().toISOString(),
+  });
+
+  res.json({ success: true, user: activeUser, message: `Successfully purchased ${coins} coins!` });
+});
+
+app.get("/api/transactions", (req, res) => {
+  res.json({ success: true, transactions });
+});
+
+// Google Search Console & SEO Routes
+app.get("/robots.txt", (req, res) => {
+  const host = req.get("host") || "ais-dev-wpjs2egvjyghfr7d3stbsk-1074165775969.asia-southeast1.run.app";
+  const protocol = req.protocol === "https" || req.headers["x-forwarded-proto"] === "https" ? "https" : "http";
+  const baseUrl = `${protocol}://${host}`;
+
+  const robots = `# Google Search Console & Web Crawler Directives
+User-agent: *
+Allow: /
+Disallow: /api/
+
+User-agent: Googlebot
+Allow: /
+Disallow: /api/
+
+User-agent: Googlebot-Image
+Allow: /
+Allow: /public/
+
+User-agent: Bingbot
+Allow: /
+Disallow: /api/
+
+User-agent: Twitterbot
+Allow: /
+
+User-agent: facebookexternalhit
+Allow: /
+
+# Canonical Sitemap URL
+Sitemap: ${baseUrl}/sitemap.xml
+`;
+
+  res.setHeader("Content-Type", "text/plain; charset=utf-8");
+  res.send(robots);
+});
+
+app.get("/sitemap.xml", (req, res) => {
+  const host = req.get("host") || "ais-dev-wpjs2egvjyghfr7d3stbsk-1074165775969.asia-southeast1.run.app";
+  const protocol = req.protocol === "https" || req.headers["x-forwarded-proto"] === "https" ? "https" : "http";
+  const baseUrl = `${protocol}://${host}`;
+  const currentDate = new Date().toISOString().split("T")[0];
+
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.sitemaps.org/schemas/sitemap/0.9
+        http://www.sitemaps.org/schemas/sitemap/0.9/sitemap.xsd">
+  <url>
+    <loc>${baseUrl}/</loc>
+    <lastmod>${currentDate}</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>${baseUrl}/?tab=watch</loc>
+    <lastmod>${currentDate}</lastmod>
+    <changefreq>hourly</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>${baseUrl}/?tab=campaigns</loc>
+    <lastmod>${currentDate}</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>${baseUrl}/?tab=wallet</loc>
+    <lastmod>${currentDate}</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>${baseUrl}/?tab=referral</loc>
+    <lastmod>${currentDate}</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>
+</urlset>`;
+
+  res.setHeader("Content-Type", "application/xml; charset=utf-8");
+  res.send(xml);
+});
+
+// Support Google Search Console HTML File Verification (e.g. google1234567890abcdef.html)
+app.get("/google:code([a-zA-Z0-9_-]+).html", (req, res) => {
+  const code = req.params.code;
+  res.setHeader("Content-Type", "text/html; charset=utf-8");
+  res.send(`google-site-verification: google${code}.html`);
+});
+
+
+async function startServer() {
+  if (process.env.NODE_ENV !== "production") {
+    const { createServer: createViteServer } = await import("vite");
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: "spa",
+    });
+    app.use(vite.middlewares);
+  } else {
+    // Resolve dist path reliably whether running from workspace or dist
+    const distPath = fs.existsSync(path.join(process.cwd(), 'dist'))
+      ? path.join(process.cwd(), 'dist')
+      : path.resolve(__dirname);
+
+    app.use(express.static(distPath));
+    app.get('*', (_req, res) => {
+      const indexPath = path.join(distPath, 'index.html');
+      if (fs.existsSync(indexPath)) {
+        res.sendFile(indexPath);
+      } else {
+        res.status(404).send('Application build not found. Please run npm run build.');
+      }
+    });
+  }
+
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(`AtoPlay Booster Server running on http://localhost:${PORT}`);
+  });
+}
+
+startServer();

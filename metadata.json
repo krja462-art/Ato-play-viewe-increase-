@@ -1,0 +1,6 @@
+{
+  "name": "AtoPlay Booster - Video Promotion Exchange",
+  "description": "A video view-exchange network for AtoPlay creators where users watch videos to earn coins and create promotion campaigns.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

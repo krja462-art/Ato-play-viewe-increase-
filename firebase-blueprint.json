@@ -1,0 +1,51 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "Registered user profile with coin balance and check-in streak",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "User Firebase UID" },
+        "name": { "type": "string", "description": "Display name" },
+        "email": { "type": "string", "description": "Google email" },
+        "avatar": { "type": "string", "description": "Profile picture URL" },
+        "coins": { "type": "number", "description": "Current coins balance" },
+        "streak": { "type": "number", "description": "Consecutive check-in streak" },
+        "lastCheckIn": { "type": "string", "description": "ISO date of last check-in" },
+        "createdAt": { "type": "string", "description": "Account creation timestamp" }
+      },
+      "required": ["id", "email", "coins"]
+    },
+    "Campaign": {
+      "title": "Campaign",
+      "description": "Video promotion campaign",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Campaign ID" },
+        "userId": { "type": "string", "description": "Creator user UID" },
+        "userName": { "type": "string", "description": "Creator user name" },
+        "videoUrl": { "type": "string", "description": "AtoPlay / YouTube video link" },
+        "title": { "type": "string", "description": "Video title" },
+        "thumbnailUrl": { "type": "string", "description": "Video thumbnail URL" },
+        "targetViews": { "type": "number", "description": "Total target views" },
+        "completedViews": { "type": "number", "description": "Views completed so far" },
+        "durationSeconds": { "type": "number", "description": "Watch timer duration" },
+        "totalCoinsCost": { "type": "number", "description": "Coins spent on campaign" },
+        "status": { "type": "string", "enum": ["active", "completed", "cancelled"] },
+        "createdAt": { "type": "string", "description": "Creation timestamp" },
+        "displayId": { "type": "string", "description": "Public video ID" }
+      },
+      "required": ["id", "userId", "videoUrl", "targetViews", "completedViews", "status"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Stores user profiles keyed by Firebase Auth UID"
+    },
+    "/campaigns/{campaignId}": {
+      "schema": "Campaign",
+      "description": "Stores active and completed video campaigns"
+    }
+  }
+}

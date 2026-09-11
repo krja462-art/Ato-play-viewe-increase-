@@ -1,0 +1,27 @@
+# Robots.txt for AtoPlay Booster
+# Optimized for Googlebot, Google Search Console, Bingbot, and modern search engines
+
+User-agent: *
+Allow: /
+Disallow: /api/
+
+User-agent: Googlebot
+Allow: /
+Disallow: /api/
+
+User-agent: Googlebot-Image
+Allow: /
+Allow: /public/
+
+User-agent: Bingbot
+Allow: /
+Disallow: /api/
+
+User-agent: Twitterbot
+Allow: /
+
+User-agent: facebookexternalhit
+Allow: /
+
+# Sitemap Location
+Sitemap: /sitemap.xml
