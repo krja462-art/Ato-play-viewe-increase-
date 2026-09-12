@@ -72,8 +72,15 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onLoginSuccess }) =>
 
       {/* Top spacing / Brand Header */}
       <div className="w-full max-w-md text-center pt-6 space-y-4 relative z-10">
-        <div className="w-20 h-20 rounded-3xl bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center mx-auto shadow-2xl shadow-blue-900/50">
-          <Play className="w-10 h-10 text-white fill-white ml-1" />
+        <div className="w-20 h-20 rounded-3xl bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center mx-auto shadow-2xl shadow-blue-900/50 overflow-hidden">
+          <img
+            src="/pwa-192x192.png"
+            alt="AtoViewer Logo"
+            className="w-full h-full object-cover"
+            onError={(e) => {
+              (e.target as HTMLImageElement).src = '/favicon.png';
+            }}
+          />
         </div>
         
         <div className="space-y-1">
@@ -82,7 +89,7 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onLoginSuccess }) =>
             <span>Official Booster Network</span>
           </div>
           <h1 className="text-4xl sm:text-5xl font-extrabold tracking-tight text-white">
-            AtoPlay Viewer
+            AtoViewer
           </h1>
           <p className="text-blue-100 text-sm max-w-xs mx-auto pt-1">
             Watch videos to earn coins and boost your AtoPlay campaigns instantly.

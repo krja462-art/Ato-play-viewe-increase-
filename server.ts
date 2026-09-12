@@ -985,6 +985,30 @@ app.get("/sitemap.xml", (req, res) => {
   res.send(xml);
 });
 
+// PWA Manifest route
+app.get("/manifest.json", (_req, res) => {
+  res.setHeader("Content-Type", "application/manifest+json; charset=utf-8");
+  const manifestPath = path.join(process.cwd(), "public", "manifest.json");
+  if (fs.existsSync(manifestPath)) {
+    res.sendFile(manifestPath);
+  } else {
+    res.status(404).json({ error: "manifest.json not found" });
+  }
+});
+
+// PWA Service Worker route
+app.get("/sw.js", (_req, res) => {
+  res.setHeader("Content-Type", "application/javascript; charset=utf-8");
+  res.setHeader("Service-Worker-Allowed", "/");
+  res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+  const swPath = path.join(process.cwd(), "public", "sw.js");
+  if (fs.existsSync(swPath)) {
+    res.sendFile(swPath);
+  } else {
+    res.status(404).send("// sw.js not found");
+  }
+});
+
 // Support Google Search Console HTML File Verification (e.g. google1234567890abcdef.html)
 app.get("/google:code([a-zA-Z0-9_-]+).html", (req, res) => {
   const code = req.params.code;

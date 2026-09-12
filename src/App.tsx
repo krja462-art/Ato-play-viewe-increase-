@@ -4,6 +4,7 @@ import { Navbar } from './components/Navbar';
 import { HomeWatchFeed } from './components/HomeWatchFeed';
 import { Campaigns } from './components/Campaigns';
 import { SplashScreen } from './components/SplashScreen';
+import { PWAInstallBanner } from './components/PWAInstallBanner';
 import { auth, logOut, onAuthStateChanged } from './lib/firebase';
 
 export default function App() {
@@ -108,7 +109,12 @@ export default function App() {
 
   // Mandatory Google Login Guard: User cannot open or enter the app without logging in
   if (!user) {
-    return <SplashScreen onLoginSuccess={setUser} />;
+    return (
+      <>
+        <SplashScreen onLoginSuccess={setUser} />
+        <PWAInstallBanner />
+      </>
+    );
   }
 
   return (
@@ -150,6 +156,9 @@ export default function App() {
           />
         )}
       </main>
+
+      {/* In-App PWA Install Banner */}
+      <PWAInstallBanner />
 
     </div>
   );

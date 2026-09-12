@@ -27,14 +27,22 @@
     <meta name="google-site-verification" content="GSC_VERIFICATION_TOKEN_REPLACE_ME" />
 
     <!-- Mobile & PWA Optimization -->
-    <meta name="application-name" content="AtoPlay Booster" />
-    <meta name="apple-mobile-web-app-title" content="AtoPlay Booster" />
+    <meta name="application-name" content="AtoViewer" />
+    <meta name="apple-mobile-web-app-title" content="AtoViewer" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="theme-color" content="#2563eb" />
     <meta name="format-detection" content="telephone=no" />
     <meta name="author" content="AtoPlay Booster Team" />
     <meta name="publisher" content="AtoPlay Booster" />
+
+    <!-- PWA Web App Manifest & App Icons -->
+    <link rel="manifest" href="/manifest.json" />
+    <link rel="icon" type="image/png" sizes="64x64" href="/favicon.png" />
+    <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link rel="apple-touch-icon-precomposed" href="/apple-touch-icon.png" />
 
     <!-- Open Graph / Facebook / WhatsApp / Telegram Previews -->
     <meta property="og:type" content="website" />
@@ -150,6 +158,21 @@
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
+
+    <!-- PWA Service Worker Safe Registration -->
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', function() {
+          navigator.serviceWorker.register('/sw.js', { scope: '/' })
+            .then(function(registration) {
+              console.log('[PWA] Service Worker active with scope:', registration.scope);
+            })
+            .catch(function(error) {
+              console.warn('[PWA] Service Worker registration failed:', error);
+            });
+        });
+      }
+    </script>
   </body>
 </html>
 

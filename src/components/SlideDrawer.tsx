@@ -18,9 +18,14 @@ import {
   Copy,
   Check,
   Users,
-  Award
+  Award,
+  Download,
+  Smartphone,
+  Share,
+  PlusSquare
 } from 'lucide-react';
 import { User } from '../types';
+import { usePWAInstall } from '../hooks/usePWAInstall';
 
 interface SlideDrawerProps {
   isOpen: boolean;
@@ -37,7 +42,8 @@ export const SlideDrawer: React.FC<SlideDrawerProps> = ({
   onLogout,
   onUserUpdate
 }) => {
-  const [activeModal, setActiveModal] = useState<'privacy' | 'terms' | 'contact' | 'referral' | null>(null);
+  const [activeModal, setActiveModal] = useState<'privacy' | 'terms' | 'contact' | 'referral' | 'ios_install' | null>(null);
+  const { isInstallable, isInstalled, isIOS, install } = usePWAInstall();
   
   // Referral State
   const [copiedCode, setCopiedCode] = useState(false);
@@ -340,6 +346,53 @@ export const SlideDrawer: React.FC<SlideDrawerProps> = ({
                 </div>
                 <ChevronRight className="w-4 h-4 text-zinc-400 group-hover:text-emerald-600 group-hover:translate-x-0.5 transition-all" />
               </button>
+
+              {/* Install PWA App Option */}
+              {isInstalled ? (
+                <div className="w-full p-3 rounded-2xl bg-emerald-50/70 border border-emerald-100/80 flex items-center justify-between text-left">
+                  <div className="flex items-center space-x-3">
+                    <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center">
+                      <CheckCircle2 className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-sm text-zinc-900">AtoViewer Installed</h4>
+                      <p className="text-[11px] text-zinc-500">Running as native standalone PWA</p>
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
+                    ACTIVE
+                  </span>
+                </div>
+              ) : (
+                <button
+                  onClick={async () => {
+                    if (isIOS) {
+                      setActiveModal('ios_install');
+                    } else if (isInstallable) {
+                      await install();
+                    } else {
+                      setActiveModal('ios_install');
+                    }
+                  }}
+                  className="w-full p-3 rounded-2xl bg-blue-50/60 hover:bg-blue-100/70 border border-blue-200/70 flex items-center justify-between text-left transition-all cursor-pointer group shadow-xs"
+                >
+                  <div className="flex items-center space-x-3">
+                    <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center group-hover:scale-105 transition-transform shadow-xs">
+                      <Download className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <div className="flex items-center space-x-1.5">
+                        <h4 className="font-bold text-sm text-zinc-900 group-hover:text-blue-600">Install App</h4>
+                        <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-blue-600 text-white font-black">
+                          PWA
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-zinc-500">Install on phone or desktop</p>
+                    </div>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-zinc-400 group-hover:text-blue-600 group-hover:translate-x-0.5 transition-all" />
+                </button>
+              )}
             </div>
 
           </div>
@@ -790,6 +843,72 @@ export const SlideDrawer: React.FC<SlideDrawerProps> = ({
               </form>
             )}
 
+          </div>
+        </div>
+      )}
+
+      {/* iOS & Desktop Install Instructions Modal */}
+      {activeModal === 'ios_install' && (
+        <div className="fixed inset-0 z-60 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-6 space-y-4 shadow-2xl relative animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between pb-2 border-b border-zinc-100">
+              <div className="flex items-center space-x-2.5">
+                <img
+                  src="/pwa-192x192.png"
+                  alt="AtoViewer"
+                  className="w-9 h-9 rounded-xl shadow-xs border border-zinc-100 object-cover"
+                />
+                <div>
+                  <h3 className="font-black text-base text-zinc-900">Install AtoViewer</h3>
+                  <p className="text-[11px] text-zinc-500">Fast home screen app</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setActiveModal(null)}
+                className="p-1.5 rounded-full hover:bg-zinc-100 text-zinc-400 hover:text-zinc-600 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3 py-1 text-xs text-zinc-700 font-medium">
+              <div className="flex items-start space-x-3 p-3 rounded-xl bg-zinc-50 border border-zinc-100">
+                <div className="p-2 rounded-lg bg-blue-100 text-blue-700 shrink-0">
+                  <Share className="w-4 h-4" />
+                </div>
+                <div>
+                  <span className="font-bold text-zinc-900 block">Step 1: Open Share Menu</span>
+                  In Safari or Chrome, tap the <strong>Share</strong> or <strong>Three Dots (⋮)</strong> icon.
+                </div>
+              </div>
+
+              <div className="flex items-start space-x-3 p-3 rounded-xl bg-zinc-50 border border-zinc-100">
+                <div className="p-2 rounded-lg bg-emerald-100 text-emerald-700 shrink-0">
+                  <PlusSquare className="w-4 h-4" />
+                </div>
+                <div>
+                  <span className="font-bold text-zinc-900 block">Step 2: Add to Home screen</span>
+                  Tap <strong>"Add to Home Screen"</strong> or <strong>"Install App"</strong>.
+                </div>
+              </div>
+
+              <div className="flex items-start space-x-3 p-3 rounded-xl bg-zinc-50 border border-zinc-100">
+                <div className="p-2 rounded-lg bg-purple-100 text-purple-700 shrink-0">
+                  <CheckCircle2 className="w-4 h-4" />
+                </div>
+                <div>
+                  <span className="font-bold text-zinc-900 block">Step 3: Instant Access</span>
+                  Launch AtoViewer like a native application with offline support and no browser borders!
+                </div>
+              </div>
+            </div>
+
+            <button
+              onClick={() => setActiveModal(null)}
+              className="w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-md shadow-blue-600/20 transition-all cursor-pointer"
+            >
+              Understood
+            </button>
           </div>
         </div>
       )}
