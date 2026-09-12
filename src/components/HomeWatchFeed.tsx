@@ -3,6 +3,7 @@ import { User, Campaign, format4CharId, ActiveWatchState } from '../types';
 import { Play, CheckCircle2, Clock, ArrowLeft, Video, ExternalLink, RefreshCw, Award, Coins, AlertCircle, ShieldCheck, Key } from 'lucide-react';
 import { RewardPopupModal } from './RewardPopupModal';
 import { SessionExpiredModal } from './SessionExpiredModal';
+import { apiFetch } from '../lib/api';
 
 interface HomeWatchFeedProps {
   user: User;
@@ -54,11 +55,10 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
   const fetchCampaigns = async () => {
     try {
       setLoading(true);
-      const res = await fetch('/api/campaigns', {
+      const data = await apiFetch('/api/campaigns', {
         headers: { 'x-user-id': user.id }
       });
-      const data = await res.json();
-      if (data.success) {
+      if (data?.success && Array.isArray(data.campaigns)) {
         setCampaigns(data.campaigns);
       }
     } catch (err) {
@@ -92,7 +92,7 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
 
     // Tell backend to destroy the security token immediately
     try {
-      await fetch('/api/watch/expire-session', {
+      await apiFetch('/api/watch/expire-session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -123,7 +123,7 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
       setVerifying(true);
       setErrorStatus(null);
 
-      const res = await fetch('/api/watch/verify', {
+      const data = await apiFetch('/api/watch/verify', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -137,10 +137,11 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
         })
       });
 
-      const data = await res.json();
-      if (data.success) {
-        const earned = data.earnedCoins || 100;
-        onCoinEarned(data.user);
+      if (data?.success) {
+        const earned = data.earnedCoins || data.coinsEarned || 10;
+        if (data.user) {
+          onCoinEarned(data.user);
+        }
         setIsCompleted(true);
         setIsPlaying(false);
         setTimeLeft(0);
@@ -299,7 +300,7 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
       setErrorStatus(null);
 
       // Step 1: Start secure session on server with crypto token & timestamp
-      const res = await fetch('/api/watch/start-session', {
+      const data = await apiFetch('/api/watch/start-session', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -308,9 +309,8 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
         body: JSON.stringify({ campaignId: camp.id })
       });
 
-      const data = await res.json();
-      if (!data.success) {
-        alert(data.message || 'Could not start watch session. Please try again.');
+      if (!data?.success) {
+        alert(data?.message || 'Could not start watch session. Please try again.');
         return;
       }
 
@@ -359,7 +359,7 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
       if (!confirmLeave) return;
 
       if (sessionId && sessionToken) {
-        fetch('/api/watch/abort-session', {
+        apiFetch('/api/watch/abort-session', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ sessionId, sessionToken })

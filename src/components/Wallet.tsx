@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { User, Transaction } from '../types';
 import { Wallet as WalletIcon, Coins, Gift, Flame, CreditCard, ArrowUpRight, ArrowDownLeft, CheckCircle2, ShieldCheck, Sparkles } from 'lucide-react';
+import { apiFetch } from '../lib/api';
 
 interface WalletProps {
   user: User;
@@ -23,9 +24,8 @@ export const Wallet: React.FC<WalletProps> = ({
   const fetchTransactions = async () => {
     try {
       setLoadingTx(true);
-      const res = await fetch('/api/transactions');
-      const data = await res.json();
-      if (data.success) {
+      const data = await apiFetch('/api/transactions');
+      if (data?.success && Array.isArray(data.transactions)) {
         setTransactions(data.transactions);
       }
     } catch (err) {
@@ -43,14 +43,18 @@ export const Wallet: React.FC<WalletProps> = ({
     try {
       setPurchasing(packId);
       setSuccessMsg(null);
-      const res = await fetch('/api/wallet/purchase', {
+      const data = await apiFetch('/api/wallet/purchase', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ packId, coins, price })
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-user-id': user.id
+        },
+        body: JSON.stringify({ packId, coins, price, coinsAmount: coins, priceInr: price })
       });
-      const data = await res.json();
-      if (data.success) {
-        onWalletUpdated(data.user);
+      if (data?.success) {
+        if (data.user) {
+          onWalletUpdated(data.user);
+        }
         setSuccessMsg(data.message);
         fetchTransactions();
       }

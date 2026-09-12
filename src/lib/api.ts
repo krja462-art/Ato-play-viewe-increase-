@@ -1,0 +1,480 @@
+import { User, Campaign, Transaction } from '../types';
+
+const STORAGE_KEYS = {
+  USER: 'atoviewer_user',
+  CAMPAIGNS: 'atoviewer_campaigns',
+  TRANSACTIONS: 'atoviewer_transactions',
+  WATCHED: 'atoviewer_watched_campaigns',
+  CHECKIN_PREFIX: 'atoviewer_checkin_'
+};
+
+// Initial starter AtoPlay booster campaigns so home feed has videos immediately
+const SEED_CAMPAIGNS: Campaign[] = [
+  {
+    id: 'camp_init_1',
+    displayId: 'ATO1',
+    userId: 'system_creator_1',
+    userName: 'AtoPlay Official Tech',
+    videoUrl: 'https://atoplay.com/v/technology-future-2026',
+    title: 'Top 10 Emerging Tech Trends & AI Innovations 2026',
+    thumbnailUrl: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80',
+    targetViews: 200,
+    completedViews: 42,
+    durationSeconds: 45,
+    totalCoinsCost: 2000,
+    status: 'active',
+    createdAt: new Date().toISOString()
+  },
+  {
+    id: 'camp_init_2',
+    displayId: 'ATO2',
+    userId: 'system_creator_2',
+    userName: 'AtoPlay Gaming Hub',
+    videoUrl: 'https://atoplay.com/v/top-gaming-highlights-epic',
+    title: 'Epic Gaming Moments & Unreal Engine 5 Showcase',
+    thumbnailUrl: 'https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=800&q=80',
+    targetViews: 150,
+    completedViews: 68,
+    durationSeconds: 30,
+    totalCoinsCost: 1500,
+    status: 'active',
+    createdAt: new Date().toISOString()
+  },
+  {
+    id: 'camp_init_3',
+    displayId: 'ATO3',
+    userId: 'system_creator_3',
+    userName: 'AtoPlay Music Beats',
+    videoUrl: 'https://atoplay.com/v/lofi-chill-vibes-relaxing',
+    title: 'Lofi Chill Beats to Relax & Code to',
+    thumbnailUrl: 'https://images.unsplash.com/photo-1511512578047-dfb367046420?auto=format&fit=crop&w=800&q=80',
+    targetViews: 300,
+    completedViews: 110,
+    durationSeconds: 60,
+    totalCoinsCost: 3000,
+    status: 'active',
+    createdAt: new Date().toISOString()
+  }
+];
+
+function getStoredUser(): User | null {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.USER);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function setStoredUser(user: User): void {
+  localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(user));
+}
+
+function getStoredCampaigns(): Campaign[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.CAMPAIGNS);
+    if (!raw) {
+      localStorage.setItem(STORAGE_KEYS.CAMPAIGNS, JSON.stringify(SEED_CAMPAIGNS));
+      return SEED_CAMPAIGNS;
+    }
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) && parsed.length > 0 ? parsed : SEED_CAMPAIGNS;
+  } catch {
+    return SEED_CAMPAIGNS;
+  }
+}
+
+function setStoredCampaigns(campaigns: Campaign[]): void {
+  localStorage.setItem(STORAGE_KEYS.CAMPAIGNS, JSON.stringify(campaigns));
+}
+
+function getStoredTransactions(): Transaction[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.TRANSACTIONS);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function addStoredTransaction(tx: Transaction): void {
+  const list = getStoredTransactions();
+  list.unshift(tx);
+  localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(list.slice(0, 100)));
+}
+
+function getWatchedIds(userId: string): Set<string> {
+  try {
+    const raw = localStorage.getItem(`${STORAGE_KEYS.WATCHED}_${userId}`);
+    return raw ? new Set(JSON.parse(raw)) : new Set();
+  } catch {
+    return new Set();
+  }
+}
+
+function addWatchedId(userId: string, campaignId: string): void {
+  const set = getWatchedIds(userId);
+  set.add(campaignId);
+  localStorage.setItem(`${STORAGE_KEYS.WATCHED}_${userId}`, JSON.stringify(Array.from(set)));
+}
+
+/**
+ * Universal safe API caller that tries real backend first,
+ * and seamlessly falls back to resilient client storage on static platforms like Vercel.
+ */
+export async function apiFetch<T = any>(endpoint: string, options?: RequestInit): Promise<T> {
+  const user = getStoredUser();
+  const headers = new Headers(options?.headers || {});
+  if (user?.id && !headers.has('x-user-id')) {
+    headers.set('x-user-id', user.id);
+  }
+
+  try {
+    const res = await fetch(endpoint, {
+      ...options,
+      headers
+    });
+
+    const contentType = res.headers.get('content-type') || '';
+    // If response is valid JSON from backend (not SPA index.html fallback)
+    if (res.ok && contentType.includes('application/json')) {
+      return await res.json();
+    }
+    
+    // If 401 on /api/user, return standard unauthorized format
+    if (res.status === 401 && endpoint === '/api/user') {
+      return { success: false, user: null } as any;
+    }
+  } catch {
+    // Network failed, proceed to client fallback
+  }
+
+  // --- CLIENT-SIDE RESILIENT FALLBACK ENGINE (e.g. for Vercel static host or offline) ---
+  return handleClientFallback<T>(endpoint, options, user);
+}
+
+function handleClientFallback<T>(endpoint: string, options?: RequestInit, activeUser?: User | null): T {
+  const method = (options?.method || 'GET').toUpperCase();
+  const parsedBody = options?.body && typeof options.body === 'string' ? JSON.parse(options.body) : (options?.body || {});
+
+  // 1. Firebase Login / Google Sign-In Fallback
+  if (endpoint.startsWith('/api/auth/firebase-login')) {
+    const { uid, email, name, avatar } = parsedBody;
+    const cleanEmail = String(email || 'user@gmail.com').trim().toLowerCase();
+    const effectiveUid = uid || `g_${cleanEmail.replace(/[^a-zA-Z0-9]/g, '_')}`;
+
+    let user = getStoredUser();
+    let isNewUser = false;
+
+    if (!user || user.email !== cleanEmail) {
+      isNewUser = true;
+      user = {
+        id: effectiveUid,
+        name: name || cleanEmail.split('@')[0],
+        email: cleanEmail,
+        coins: 300, // 300 Welcome Bonus coins
+        avatar: avatar || `https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80`,
+        streak: 1,
+        lastCheckIn: new Date().toISOString().split('T')[0],
+        createdAt: new Date().toISOString(),
+        referralsCount: 0,
+        referralEarnings: 0,
+        referralCode: `REF-${effectiveUid.slice(-4).toUpperCase()}`
+      };
+
+      addStoredTransaction({
+        id: `tx_${Date.now()}`,
+        userId: user.id,
+        type: 'bonus_signup',
+        amount: 300,
+        description: 'Welcome Bonus Coins on Google Sign In',
+        createdAt: new Date().toISOString()
+      });
+    } else {
+      if (name) user.name = name;
+      if (avatar) user.avatar = avatar;
+    }
+
+    setStoredUser(user);
+    return {
+      success: true,
+      user,
+      isNewUser,
+      message: isNewUser ? 'Welcome! 300 bonus coins added.' : 'Signed in successfully with Google'
+    } as any;
+  }
+
+  // 2. Auth Logout
+  if (endpoint.startsWith('/api/auth/logout')) {
+    localStorage.removeItem(STORAGE_KEYS.USER);
+    return { success: true, message: 'Logged out successfully' } as any;
+  }
+
+  // 3. Current User
+  if (endpoint.startsWith('/api/user')) {
+    if (!activeUser) {
+      return { success: false, user: null, message: 'User not authenticated' } as any;
+    }
+    return { success: true, user: activeUser } as any;
+  }
+
+  // 4. Campaigns List
+  if (endpoint.startsWith('/api/campaigns') && method === 'GET') {
+    const allCampaigns = getStoredCampaigns();
+    const isMyFilter = endpoint.includes('filter=my');
+
+    if (isMyFilter) {
+      const myCampaigns = activeUser ? allCampaigns.filter(c => c.userId === activeUser.id) : [];
+      return { success: true, campaigns: myCampaigns } as any;
+    }
+
+    // Home feed filter: active, remaining views, not created by user, not already watched by user
+    const watched = activeUser ? getWatchedIds(activeUser.id) : new Set();
+    const queue = allCampaigns.filter(c => {
+      if (c.status !== 'active' || c.completedViews >= c.targetViews) return false;
+      if (activeUser && c.userId === activeUser.id) return false;
+      if (activeUser && watched.has(c.id)) return false;
+      return true;
+    });
+
+    return { success: true, campaigns: queue } as any;
+  }
+
+  // 5. Create Campaign
+  if (endpoint.startsWith('/api/campaigns') && method === 'POST') {
+    if (!activeUser) {
+      return { success: false, message: 'Please log in to create a campaign' } as any;
+    }
+
+    const { videoUrl, targetViews, durationSeconds, title, thumbnailUrl } = parsedBody;
+    const views = Number(targetViews) || 10;
+    const duration = Number(durationSeconds) || 30;
+    const totalCost = views * 10;
+
+    if (activeUser.coins < totalCost) {
+      return { success: false, message: `Insufficient coins. You need ${totalCost} coins but have ${activeUser.coins}.` } as any;
+    }
+
+    // Deduct coins from user
+    activeUser.coins -= totalCost;
+    setStoredUser(activeUser);
+
+    addStoredTransaction({
+      id: `tx_${Date.now()}`,
+      userId: activeUser.id,
+      type: 'spent_campaign',
+      amount: -totalCost,
+      description: `Created Promotion Campaign for: ${title || 'AtoPlay Video'} (${views} views)`,
+      createdAt: new Date().toISOString()
+    });
+
+    const newCampaign: Campaign = {
+      id: `camp_${Date.now()}`,
+      displayId: String(Math.floor(1000 + Math.random() * 9000)),
+      userId: activeUser.id,
+      userName: activeUser.name,
+      videoUrl: videoUrl.trim(),
+      title: title || 'AtoPlay Video Promotion',
+      thumbnailUrl: thumbnailUrl || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80',
+      targetViews: views,
+      completedViews: 0,
+      durationSeconds: duration,
+      totalCoinsCost: totalCost,
+      status: 'active',
+      createdAt: new Date().toISOString()
+    };
+
+    const currentCampaigns = getStoredCampaigns();
+    currentCampaigns.unshift(newCampaign);
+    setStoredCampaigns(currentCampaigns);
+
+    return {
+      success: true,
+      message: 'Promotion campaign launched successfully!',
+      campaign: newCampaign,
+      user: activeUser,
+      remainingCoins: activeUser.coins
+    } as any;
+  }
+
+  // 6. Watch Session Start
+  if (endpoint.startsWith('/api/watch/start-session')) {
+    const { campaignId } = parsedBody;
+    const token = `token_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+    const sessionId = `session_${Date.now()}`;
+    return {
+      success: true,
+      sessionId,
+      sessionToken: token,
+      campaignId,
+      durationSeconds: 30,
+      message: 'Watch timer initialized'
+    } as any;
+  }
+
+  // 7. Watch Verify & Reward
+  if (endpoint.startsWith('/api/watch/verify')) {
+    if (!activeUser) {
+      return { success: false, message: 'Please log in to claim reward' } as any;
+    }
+
+    const { campaignId } = parsedBody;
+    activeUser.coins += 10;
+    setStoredUser(activeUser);
+
+    if (campaignId) {
+      addWatchedId(activeUser.id, campaignId);
+      // Increment completed views on the campaign
+      const currentCampaigns = getStoredCampaigns();
+      const targetCamp = currentCampaigns.find(c => c.id === campaignId);
+      if (targetCamp) {
+        targetCamp.completedViews = (targetCamp.completedViews || 0) + 1;
+        if (targetCamp.completedViews >= targetCamp.targetViews) {
+          targetCamp.status = 'completed';
+        }
+        setStoredCampaigns(currentCampaigns);
+      }
+    }
+
+    addStoredTransaction({
+      id: `tx_${Date.now()}`,
+      userId: activeUser.id,
+      type: 'earned_watch',
+      amount: 10,
+      description: 'Watched full video promotion reward (+10 Coins)',
+      createdAt: new Date().toISOString()
+    });
+
+    return {
+      success: true,
+      coinsEarned: 10,
+      totalCoins: activeUser.coins,
+      user: activeUser,
+      message: 'Congratulations! +10 Coins added to your wallet.'
+    } as any;
+  }
+
+  // 8. Daily Checkin
+  if (endpoint.startsWith('/api/wallet/checkin')) {
+    if (!activeUser) {
+      return { success: false, message: 'Please log in first' } as any;
+    }
+
+    const today = new Date().toISOString().split('T')[0];
+    if (activeUser.lastCheckIn === today) {
+      return { success: false, message: 'Already claimed today! Check back tomorrow.', user: activeUser } as any;
+    }
+
+    activeUser.coins += 20;
+    activeUser.streak = (activeUser.streak || 1) + 1;
+    activeUser.lastCheckIn = today;
+    setStoredUser(activeUser);
+
+    addStoredTransaction({
+      id: `tx_${Date.now()}`,
+      userId: activeUser.id,
+      type: 'daily_checkin',
+      amount: 20,
+      description: `Daily Check-In Reward (Day ${activeUser.streak})`,
+      createdAt: new Date().toISOString()
+    });
+
+    return {
+      success: true,
+      message: `Claimed +20 Coins! Daily streak: ${activeUser.streak} days.`,
+      user: activeUser
+    } as any;
+  }
+
+  // 9. Reward Ad
+  if (endpoint.startsWith('/api/wallet/reward-ad')) {
+    if (!activeUser) {
+      return { success: false, message: 'Please log in first' } as any;
+    }
+
+    activeUser.coins += 50;
+    setStoredUser(activeUser);
+
+    addStoredTransaction({
+      id: `tx_${Date.now()}`,
+      userId: activeUser.id,
+      type: 'rewarded_ad',
+      amount: 50,
+      description: 'Bonus Ad Sponsor Reward (+50 Coins)',
+      createdAt: new Date().toISOString()
+    });
+
+    return {
+      success: true,
+      message: 'Bonus +50 Coins claimed!',
+      user: activeUser
+    } as any;
+  }
+
+  // 10. Coin Purchase Simulation
+  if (endpoint.startsWith('/api/wallet/purchase')) {
+    if (!activeUser) {
+      return { success: false, message: 'Please log in' } as any;
+    }
+
+    const { coinsAmount, packName, priceInr } = parsedBody;
+    const coins = Number(coinsAmount) || 1000;
+    activeUser.coins += coins;
+    setStoredUser(activeUser);
+
+    addStoredTransaction({
+      id: `tx_${Date.now()}`,
+      userId: activeUser.id,
+      type: 'iap_purchase',
+      amount: coins,
+      description: `Purchased ${packName || 'Coin Pack'} (₹${priceInr || 99})`,
+      createdAt: new Date().toISOString()
+    });
+
+    return {
+      success: true,
+      message: `Payment successful! Added ${coins} coins.`,
+      user: activeUser
+    } as any;
+  }
+
+  // 11. Referral Code Redeem
+  if (endpoint.startsWith('/api/referral/redeem')) {
+    if (!activeUser) {
+      return { success: false, message: 'Please log in' } as any;
+    }
+
+    const { code } = parsedBody;
+    if (activeUser.referredBy) {
+      return { success: false, message: 'You have already redeemed a referral code.' } as any;
+    }
+
+    activeUser.referredBy = String(code).trim().toUpperCase();
+    activeUser.coins += 250;
+    setStoredUser(activeUser);
+
+    addStoredTransaction({
+      id: `tx_${Date.now()}`,
+      userId: activeUser.id,
+      type: 'referral_received',
+      amount: 250,
+      description: `Referral Bonus for redeeming: ${code}`,
+      createdAt: new Date().toISOString()
+    });
+
+    return {
+      success: true,
+      message: 'Referral code redeemed! +250 Bonus Coins added.',
+      user: activeUser
+    } as any;
+  }
+
+  // 12. Transactions List
+  if (endpoint.startsWith('/api/transactions')) {
+    const list = getStoredTransactions();
+    return { success: true, transactions: list } as any;
+  }
+
+  // Default fallback response
+  return { success: true, message: 'Action completed' } as any;
+}

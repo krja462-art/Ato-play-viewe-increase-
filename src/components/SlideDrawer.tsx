@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { User } from '../types';
 import { usePWAInstall } from '../hooks/usePWAInstall';
+import { apiFetch } from '../lib/api';
 
 interface SlideDrawerProps {
   isOpen: boolean;
@@ -119,7 +120,7 @@ export const SlideDrawer: React.FC<SlideDrawerProps> = ({
     try {
       setRedeeming(true);
       setRedeemMessage(null);
-      const res = await fetch('/api/referral/redeem', {
+      const data = await apiFetch('/api/referral/redeem', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -128,8 +129,7 @@ export const SlideDrawer: React.FC<SlideDrawerProps> = ({
         body: JSON.stringify({ code: redeemInputCode.trim() })
       });
 
-      const data = await res.json();
-      if (data.success) {
+      if (data?.success) {
         setRedeemMessage({
           type: 'success',
           text: `Awesome! You received ${data.bonusCoins || 250} Coins welcome referral bonus!`
@@ -141,7 +141,7 @@ export const SlideDrawer: React.FC<SlideDrawerProps> = ({
       } else {
         setRedeemMessage({
           type: 'error',
-          text: data.message || 'Invalid or already redeemed referral code.'
+          text: data?.message || 'Invalid or already redeemed referral code.'
         });
       }
     } catch (err) {

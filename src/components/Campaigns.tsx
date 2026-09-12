@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Campaign, User, format4CharId } from '../types';
 import { Plus, MoreVertical, Clock, Trash2, Coins, AlertCircle, Sparkles, X, Video, ExternalLink, Check, Search } from 'lucide-react';
+import { apiFetch } from '../lib/api';
 
 interface CampaignsProps {
   user: User;
@@ -75,11 +76,10 @@ export const Campaigns: React.FC<CampaignsProps> = ({
   const fetchMyCampaigns = async () => {
     try {
       setLoading(true);
-      const res = await fetch('/api/campaigns?filter=my', {
+      const data = await apiFetch('/api/campaigns?filter=my', {
         headers: { 'x-user-id': user.id }
       });
-      const data = await res.json();
-      if (data.success) {
+      if (data?.success && Array.isArray(data.campaigns)) {
         setCampaigns(data.campaigns);
       }
     } catch (err) {
@@ -106,13 +106,10 @@ export const Campaigns: React.FC<CampaignsProps> = ({
     try {
       setFetchingPreview(true);
       setErrorMsg(null);
-      const res = await fetch(`/api/campaigns/extract-metadata?url=${encodeURIComponent(url)}`);
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success && data.metadata) {
-          setPreviewData(data.metadata);
-          setCustomTitle(data.metadata.title);
-        }
+      const data = await apiFetch(`/api/campaigns/extract-metadata?url=${encodeURIComponent(url)}`);
+      if (data?.success && data?.metadata) {
+        setPreviewData(data.metadata);
+        setCustomTitle(data.metadata.title);
       }
     } catch {
       // Silently continue with standard fallback
@@ -169,7 +166,7 @@ export const Campaigns: React.FC<CampaignsProps> = ({
 
     try {
       setSubmitting(true);
-      const res = await fetch('/api/campaigns', {
+      const data = await apiFetch('/api/campaigns', {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -183,18 +180,19 @@ export const Campaigns: React.FC<CampaignsProps> = ({
           thumbnailUrl: previewData?.thumbnailUrl
         })
       });
-      const data = await res.json();
 
-      if (data.success) {
+      if (data?.success) {
         setSuccessMsg('Campaign launched successfully! Your video is now visible in the watch feed.');
         setVideoUrl('');
         setPreviewData(null);
         setCustomTitle('');
         setIsModalOpen(false);
-        onCampaignCreated(data.user);
+        if (data.user) {
+          onCampaignCreated(data.user);
+        }
         fetchMyCampaigns();
       } else {
-        setErrorMsg(data.message || 'Failed to create campaign');
+        setErrorMsg(data?.message || 'Failed to create campaign');
       }
     } catch (err: any) {
       setErrorMsg(err.message || 'Error occurred while creating campaign');
@@ -207,13 +205,14 @@ export const Campaigns: React.FC<CampaignsProps> = ({
     if (!confirm('Are you sure you want to delete this campaign? Remaining views will be refunded.')) return;
 
     try {
-      const res = await fetch(`/api/campaigns/${id}`, { 
+      const data = await apiFetch(`/api/campaigns/${id}`, { 
         method: 'DELETE',
         headers: { 'x-user-id': user.id }
       });
-      const data = await res.json();
-      if (data.success) {
-        onCampaignCreated(data.user);
+      if (data?.success) {
+        if (data.user) {
+          onCampaignCreated(data.user);
+        }
         setCampaigns(campaigns.filter(c => c.id !== id));
       }
     } catch (err) {

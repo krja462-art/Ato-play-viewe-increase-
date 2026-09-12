@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Campaign, User } from '../types';
 import { Play, ShieldAlert, CheckCircle2, Coins, Clock, AlertTriangle, RotateCcw, ExternalLink } from 'lucide-react';
+import { apiFetch } from '../lib/api';
 
 interface WatchEarnProps {
   user: User;
@@ -24,9 +25,8 @@ export const WatchEarn: React.FC<WatchEarnProps> = ({ user, onCoinEarned }) => {
   const fetchCampaigns = async () => {
     try {
       setLoading(true);
-      const res = await fetch('/api/campaigns');
-      const data = await res.json();
-      if (data.success) {
+      const data = await apiFetch('/api/campaigns');
+      if (data?.success && Array.isArray(data.campaigns)) {
         setCampaigns(data.campaigns);
         if (data.campaigns.length > 0) {
           setTimeLeft(data.campaigns[0].durationSeconds || 45);
@@ -90,19 +90,23 @@ export const WatchEarn: React.FC<WatchEarnProps> = ({ user, onCoinEarned }) => {
     if (!currentCampaign) return;
     try {
       setVerifying(true);
-      const res = await fetch('/api/watch/verify', {
+      const data = await apiFetch('/api/watch/verify', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-user-id': user.id
+        },
         body: JSON.stringify({
           campaignId: currentCampaign.id,
           watchDuration: currentCampaign.durationSeconds,
           antiCheatToken: "token_verified_" + Date.now()
         })
       });
-      const data = await res.json();
-      if (data.success) {
-        onCoinEarned(data.user);
-        setEarnedPopup(data.earnedCoins);
+      if (data?.success) {
+        if (data.user) {
+          onCoinEarned(data.user);
+        }
+        setEarnedPopup(data.earnedCoins || data.coinsEarned || 10);
       }
     } catch (err) {
       console.error('Watch verification failed', err);
