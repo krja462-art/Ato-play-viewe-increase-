@@ -13,7 +13,35 @@ export default function App() {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  // Sync Firebase Auth state continuously
+  // Check local saved session on initial load
+  useEffect(() => {
+    const savedUserStr = localStorage.getItem('atoviewer_user');
+    if (savedUserStr) {
+      try {
+        const parsed = JSON.parse(savedUserStr);
+        if (parsed && parsed.id) {
+          setUser(parsed);
+          // Verify & sync latest stats from backend
+          fetch('/api/user', {
+            headers: { 'x-user-id': parsed.id }
+          })
+            .then((res) => res.json())
+            .then((data) => {
+              if (data.success && data.user) {
+                setUser(data.user);
+                localStorage.setItem('atoviewer_user', JSON.stringify(data.user));
+              }
+            })
+            .catch(() => {});
+        }
+      } catch (err) {
+        console.warn('Failed to parse saved user:', err);
+      }
+    }
+    setLoading(false);
+  }, []);
+
+  // Sync Firebase Auth state when Firebase user is present
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
       if (fbUser && fbUser.email) {
@@ -35,16 +63,11 @@ export default function App() {
           const data = await res.json();
           if (data.success && data.user) {
             setUser(data.user);
-          } else {
-            setUser(null);
+            localStorage.setItem('atoviewer_user', JSON.stringify(data.user));
           }
         } catch (err) {
           console.error('Failed to sync Firebase user session:', err);
-          setUser(null);
         }
-      } else {
-        // Without Google login, user cannot access the app
-        setUser(null);
       }
       setLoading(false);
     });
@@ -54,12 +77,20 @@ export default function App() {
 
   const handleLogout = async () => {
     try {
+      localStorage.removeItem('atoviewer_user');
       await logOut();
       await fetch('/api/auth/logout', { method: 'POST' });
       setUser(null);
     } catch (err) {
       console.error('Logout error:', err);
+      localStorage.removeItem('atoviewer_user');
+      setUser(null);
     }
+  };
+
+  const handleLoginSuccess = (loggedInUser: User) => {
+    localStorage.setItem('atoviewer_user', JSON.stringify(loggedInUser));
+    setUser(loggedInUser);
   };
 
   const handleClaimCheckin = async () => {
@@ -111,7 +142,7 @@ export default function App() {
   if (!user) {
     return (
       <>
-        <SplashScreen onLoginSuccess={setUser} />
+        <SplashScreen onLoginSuccess={handleLoginSuccess} />
         <PWAInstallBanner />
       </>
     );

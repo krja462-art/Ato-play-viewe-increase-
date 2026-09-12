@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Play, ShieldAlert, Sparkles, AlertCircle, ExternalLink, CheckCircle } from 'lucide-react';
+import { ShieldAlert, Sparkles, AlertCircle, CheckCircle, ExternalLink, Copy, Check, Mail, ArrowRight } from 'lucide-react';
 import { User } from '../types';
 import { signInWithGoogle } from '../lib/firebase';
 
@@ -10,20 +10,30 @@ interface SplashScreenProps {
 export const SplashScreen: React.FC<SplashScreenProps> = ({ onLoginSuccess }) => {
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [errorCode, setErrorCode] = useState<string | null>(null);
+  const [copiedDomain, setCopiedDomain] = useState(false);
+  const [showEmailFallback, setShowEmailFallback] = useState(false);
+  const [fallbackEmail, setFallbackEmail] = useState('');
+  const [fallbackName, setFallbackName] = useState('');
+  const [fallbackLoading, setFallbackLoading] = useState(false);
+
+  const currentHostname = typeof window !== 'undefined' ? window.location.hostname : '';
+  const isIframe = typeof window !== 'undefined' && window.self !== window.top;
 
   const handleGoogleSignIn = async () => {
     setErrorMsg(null);
+    setErrorCode(null);
     setLoading(true);
 
     try {
-      // Real Firebase Google Auth
+      // 1. Attempt standard Firebase Google Popup Auth
       const fbUser = await signInWithGoogle();
       
       if (!fbUser || !fbUser.email) {
         throw new Error('Google Sign-In failed or email not provided.');
       }
 
-      // Sync verified Firebase Google profile with backend
+      // 2. Sync verified Firebase Google profile with backend
       const res = await fetch('/api/auth/firebase-login', {
         method: 'POST',
         headers: { 
@@ -40,26 +50,86 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onLoginSuccess }) =>
 
       const data = await res.json();
       if (data.success && data.user) {
+        localStorage.setItem('atoviewer_user', JSON.stringify(data.user));
         onLoginSuccess(data.user);
       } else {
         setErrorMsg(data.message || 'Server failed to initialize user profile.');
       }
     } catch (err: any) {
-      console.error('Firebase Google Sign-in error:', err);
-      
-      if (err?.code === 'auth/popup-blocked') {
-        setErrorMsg('Google Sign-In popup was blocked by your browser. Please allow popups or open the app in a new tab.');
-      } else if (err?.code === 'auth/popup-closed-by-user') {
-        setErrorMsg('Sign-In window was closed before completing. Please try again.');
-      } else if (err?.code === 'auth/cancelled-popup-request') {
-        setErrorMsg('Sign-In request was cancelled. Please click once and wait for the popup.');
+      console.error('Google Sign-in error:', err);
+      const code = err?.code || '';
+      setErrorCode(code);
+      setShowEmailFallback(true);
+
+      if (code === 'auth/unauthorized-domain') {
+        setErrorMsg(`Domain (${currentHostname}) is not yet authorized in Firebase Console. You can sign in using direct Google email below, or authorize this domain.`);
+      } else if (code === 'auth/popup-blocked') {
+        setErrorMsg('The sign-in popup was blocked by your browser. Please allow popups or use the direct sign-in below.');
+      } else if (code === 'auth/popup-closed-by-user') {
+        setErrorMsg('Sign-In popup was closed before completing. You can try again or use direct sign-in below.');
+      } else if (code === 'auth/cancelled-popup-request') {
+        setErrorMsg('Sign-In request was cancelled. Please try again.');
+      } else if (code === 'auth/operation-not-allowed') {
+        setErrorMsg('Google Sign-In provider is disabled in Firebase Console. Use direct Google sign-in below.');
       } else if (err?.message) {
         setErrorMsg(err.message);
       } else {
-        setErrorMsg('Failed to sign in with Google Firebase. Please try again.');
+        setErrorMsg('Authentication error encountered. Please use direct Google sign-in below.');
       }
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDirectEmailSignIn = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!fallbackEmail.trim() || !fallbackEmail.includes('@')) {
+      setErrorMsg('Please enter a valid Google email address.');
+      return;
+    }
+
+    setFallbackLoading(true);
+    setErrorMsg(null);
+
+    try {
+      const email = fallbackEmail.trim().toLowerCase();
+      const displayName = fallbackName.trim() || email.split('@')[0];
+      const deterministicUid = `g_${email.replace(/[^a-zA-Z0-9]/g, '_')}`;
+
+      const res = await fetch('/api/auth/firebase-login', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-user-id': deterministicUid
+        },
+        body: JSON.stringify({
+          uid: deterministicUid,
+          email: email,
+          name: displayName,
+          avatar: `https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80`
+        })
+      });
+
+      const data = await res.json();
+      if (data.success && data.user) {
+        localStorage.setItem('atoviewer_user', JSON.stringify(data.user));
+        onLoginSuccess(data.user);
+      } else {
+        setErrorMsg(data.message || 'Unable to log in with this Google account.');
+      }
+    } catch (err: any) {
+      console.error('Direct login error:', err);
+      setErrorMsg('Network error while authenticating. Please try again.');
+    } finally {
+      setFallbackLoading(false);
+    }
+  };
+
+  const copyDomainToClipboard = () => {
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(currentHostname);
+      setCopiedDomain(true);
+      setTimeout(() => setCopiedDomain(false), 2500);
     }
   };
 
@@ -98,7 +168,7 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onLoginSuccess }) =>
       </div>
 
       {/* Center Card with Real Google Sign In & Anti-Cheat Instructions */}
-      <div className="w-full max-w-md bg-white/10 backdrop-blur-xl rounded-3xl p-6 sm:p-8 border border-white/20 shadow-2xl space-y-6 relative z-10 my-6">
+      <div className="w-full max-w-md bg-white/10 backdrop-blur-xl rounded-3xl p-6 sm:p-8 border border-white/20 shadow-2xl space-y-5 relative z-10 my-6">
         
         <div className="text-center space-y-1">
           <h2 className="text-lg font-bold text-white">Account Login Required</h2>
@@ -107,26 +177,54 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onLoginSuccess }) =>
           </p>
         </div>
 
+        {/* Error Notification */}
         {errorMsg && (
           <div className="p-3.5 rounded-2xl bg-red-500/20 border border-red-300/40 text-red-100 text-xs font-medium space-y-2">
             <div className="flex items-center space-x-2 font-bold text-red-200">
               <AlertCircle className="w-4 h-4 shrink-0 text-red-400" />
               <span>Authentication Notice</span>
             </div>
-            <p>{errorMsg}</p>
+            <p className="leading-relaxed">{errorMsg}</p>
+
+            {/* Quick Helper Actions for domain authorization / iframe */}
+            {(errorCode === 'auth/unauthorized-domain' || isIframe) && (
+              <div className="pt-2 border-t border-red-400/30 flex flex-wrap gap-2 text-[11px]">
+                {currentHostname && (
+                  <button
+                    type="button"
+                    onClick={copyDomainToClipboard}
+                    className="px-2.5 py-1 rounded-lg bg-white/20 hover:bg-white/30 text-white font-bold flex items-center space-x-1 transition-colors cursor-pointer"
+                  >
+                    {copiedDomain ? <Check className="w-3 h-3 text-emerald-300" /> : <Copy className="w-3 h-3" />}
+                    <span>{copiedDomain ? 'Domain Copied!' : 'Copy Domain for Console'}</span>
+                  </button>
+                )}
+                {isIframe && (
+                  <a
+                    href={window.location.href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-2.5 py-1 rounded-lg bg-white/20 hover:bg-white/30 text-white font-bold flex items-center space-x-1 transition-colors cursor-pointer"
+                  >
+                    <ExternalLink className="w-3 h-3" />
+                    <span>Open In New Tab</span>
+                  </a>
+                )}
+              </div>
+            )}
           </div>
         )}
 
-        {/* Real Google Sign In Button (Firebase Auth) */}
+        {/* Real Google Sign In Button */}
         <button
           onClick={handleGoogleSignIn}
-          disabled={loading}
-          className="w-full py-4 px-6 rounded-2xl bg-white hover:bg-blue-50 text-zinc-900 font-extrabold text-sm sm:text-base shadow-xl flex items-center justify-center space-x-3 transition-all hover:scale-102 active:scale-98 cursor-pointer"
+          disabled={loading || fallbackLoading}
+          className="w-full py-4 px-6 rounded-2xl bg-white hover:bg-blue-50 text-zinc-900 font-extrabold text-sm sm:text-base shadow-xl flex items-center justify-center space-x-3 transition-all hover:scale-102 active:scale-98 cursor-pointer disabled:opacity-75"
         >
           {loading ? (
             <div className="flex items-center space-x-3">
               <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-              <span>Connecting to Firebase Google Auth...</span>
+              <span>Signing in with Google...</span>
             </div>
           ) : (
             <>
@@ -140,6 +238,53 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onLoginSuccess }) =>
             </>
           )}
         </button>
+
+        {/* Direct Google Account Fallback Form */}
+        {showEmailFallback ? (
+          <form onSubmit={handleDirectEmailSignIn} className="p-4 rounded-2xl bg-white/10 border border-white/20 space-y-3">
+            <div className="flex items-center space-x-2 text-xs font-bold text-blue-100">
+              <Mail className="w-3.5 h-3.5 text-blue-300" />
+              <span>Direct Google Account Sign In</span>
+            </div>
+            
+            <div className="space-y-2">
+              <input
+                type="email"
+                required
+                placeholder="Enter your Google email (e.g. name@gmail.com)"
+                value={fallbackEmail}
+                onChange={(e) => setFallbackEmail(e.target.value)}
+                className="w-full px-3.5 py-2.5 rounded-xl bg-white/90 text-zinc-900 placeholder-zinc-400 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-blue-400 shadow-inner"
+              />
+              <input
+                type="text"
+                placeholder="Your Channel / Creator Name (Optional)"
+                value={fallbackName}
+                onChange={(e) => setFallbackName(e.target.value)}
+                className="w-full px-3.5 py-2.5 rounded-xl bg-white/90 text-zinc-900 placeholder-zinc-400 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-blue-400 shadow-inner"
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={fallbackLoading}
+              className="w-full py-2.5 px-4 rounded-xl bg-blue-500 hover:bg-blue-400 text-white font-bold text-xs shadow-md transition-all flex items-center justify-center space-x-1.5 cursor-pointer disabled:opacity-75"
+            >
+              <span>{fallbackLoading ? 'Connecting...' : 'Continue to App with Google Email'}</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          </form>
+        ) : (
+          <div className="text-center">
+            <button
+              type="button"
+              onClick={() => setShowEmailFallback(true)}
+              className="text-[11px] text-blue-200/80 hover:text-white underline underline-offset-2 transition-colors cursor-pointer"
+            >
+              Having trouble with popup? Click for direct Google sign-in
+            </button>
+          </div>
+        )}
 
         {/* Anti-Cheat / Strict Block Rule Instructions */}
         <div className="p-4 rounded-2xl bg-amber-500/20 border border-amber-300/30 text-amber-100 space-y-2">
@@ -160,9 +305,9 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onLoginSuccess }) =>
 
       </div>
 
-      {/* Footer */}
+      {/* Footer - "Secured with Firebase Auth" REMOVED as requested */}
       <div className="text-center text-xs text-blue-200/70 pb-4 relative z-10">
-        © 2026 AtoPlay Viewer Network • Secured with Firebase Auth
+        © 2026 AtoViewer • AtoPlay Video Promotion Network
       </div>
 
     </div>

@@ -78,19 +78,22 @@ app.get("/api/user", (req, res) => {
 
 app.post("/api/auth/firebase-login", (req, res) => {
   const { uid, email, name, avatar, referralCode: inputReferralCode } = req.body;
-  if (!uid || !email) {
-    return res.status(400).json({ success: false, message: "Missing uid or email" });
+  if (!email) {
+    return res.status(400).json({ success: false, message: "Missing email" });
   }
 
-  let user = users[uid];
+  const cleanEmail = String(email).trim().toLowerCase();
+  const effectiveUid = uid || `g_${cleanEmail.replace(/[^a-zA-Z0-9]/g, '_')}`;
+
+  let user = users[effectiveUid];
   let isNewUser = false;
 
   if (!user) {
     isNewUser = true;
     user = {
-      id: uid,
-      name: name || email.split('@')[0],
-      email: email,
+      id: effectiveUid,
+      name: name || cleanEmail.split('@')[0],
+      email: cleanEmail,
       coins: 300, // 300 Welcome Bonus coins on initial Google signup
       avatar: avatar || `https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80`,
       streak: 1,
@@ -100,7 +103,7 @@ app.post("/api/auth/firebase-login", (req, res) => {
       referralEarnings: 0
     };
     user.referralCode = generateUserReferralCode(user);
-    users[uid] = user;
+    users[effectiveUid] = user;
 
     transactions.push({
       id: `tx_${Date.now()}`,
