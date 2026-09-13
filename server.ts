@@ -18,7 +18,46 @@ app.get(["/api/health", "/healthz"], (_req, res) => {
 const users: Record<string, User> = {};
 let currentSessionUser: User | null = null;
 
-let campaigns: Campaign[] = [];
+let campaigns: Campaign[] = [
+  {
+    id: "camp_starter_1",
+    userId: "creator_starter_1",
+    userName: "Creative AtoPlay Hub",
+    videoUrl: "https://atoplay.com/video/61f8d5c2-3b2b-4789-8581-c6727ce0388a",
+    title: "Jagannath cartoon animation video -14",
+    thumbnailUrl: "https://cdn.atoplay.in/atoplay-thumbnails/58d4d4aa-c235-48a1-8423-57fbeefa914e/thumbnails/61f8d5c2-3b2b-4789-8581-c6727ce0388a.webp",
+    viewsRequired: 20,
+    viewsCompleted: 6,
+    rewardPerView: 60,
+    targetViews: 20,
+    completedViews: 6,
+    durationSeconds: 60,
+    totalCoinsCost: 1600,
+    status: "active",
+    createdAt: new Date(Date.now() - 3600000).toISOString(),
+    displayId: "388A",
+    countryFlag: "🇮🇳"
+  },
+  {
+    id: "camp_starter_2",
+    userId: "creator_starter_2",
+    userName: "Tech & Coding Tutorials",
+    videoUrl: "https://atoplay.com/video/b509f6b9-ea16-43b9-a292-1c09930777fa",
+    title: "How to Build Modern Fast Web Apps",
+    thumbnailUrl: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80",
+    viewsRequired: 15,
+    viewsCompleted: 4,
+    rewardPerView: 60,
+    targetViews: 15,
+    completedViews: 4,
+    durationSeconds: 60,
+    totalCoinsCost: 1200,
+    status: "active",
+    createdAt: new Date(Date.now() - 7200000).toISOString(),
+    displayId: "77FA",
+    countryFlag: "🇮🇳"
+  }
+];
 
 // Track which campaigns each user has watched so they are permanently removed from their feed
 const userWatchedCampaigns: Record<string, Set<string>> = {};
@@ -94,7 +133,7 @@ app.post("/api/auth/firebase-login", (req, res) => {
       id: effectiveUid,
       name: name || cleanEmail.split('@')[0],
       email: cleanEmail,
-      coins: 300, // 300 Welcome Bonus coins on initial Google signup
+      coins: 100, // +100 Welcome Bonus coins on initial Google signup
       avatar: avatar || `https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80`,
       streak: 1,
       lastCheckIn: new Date().toISOString().split('T')[0],
@@ -109,8 +148,8 @@ app.post("/api/auth/firebase-login", (req, res) => {
       id: `tx_${Date.now()}`,
       userId: uid,
       type: "bonus_signup",
-      amount: 300,
-      description: "Welcome Bonus Coins on Google Signup",
+      amount: 100,
+      description: "Welcome Bonus Coins on Google Signup (+100 Coins)",
       createdAt: new Date().toISOString(),
     });
 
@@ -159,7 +198,7 @@ app.post("/api/auth/firebase-login", (req, res) => {
     success: true, 
     user, 
     isNewUser,
-    message: isNewUser ? "Welcome! 300 bonus coins added." : "Authenticated successfully with Google" 
+    message: isNewUser ? "Welcome! 100 bonus coins added." : "Authenticated successfully with Google" 
   });
 });
 
@@ -178,12 +217,14 @@ app.get("/api/campaigns", (req, res) => {
   }
 
   // Home feed:
-  // 1. Must be active and have remaining views (completedViews < targetViews)
-  // 2. Hide creator's own campaigns from their own home feed
-  // 3. Hide videos that this specific user has already watched and earned coins from
-  // 4. For all other users, campaign remains visible until its target views are reached
+  // 1. Must be active and have remaining views (viewsCompleted < viewsRequired)
+  // 2. Filter out creator's own campaigns from their own home feed (users cannot watch own videos)
+  // 3. Filter out videos that this specific user has already watched and earned coins from
+  // 4. For all other users, campaign remains visible until its required views are reached
   const queueCampaigns = campaigns.filter(c => {
-    if (c.status !== 'active' || c.completedViews >= c.targetViews) return false;
+    const reqViews = c.viewsRequired ?? c.targetViews ?? 10;
+    const compViews = c.viewsCompleted ?? c.completedViews ?? 0;
+    if (c.status !== 'active' || compViews >= reqViews) return false;
     if (activeUser) {
       // Don't show creator's own campaign in their home feed
       if (c.userId === activeUser.id) return false;
@@ -494,33 +535,29 @@ app.post("/api/campaigns", async (req, res) => {
     return res.status(401).json({ success: false, message: "Please log in with Google to create a campaign." });
   }
 
-  const { videoUrl, targetViews, durationSeconds, title: customTitle, thumbnailUrl: customThumbnail } = req.body;
+  const { videoUrl, targetViews, viewsRequired, durationSeconds, title: customTitle, thumbnailUrl: customThumbnail } = req.body;
   
-  if (!videoUrl || !targetViews) {
+  if (!videoUrl || (!targetViews && !viewsRequired)) {
     return res.status(400).json({ success: false, message: "Missing required campaign fields" });
   }
 
-  // Rule: Cannot create a new campaign until the first/current active campaign completes
-  const hasActiveCampaign = campaigns.some(c => 
-    c.userId === activeUser.id && 
-    c.status === 'active' && 
-    c.completedViews < c.targetViews
-  );
-
-  if (hasActiveCampaign) {
+  // Minimum Campaign: Minimum 10 views (800 coins required)
+  const views = Number(viewsRequired || targetViews) || 10;
+  if (views < 10) {
     return res.status(400).json({ 
       success: false, 
-      message: "You already have an active campaign running. You can only create a new campaign after your first campaign completes its target views." 
+      message: "Minimum campaign is 10 views (800 coins required)." 
     });
   }
 
-  const coinRate = 1;
-  const totalCost = Math.ceil(Number(targetViews) * coinRate);
+  // Campaign Creation Cost: 80 coins per view (60 coins reward for viewer + 20 coins platform fee)
+  const COST_PER_VIEW = 80;
+  const totalCost = views * COST_PER_VIEW;
 
   if (activeUser.coins < totalCost) {
     return res.status(400).json({ 
       success: false, 
-      message: `Insufficient coins! Required: ${totalCost} coins, Your Balance: ${activeUser.coins} coins.` 
+      message: "Insufficient coins! Watch more videos to earn." 
     });
   }
 
@@ -543,9 +580,12 @@ app.post("/api/campaigns", async (req, res) => {
     videoUrl,
     title: finalTitle,
     thumbnailUrl: finalThumbnail,
-    targetViews: Number(targetViews),
+    viewsRequired: views,
+    viewsCompleted: 0,
+    rewardPerView: 60,
+    targetViews: views,
     completedViews: 0,
-    durationSeconds: Number(durationSeconds) || 45,
+    durationSeconds: 60,
     totalCoinsCost: totalCost,
     status: "active",
     createdAt: new Date().toISOString(),
@@ -561,12 +601,17 @@ app.post("/api/campaigns", async (req, res) => {
     userId: activeUser.id,
     type: "spent_campaign",
     amount: -totalCost,
-    description: `Created campaign for "${newCampaign.title}" (${targetViews} views)`,
+    description: `Created campaign for "${newCampaign.title}" (${views} views @ 80 coins/view)`,
     createdAt: new Date().toISOString(),
   };
   transactions.unshift(tx);
 
-  res.json({ success: true, campaign: newCampaign, user: activeUser });
+  res.json({ 
+    success: true, 
+    campaign: newCampaign, 
+    user: activeUser,
+    message: `Campaign created successfully! ${totalCost} coins deducted.`
+  });
 });
 
 app.delete("/api/campaigns/:id", (req, res) => {
@@ -584,8 +629,10 @@ app.delete("/api/campaigns/:id", (req, res) => {
 
   const campaign = campaigns[campaignIndex];
   if (campaign.status === 'active') {
-    const remainingViews = campaign.targetViews - campaign.completedViews;
-    const coinRate = 1;
+    const reqViews = campaign.viewsRequired ?? campaign.targetViews ?? 10;
+    const compViews = campaign.viewsCompleted ?? campaign.completedViews ?? 0;
+    const remainingViews = Math.max(0, reqViews - compViews);
+    const coinRate = 80; // 80 coins per remaining view refund
     const refundAmount = Math.floor(remainingViews * coinRate);
     if (refundAmount > 0) {
       activeUser.coins += refundAmount;
@@ -594,7 +641,7 @@ app.delete("/api/campaigns/:id", (req, res) => {
         userId: activeUser.id,
         type: "refund_campaign",
         amount: refundAmount,
-        description: `Refund for deleted campaign (${remainingViews} views remaining)`,
+        description: `Refund for deleted campaign (${remainingViews} views remaining @ 80 coins/view)`,
         createdAt: new Date().toISOString(),
       });
     }
@@ -759,8 +806,8 @@ app.post("/api/watch/verify", (req, res) => {
   session.claimed = true;
   delete watchSessions[sessionId];
 
-  // Exactly 100 coins per video as requested
-  const earnedCoins = 100;
+  // Exactly 60 coins per 60 seconds watch as requested
+  const earnedCoins = 60;
 
   // Credit coins to viewer
   activeUser.coins += earnedCoins;
@@ -771,9 +818,13 @@ app.post("/api/watch/verify", (req, res) => {
   }
   userWatchedCampaigns[activeUser.id].add(campaignId);
 
-  // Increment campaign view
-  campaign.completedViews += 1;
-  if (campaign.completedViews >= campaign.targetViews) {
+  // Increment campaign viewsCompleted
+  const currentCompleted = (campaign.viewsCompleted ?? campaign.completedViews ?? 0) + 1;
+  campaign.viewsCompleted = currentCompleted;
+  campaign.completedViews = currentCompleted;
+
+  const requiredViews = campaign.viewsRequired ?? campaign.targetViews ?? 10;
+  if (campaign.viewsCompleted >= requiredViews) {
     campaign.status = "completed";
   }
 
@@ -783,7 +834,7 @@ app.post("/api/watch/verify", (req, res) => {
     userId: activeUser.id,
     type: "earned_watch",
     amount: earnedCoins,
-    description: `Watched AtoPlay video: "${campaign.title.substring(0, 30)}..."`,
+    description: `Watched AtoPlay video for 60s: "${campaign.title.substring(0, 30)}..." (+60 coins)`,
     createdAt: new Date().toISOString(),
   });
 
@@ -793,6 +844,8 @@ app.post("/api/watch/verify", (req, res) => {
     user: activeUser,
     campaign: {
       id: campaign.id,
+      viewsRequired: campaign.viewsRequired ?? campaign.targetViews,
+      viewsCompleted: campaign.viewsCompleted,
       completedViews: campaign.completedViews,
       targetViews: campaign.targetViews,
       status: campaign.status

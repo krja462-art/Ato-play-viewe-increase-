@@ -14,10 +14,12 @@ import {
   doc, 
   getDoc, 
   setDoc, 
-  updateDoc 
+  updateDoc,
+  deleteDoc,
+  increment
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
-import { User } from '../types';
+import { User, Campaign } from '../types';
 
 // Initialize Firebase App
 export const app = initializeApp(firebaseConfig);
@@ -75,7 +77,7 @@ export const logOut = async (): Promise<void> => {
 
 /**
  * Synchronize Google Firebase User profile with Cloud Firestore `/users/{uid}`
- * Loads saved coins and state if existing user, or awards 300 Welcome Bonus Coins if new user.
+ * Loads saved coins and state if existing user, or awards 100 Welcome Bonus Coins if new user.
  */
 export const syncFirebaseUserWithFirestore = async (fbUser: FirebaseUser): Promise<User> => {
   const userRef = doc(db, 'users', fbUser.uid);
@@ -91,7 +93,7 @@ export const syncFirebaseUserWithFirestore = async (fbUser: FirebaseUser): Promi
         id: fbUser.uid,
         name: data.name || fbUser.displayName || 'AtoPlay Creator',
         email: fbUser.email || data.email || '',
-        coins: typeof data.coins === 'number' ? data.coins : 300,
+        coins: typeof data.coins === 'number' ? data.coins : 100,
         avatar: fbUser.photoURL || data.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80',
         streak: typeof data.streak === 'number' ? data.streak : 1,
         lastCheckIn: data.lastCheckIn || today,
@@ -116,12 +118,12 @@ export const syncFirebaseUserWithFirestore = async (fbUser: FirebaseUser): Promi
     console.warn('Could not read user doc from Firestore, checking fallback:', readErr);
   }
 
-  // Create new user profile with 300 Bonus Coins
+  // Create new user profile with 100 Welcome Bonus Coins
   const newUser: User = {
     id: fbUser.uid,
     name: fbUser.displayName || (fbUser.email ? fbUser.email.split('@')[0] : 'AtoPlay Creator'),
     email: fbUser.email || '',
-    coins: 300, // 300 Free Welcome Bonus Coins
+    coins: 100, // +100 Free Welcome Bonus Coins on first login
     avatar: fbUser.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80',
     streak: 1,
     lastCheckIn: today,
@@ -144,11 +146,71 @@ export const syncFirebaseUserWithFirestore = async (fbUser: FirebaseUser): Promi
  * Update user coins in Cloud Firestore
  */
 export const saveUserCoinsToFirestore = async (userId: string, newCoins: number): Promise<void> => {
+  if (!userId || userId.startsWith('guest_')) return;
   try {
     const userRef = doc(db, 'users', userId);
     await updateDoc(userRef, { coins: newCoins });
   } catch (err) {
     console.warn('Error updating coins in Firestore:', err);
+  }
+};
+
+/**
+ * Save or sync a created campaign to Cloud Firestore
+ */
+export const saveCampaignToFirestore = async (campaign: Campaign): Promise<void> => {
+  if (!campaign || !campaign.id) return;
+  try {
+    const campRef = doc(db, 'campaigns', campaign.id);
+    await setDoc(campRef, {
+      ...campaign,
+      viewsRequired: campaign.viewsRequired ?? campaign.targetViews ?? 10,
+      viewsCompleted: campaign.viewsCompleted ?? campaign.completedViews ?? 0,
+      rewardPerView: campaign.rewardPerView ?? 60
+    });
+  } catch (err) {
+    console.warn('Error saving campaign to Firestore:', err);
+  }
+};
+
+/**
+ * Update completed views for a campaign in Cloud Firestore
+ */
+export const updateCampaignViewsInFirestore = async (
+  campaignId: string, 
+  newViewsCompleted?: number, 
+  isCompleted?: boolean
+): Promise<void> => {
+  if (!campaignId) return;
+  try {
+    const campRef = doc(db, 'campaigns', campaignId);
+    if (typeof newViewsCompleted === 'number') {
+      await updateDoc(campRef, { 
+        viewsCompleted: newViewsCompleted,
+        completedViews: newViewsCompleted,
+        status: isCompleted ? 'completed' : 'active'
+      });
+    } else {
+      await updateDoc(campRef, { 
+        viewsCompleted: increment(1),
+        completedViews: increment(1)
+      });
+    }
+  } catch (err) {
+    console.warn('Error updating campaign views in Firestore:', err);
+  }
+};
+
+/**
+ * Delete or refund campaign in Cloud Firestore
+ */
+export const deleteCampaignInFirestore = async (campaignId: string): Promise<void> => {
+  if (!campaignId) return;
+  try {
+    const campRef = doc(db, 'campaigns', campaignId);
+    await deleteDoc(campRef);
+  } catch (err) {
+    console.warn('Error deleting campaign from Firestore:', err);
   }
 };
 

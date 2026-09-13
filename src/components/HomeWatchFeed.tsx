@@ -4,6 +4,7 @@ import { Play, CheckCircle2, Clock, ArrowLeft, Video, ExternalLink, RefreshCw, A
 import { RewardPopupModal } from './RewardPopupModal';
 import { SessionExpiredModal } from './SessionExpiredModal';
 import { apiFetch } from '../lib/api';
+import { updateCampaignViewsInFirestore, saveUserCoinsToFirestore } from '../lib/firebase';
 
 interface HomeWatchFeedProps {
   user: User;
@@ -138,10 +139,13 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
       });
 
       if (data?.success) {
-        const earned = data.earnedCoins || data.coinsEarned || 10;
+        const earned = data.earnedCoins || data.coinsEarned || 60;
         if (data.user) {
+          saveUserCoinsToFirestore(data.user.id, data.user.coins).catch(e => console.warn('Firestore user coins sync error:', e));
           onCoinEarned(data.user);
         }
+        updateCampaignViewsInFirestore(cId).catch(e => console.warn('Firestore campaign view sync error:', e));
+
         setIsCompleted(true);
         setIsPlaying(false);
         setTimeLeft(0);
@@ -155,7 +159,7 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
         // Trigger celebratory Pop Notification modal
         setRewardData({
           earnedCoins: earned,
-          newBalance: data.user.coins,
+          newBalance: data.user?.coins ?? (user.coins + earned),
           campaign: camp
         });
         setShowRewardModal(true);
@@ -608,7 +612,7 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
             setSessionToken(null);
             fetchCampaigns();
           }}
-          earnedCoins={rewardData?.earnedCoins || 100}
+          earnedCoins={rewardData?.earnedCoins || 60}
           newBalance={rewardData?.newBalance || user.coins}
           campaign={rewardData?.campaign || selectedCampaign}
           onWatchNext={() => {
@@ -667,7 +671,7 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
             Active Campaign Videos
           </h2>
           <p className="text-xs text-zinc-500">
-            Watch any video for 60 seconds in external browser to earn 100 coins
+            Watch any video for 60 seconds in external browser to earn 60 coins
           </p>
         </div>
         <button
@@ -763,10 +767,10 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
                   <div className="flex items-center space-x-2">
                     <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-800 text-xs font-black">
                       <Coins className="w-3.5 h-3.5 text-amber-600 mr-1" />
-                      +100 Coins
+                      +60 Coins
                     </span>
                     <span className="text-xs text-zinc-500 font-semibold">
-                      {camp.completedViews}/{camp.targetViews} Views
+                      {camp.viewsCompleted ?? camp.completedViews ?? 0}/{camp.viewsRequired ?? camp.targetViews ?? 10} Views
                     </span>
                   </div>
 
@@ -801,7 +805,7 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
           setSessionToken(null);
           fetchCampaigns();
         }}
-        earnedCoins={rewardData?.earnedCoins || 100}
+        earnedCoins={rewardData?.earnedCoins || 60}
         newBalance={rewardData?.newBalance || user.coins}
         campaign={rewardData?.campaign || null}
         onWatchNext={() => {

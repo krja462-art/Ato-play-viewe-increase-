@@ -130,7 +130,7 @@ function handleClientFallback<T>(endpoint: string, options?: RequestInit, active
         id: effectiveUid,
         name: name || cleanEmail.split('@')[0],
         email: cleanEmail,
-        coins: 300, // 300 Welcome Bonus coins
+        coins: 100, // 100 Welcome Bonus coins on first login
         avatar: avatar || `https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80`,
         streak: 1,
         lastCheckIn: new Date().toISOString().split('T')[0],
@@ -144,8 +144,8 @@ function handleClientFallback<T>(endpoint: string, options?: RequestInit, active
         id: `tx_${Date.now()}`,
         userId: user.id,
         type: 'bonus_signup',
-        amount: 300,
-        description: 'Welcome Bonus Coins on Google Sign In',
+        amount: 100,
+        description: 'Welcome Bonus Coins on Google Sign In (+100 Coins)',
         createdAt: new Date().toISOString()
       });
     } else {
@@ -158,7 +158,7 @@ function handleClientFallback<T>(endpoint: string, options?: RequestInit, active
       success: true,
       user,
       isNewUser,
-      message: isNewUser ? 'Welcome! 300 bonus coins added.' : 'Signed in successfully with Google'
+      message: isNewUser ? 'Welcome! 100 bonus coins added.' : 'Signed in successfully with Google'
     } as any;
   }
 
@@ -186,10 +186,12 @@ function handleClientFallback<T>(endpoint: string, options?: RequestInit, active
       return { success: true, campaigns: myCampaigns } as any;
     }
 
-    // Home feed filter: active, remaining views, not created by user, not already watched by user
+    // Home feed filter: active, remaining views (viewsCompleted < viewsRequired), not created by user, not already watched by user
     const watched = activeUser ? getWatchedIds(activeUser.id) : new Set();
     const queue = allCampaigns.filter(c => {
-      if (c.status !== 'active' || c.completedViews >= c.targetViews) return false;
+      const reqViews = c.viewsRequired ?? c.targetViews ?? 10;
+      const compViews = c.viewsCompleted ?? c.completedViews ?? 0;
+      if (c.status !== 'active' || compViews >= reqViews) return false;
       if (activeUser && c.userId === activeUser.id) return false;
       if (activeUser && watched.has(c.id)) return false;
       return true;
@@ -204,13 +206,17 @@ function handleClientFallback<T>(endpoint: string, options?: RequestInit, active
       return { success: false, message: 'Please log in to create a campaign' } as any;
     }
 
-    const { videoUrl, targetViews, durationSeconds, title, thumbnailUrl } = parsedBody;
-    const views = Number(targetViews) || 10;
-    const duration = Number(durationSeconds) || 30;
-    const totalCost = views * 10;
+    const { videoUrl, targetViews, viewsRequired, title, thumbnailUrl } = parsedBody;
+    const views = Number(viewsRequired || targetViews) || 10;
+    if (views < 10) {
+      return { success: false, message: 'Minimum campaign is 10 views (800 coins required).' } as any;
+    }
+
+    // 80 coins per view (60 reward + 20 platform fee)
+    const totalCost = views * 80;
 
     if (activeUser.coins < totalCost) {
-      return { success: false, message: `Insufficient coins. You need ${totalCost} coins but have ${activeUser.coins}.` } as any;
+      return { success: false, message: 'Insufficient coins! Watch more videos to earn.' } as any;
     }
 
     // Deduct coins from user
@@ -222,7 +228,7 @@ function handleClientFallback<T>(endpoint: string, options?: RequestInit, active
       userId: activeUser.id,
       type: 'spent_campaign',
       amount: -totalCost,
-      description: `Created Promotion Campaign for: ${title || 'AtoPlay Video'} (${views} views)`,
+      description: `Created Promotion Campaign for: ${title || 'AtoPlay Video'} (${views} views @ 80 coins/view)`,
       createdAt: new Date().toISOString()
     });
 
@@ -234,9 +240,12 @@ function handleClientFallback<T>(endpoint: string, options?: RequestInit, active
       videoUrl: videoUrl.trim(),
       title: title || 'AtoPlay Video Promotion',
       thumbnailUrl: thumbnailUrl || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80',
+      viewsRequired: views,
+      viewsCompleted: 0,
+      rewardPerView: 60,
       targetViews: views,
       completedViews: 0,
-      durationSeconds: duration,
+      durationSeconds: 60,
       totalCoinsCost: totalCost,
       status: 'active',
       createdAt: new Date().toISOString()
@@ -265,7 +274,7 @@ function handleClientFallback<T>(endpoint: string, options?: RequestInit, active
       sessionId,
       sessionToken: token,
       campaignId,
-      durationSeconds: 30,
+      durationSeconds: 60,
       message: 'Watch timer initialized'
     } as any;
   }
@@ -277,7 +286,8 @@ function handleClientFallback<T>(endpoint: string, options?: RequestInit, active
     }
 
     const { campaignId } = parsedBody;
-    activeUser.coins += 10;
+    const earnedCoins = 60; // +60 coins for 60 seconds watch
+    activeUser.coins += earnedCoins;
     setStoredUser(activeUser);
 
     if (campaignId) {
@@ -286,8 +296,11 @@ function handleClientFallback<T>(endpoint: string, options?: RequestInit, active
       const currentCampaigns = getStoredCampaigns();
       const targetCamp = currentCampaigns.find(c => c.id === campaignId);
       if (targetCamp) {
-        targetCamp.completedViews = (targetCamp.completedViews || 0) + 1;
-        if (targetCamp.completedViews >= targetCamp.targetViews) {
+        const reqViews = targetCamp.viewsRequired ?? targetCamp.targetViews ?? 10;
+        const currentCompleted = (targetCamp.viewsCompleted ?? targetCamp.completedViews ?? 0) + 1;
+        targetCamp.viewsCompleted = currentCompleted;
+        targetCamp.completedViews = currentCompleted;
+        if (currentCompleted >= reqViews) {
           targetCamp.status = 'completed';
         }
         setStoredCampaigns(currentCampaigns);
@@ -298,17 +311,18 @@ function handleClientFallback<T>(endpoint: string, options?: RequestInit, active
       id: `tx_${Date.now()}`,
       userId: activeUser.id,
       type: 'earned_watch',
-      amount: 10,
-      description: 'Watched full video promotion reward (+10 Coins)',
+      amount: earnedCoins,
+      description: 'Watched full video for 60 seconds (+60 Coins)',
       createdAt: new Date().toISOString()
     });
 
     return {
       success: true,
-      coinsEarned: 10,
+      earnedCoins,
+      coinsEarned: earnedCoins,
       totalCoins: activeUser.coins,
       user: activeUser,
-      message: 'Congratulations! +10 Coins added to your wallet.'
+      message: 'Congratulations! +60 Coins added to your wallet.'
     } as any;
   }
 

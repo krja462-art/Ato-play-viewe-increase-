@@ -106,7 +106,7 @@ export const WatchEarn: React.FC<WatchEarnProps> = ({ user, onCoinEarned }) => {
         if (data.user) {
           onCoinEarned(data.user);
         }
-        setEarnedPopup(data.earnedCoins || data.coinsEarned || 10);
+        setEarnedPopup(data.earnedCoins || data.coinsEarned || 60);
       }
     } catch (err) {
       console.error('Watch verification failed', err);

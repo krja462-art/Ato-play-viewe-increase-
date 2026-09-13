@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Campaign, User, format4CharId } from '../types';
-import { Plus, MoreVertical, Clock, Trash2, Coins, AlertCircle, Sparkles, X, Video, ExternalLink, Check, Search } from 'lucide-react';
+import { Plus, MoreVertical, Clock, Trash2, Coins, AlertCircle, Sparkles, X, Video, ExternalLink, Check, Search, ShieldCheck } from 'lucide-react';
 import { apiFetch } from '../lib/api';
+import { saveCampaignToFirestore, deleteCampaignInFirestore, saveUserCoinsToFirestore } from '../lib/firebase';
 
 interface CampaignsProps {
   user: User;
@@ -39,7 +40,7 @@ export const Campaigns: React.FC<CampaignsProps> = ({
 
   // Form state
   const [videoUrl, setVideoUrl] = useState('');
-  const [targetViews, setTargetViews] = useState(100);
+  const [targetViews, setTargetViews] = useState(10); // Minimum 10 views (800 coins required)
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
@@ -55,7 +56,19 @@ export const Campaigns: React.FC<CampaignsProps> = ({
   const [customTitle, setCustomTitle] = useState('');
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  const totalCost = Number(targetViews);
+  // Coin Economics: 80 coins/view (60 reward + 20 fee)
+  const COST_PER_VIEW = 80;
+  const REWARD_PER_VIEW = 60;
+  const PLATFORM_FEE = 20;
+  const totalCost = Number(targetViews) * COST_PER_VIEW;
+
+  // View Presets
+  const VIEW_PRESETS = [
+    { views: 10, cost: 800 },
+    { views: 20, cost: 1600 },
+    { views: 50, cost: 4000 },
+    { views: 100, cost: 8000 }
+  ];
 
   // Helper to validate complete URL before requesting extraction
   const isValidVideoUrl = (url: string) => {
@@ -136,7 +149,7 @@ export const Campaigns: React.FC<CampaignsProps> = ({
   };
 
   const activeRunningCampaign = campaigns.find(
-    c => c.status === 'active' && c.completedViews < c.targetViews
+    c => c.status === 'active' && ((c.viewsCompleted ?? c.completedViews ?? 0) < (c.viewsRequired ?? c.targetViews ?? 10))
   );
 
   const handleCreateCampaign = async (e: React.FormEvent) => {
@@ -144,23 +157,26 @@ export const Campaigns: React.FC<CampaignsProps> = ({
     setErrorMsg(null);
     setSuccessMsg(null);
 
-    if (activeRunningCampaign) {
-      setErrorMsg(`You already have an active campaign running ("${activeRunningCampaign.title.substring(0, 30)}..."). Please wait until it completes its ${activeRunningCampaign.targetViews} views before creating a new one.`);
-      return;
-    }
-
     if (!videoUrl) {
       setErrorMsg('Please enter a valid AtoPlay video URL');
       return;
     }
 
-    if (targetViews > 1000) {
+    const views = Number(targetViews) || 10;
+    if (views < 10) {
+      setErrorMsg('Minimum campaign is 10 views (800 coins required).');
+      return;
+    }
+
+    if (views > 1000) {
       setErrorMsg('Maximum 1000 views allowed per campaign.');
       return;
     }
 
+    // Check if user's balance >= totalCost. If not, show alert: "Insufficient coins! Watch more videos to earn."
     if (user.coins < totalCost) {
-      setErrorMsg(`Insufficient coins! Required: ${totalCost} coins, Your Balance: ${user.coins} coins.`);
+      alert('Insufficient coins! Watch more videos to earn.');
+      setErrorMsg('Insufficient coins! Watch more videos to earn.');
       return;
     }
 
@@ -173,25 +189,39 @@ export const Campaigns: React.FC<CampaignsProps> = ({
           'x-user-id': user.id
         },
         body: JSON.stringify({
-          videoUrl,
-          targetViews,
-          durationSeconds: 45,
+          videoUrl: videoUrl.trim(),
+          targetViews: views,
+          viewsRequired: views,
+          rewardPerView: 60,
+          durationSeconds: 60,
           title: customTitle || previewData?.title,
           thumbnailUrl: previewData?.thumbnailUrl
         })
       });
 
       if (data?.success) {
-        setSuccessMsg('Campaign launched successfully! Your video is now visible in the watch feed.');
+        setSuccessMsg(`Campaign launched successfully! ${totalCost} coins deducted.`);
         setVideoUrl('');
         setPreviewData(null);
         setCustomTitle('');
         setIsModalOpen(false);
+
+        // Sync campaign to Firestore
+        if (data.campaign) {
+          saveCampaignToFirestore(data.campaign).catch(e => console.warn('Firestore campaign save error:', e));
+        }
+
+        // Deduct totalCost and sync coins
         if (data.user) {
+          saveUserCoinsToFirestore(data.user.id, data.user.coins).catch(e => console.warn('Firestore user coins error:', e));
           onCampaignCreated(data.user);
         }
+
         fetchMyCampaigns();
       } else {
+        if (data?.message?.includes('Insufficient coins')) {
+          alert('Insufficient coins! Watch more videos to earn.');
+        }
         setErrorMsg(data?.message || 'Failed to create campaign');
       }
     } catch (err: any) {
@@ -202,7 +232,7 @@ export const Campaigns: React.FC<CampaignsProps> = ({
   };
 
   const handleDeleteCampaign = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this campaign? Remaining views will be refunded.')) return;
+    if (!confirm('Are you sure you want to delete this campaign? Remaining views will be refunded at 80 coins/view.')) return;
 
     try {
       const data = await apiFetch(`/api/campaigns/${id}`, { 
@@ -210,7 +240,9 @@ export const Campaigns: React.FC<CampaignsProps> = ({
         headers: { 'x-user-id': user.id }
       });
       if (data?.success) {
+        deleteCampaignInFirestore(id).catch(e => console.warn('Firestore campaign delete error:', e));
         if (data.user) {
+          saveUserCoinsToFirestore(data.user.id, data.user.coins).catch(e => console.warn('Firestore user coins error:', e));
           onCampaignCreated(data.user);
         }
         setCampaigns(campaigns.filter(c => c.id !== id));
@@ -293,8 +325,10 @@ export const Campaigns: React.FC<CampaignsProps> = ({
       ) : (
         <div className="bg-white rounded-2xl border border-zinc-200 divide-y divide-zinc-100 shadow-sm overflow-hidden">
           {campaigns.map(camp => {
-            const progress = Math.min(100, Math.round((camp.completedViews / camp.targetViews) * 100));
-            const isCompleted = camp.completedViews >= camp.targetViews || camp.status === 'completed';
+            const reqViews = camp.viewsRequired ?? camp.targetViews ?? 10;
+            const compViews = camp.viewsCompleted ?? camp.completedViews ?? 0;
+            const progress = Math.min(100, Math.round((compViews / reqViews) * 100));
+            const isCompleted = compViews >= reqViews || camp.status === 'completed';
 
             return (
               <div key={camp.id} className="p-4 flex items-center space-x-4 relative hover:bg-zinc-50 transition-colors">
@@ -314,7 +348,7 @@ export const Campaigns: React.FC<CampaignsProps> = ({
                     }}
                     className="w-full h-full object-cover" 
                   />
-                  <div className="absolute bottom-1 right-1 px-1 py-0.5 rounded bg-black/80 text-white text-[9px] font-bold">
+                  <div className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-black/80 text-white text-[9px] font-bold">
                     60s
                   </div>
                 </div>
@@ -327,15 +361,19 @@ export const Campaigns: React.FC<CampaignsProps> = ({
                     </h3>
                   </div>
 
-                  <p className="text-xs text-zinc-500 font-mono">
-                    ID: <span className="font-extrabold text-zinc-700">{format4CharId(camp.displayId, camp.id)}</span>
-                  </p>
+                  <div className="flex items-center space-x-3 text-xs text-zinc-500 font-mono">
+                    <span>ID: <span className="font-extrabold text-zinc-700">{format4CharId(camp.displayId, camp.id)}</span></span>
+                    <span className="text-zinc-300">•</span>
+                    <span className="text-emerald-700 font-sans font-bold bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                      Reward: 60 Coins/view
+                    </span>
+                  </div>
 
                   <div className="space-y-1 pt-1">
                     <div className="flex items-center justify-between text-xs text-zinc-700 font-semibold">
                       <div className="flex items-center space-x-1.5">
                         <Clock className="w-3.5 h-3.5 text-blue-600" />
-                        <span>{camp.completedViews}/{camp.targetViews} {isCompleted ? 'views (Completed ✓)' : 'views'}</span>
+                        <span>{compViews}/{reqViews} {isCompleted ? 'views (Completed ✓)' : 'views'}</span>
                       </div>
                       <span className="text-[11px] text-zinc-400">{progress}%</span>
                     </div>
@@ -488,41 +526,91 @@ export const Campaigns: React.FC<CampaignsProps> = ({
                 </div>
               )}
 
-              {/* Views Selector (Max 1000 views) */}
-              <div className="space-y-2 pt-1">
+              {/* Number of views selector (presets + custom slider & input) */}
+              <div className="space-y-3 pt-1">
                 <div className="flex items-center justify-between">
-                  <label className="text-sm font-bold text-zinc-900">Desired Views (Max 1000)</label>
-                  <span className="text-base font-extrabold text-blue-600">{targetViews} Views</span>
+                  <label className="text-sm font-bold text-zinc-900">Number of Views</label>
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="number"
+                      min={10}
+                      max={1000}
+                      step={5}
+                      value={targetViews}
+                      onChange={e => setTargetViews(Math.max(10, Math.min(1000, Number(e.target.value) || 10)))}
+                      className="w-20 px-2.5 py-1 text-right font-extrabold text-blue-600 bg-white border border-zinc-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-600"
+                    />
+                    <span className="text-xs font-bold text-zinc-500">Views</span>
+                  </div>
+                </div>
+
+                {/* Preset Buttons */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {VIEW_PRESETS.map(preset => (
+                    <button
+                      key={preset.views}
+                      type="button"
+                      onClick={() => setTargetViews(preset.views)}
+                      className={`p-2.5 rounded-xl border text-center transition-all cursor-pointer ${
+                        targetViews === preset.views
+                          ? 'border-blue-600 bg-blue-50/80 text-blue-700 font-extrabold ring-1 ring-blue-600'
+                          : 'border-zinc-200 bg-white hover:bg-zinc-50 text-zinc-700 font-semibold'
+                      }`}
+                    >
+                      <div className="text-xs font-bold">{preset.views} Views</div>
+                      <div className="text-[11px] text-zinc-500">{preset.cost.toLocaleString()} coins</div>
+                    </button>
+                  ))}
                 </div>
                 
                 <input
                   type="range"
                   min={10}
                   max={1000}
-                  step={10}
+                  step={5}
                   value={targetViews}
                   onChange={e => setTargetViews(Number(e.target.value))}
                   className="w-full h-2 bg-zinc-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
                 />
 
                 <div className="flex justify-between text-[11px] text-zinc-400 font-semibold">
-                  <span>10 Views</span>
+                  <span>Min: 10 Views (800 coins)</span>
                   <span>500 Views</span>
-                  <span>1000 Views (Max)</span>
+                  <span>Max: 1000 Views</span>
                 </div>
               </div>
 
-              {/* Cost Summary Box */}
-              <div className="p-4 rounded-2xl bg-blue-50 border border-blue-200 flex items-center justify-between">
-                <div>
-                  <p className="text-[11px] text-blue-700 font-bold uppercase tracking-wider">Total Cost</p>
-                  <p className="text-sm font-bold text-zinc-900">{totalCost} Coins ({targetViews} views)</p>
+              {/* Total Cost Calculation (shown in real-time) */}
+              <div className="p-4 rounded-2xl bg-zinc-50 border border-zinc-200 space-y-2.5">
+                <div className="flex items-center justify-between text-xs font-semibold text-zinc-600">
+                  <span>Viewer Reward (60 coins × {targetViews} views)</span>
+                  <span className="font-bold text-zinc-900">{(targetViews * REWARD_PER_VIEW).toLocaleString()} Coins</span>
+                </div>
+                <div className="flex items-center justify-between text-xs font-semibold text-zinc-600">
+                  <span>Platform Fee (20 coins × {targetViews} views)</span>
+                  <span className="font-bold text-zinc-900">{(targetViews * PLATFORM_FEE).toLocaleString()} Coins</span>
+                </div>
+                <div className="h-px bg-zinc-200" />
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-[11px] text-blue-700 font-bold uppercase tracking-wider">Total Campaign Cost</p>
+                    <p className="text-base font-extrabold text-zinc-900">{totalCost.toLocaleString()} Coins</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-[11px] text-zinc-500 font-bold uppercase">Your Balance</p>
+                    <p className={`text-base font-extrabold ${user.coins >= totalCost ? 'text-emerald-600' : 'text-red-600'}`}>
+                      {user.coins.toLocaleString()} Coins
+                    </p>
+                  </div>
                 </div>
 
-                <div className="text-right">
-                  <p className="text-[11px] text-zinc-500">Your Balance</p>
-                  <p className="text-sm font-extrabold text-amber-600">{user.coins.toLocaleString()} Coins</p>
-                </div>
+                {/* Insufficient coins warning */}
+                {user.coins < totalCost && (
+                  <div className="p-2.5 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs font-bold flex items-center space-x-1.5">
+                    <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
+                    <span>Insufficient coins! Watch more videos to earn.</span>
+                  </div>
+                )}
               </div>
 
               <div className="flex space-x-3 pt-2">
@@ -535,16 +623,14 @@ export const Campaigns: React.FC<CampaignsProps> = ({
                 </button>
                 <button
                   type="submit"
-                  disabled={submitting || Boolean(activeRunningCampaign)}
-                  className={`flex-1 py-3.5 rounded-2xl font-bold text-sm shadow-lg transition-transform ${
-                    activeRunningCampaign
-                      ? 'bg-zinc-300 text-zinc-500 cursor-not-allowed shadow-none'
-                      : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-600/30 hover:scale-102 cursor-pointer disabled:opacity-50'
+                  disabled={submitting}
+                  className={`flex-1 py-3.5 rounded-2xl font-bold text-sm shadow-lg transition-transform cursor-pointer disabled:opacity-50 ${
+                    user.coins < totalCost
+                      ? 'bg-amber-600 hover:bg-amber-700 text-white shadow-amber-600/30'
+                      : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-600/30 hover:scale-102'
                   }`}
                 >
-                  {activeRunningCampaign 
-                    ? 'Active Campaign Running' 
-                    : (submitting ? 'Launching...' : `Launch (${totalCost} Coins)`)}
+                  {submitting ? 'Creating Campaign...' : `Promote / Submit (${totalCost.toLocaleString()} Coins)`}
                 </button>
               </div>
 

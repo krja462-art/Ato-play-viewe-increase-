@@ -16,15 +16,18 @@ export interface User {
 export interface Campaign {
   id: string;
   userId: string;
-  userName: string;
+  userName?: string;
   videoUrl: string;
   title: string;
   thumbnailUrl: string;
-  targetViews: number;
-  completedViews: number;
+  viewsRequired: number;
+  viewsCompleted: number;
+  rewardPerView: number;
+  targetViews: number; // compatible alias with viewsRequired
+  completedViews: number; // compatible alias with viewsCompleted
   durationSeconds: number;
   totalCoinsCost: number;
-  status: 'active' | 'completed' | 'paused';
+  status: 'active' | 'completed' | 'paused' | 'cancelled';
   createdAt: string;
   displayId?: string;
   countryFlag?: string;
