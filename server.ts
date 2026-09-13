@@ -494,6 +494,7 @@ app.post("/api/campaigns", async (req, res) => {
   };
 
   campaigns.unshift(newCampaign);
+  persistSitemapToDisk();
 
   const tx: Transaction = {
     id: `tx_${Date.now()}`,
@@ -540,6 +541,7 @@ app.delete("/api/campaigns/:id", (req, res) => {
   }
 
   campaigns.splice(campaignIndex, 1);
+  persistSitemapToDisk();
   res.json({ success: true, user: activeUser, message: "Campaign deleted and refund processed" });
 });
 
@@ -1010,6 +1012,103 @@ app.get("/sw.js", (_req, res) => {
   } else {
     res.status(404).send("// sw.js not found");
   }
+});
+
+// Helper to safely escape XML special characters
+function escapeXml(unsafe: string): string {
+  return (unsafe || '').replace(/[<>&'"]/g, (c) => {
+    switch (c) {
+      case '<': return '&lt;';
+      case '>': return '&gt;';
+      case '&': return '&amp;';
+      case '\'': return '&apos;';
+      case '"': return '&quot;';
+      default: return c;
+    }
+  });
+}
+
+// Generate Google Search Console & Google Video compliant Sitemap XML
+function buildSitemapXml(activeCampaigns: Campaign[]): string {
+  const baseUrl = "https://ato-play-viewe-increase.vercel.app";
+  const today = new Date().toISOString().split('T')[0];
+
+  const appPages = [
+    { path: "/", priority: "1.0", changefreq: "daily" },
+    { path: "/?tab=watch", priority: "0.9", changefreq: "hourly" },
+    { path: "/?tab=campaigns", priority: "0.9", changefreq: "daily" },
+    { path: "/?tab=wallet", priority: "0.8", changefreq: "daily" },
+    { path: "/?tab=referral", priority: "0.8", changefreq: "weekly" },
+    { path: "/?tab=privacy", priority: "0.5", changefreq: "monthly" }
+  ];
+
+  let xml = `<?xml version="1.0" encoding="UTF-8"?>\n`;
+  xml += `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"\n`;
+  xml += `        xmlns:video="http://www.google.com/schemas/sitemap-video/1.1"\n`;
+  xml += `        xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">\n`;
+
+  // App Pages
+  for (const page of appPages) {
+    xml += `  <url>\n`;
+    xml += `    <loc>${baseUrl}${page.path}</loc>\n`;
+    xml += `    <lastmod>${today}</lastmod>\n`;
+    xml += `    <changefreq>${page.changefreq}</changefreq>\n`;
+    xml += `    <priority>${page.priority}</priority>\n`;
+    xml += `  </url>\n`;
+  }
+
+  // Active Videos in the App
+  for (const camp of activeCampaigns) {
+    if (!camp || camp.status !== 'active') continue;
+    const campDate = camp.createdAt ? camp.createdAt.split('T')[0] : today;
+    xml += `  <url>\n`;
+    xml += `    <loc>${baseUrl}/?watch=${encodeURIComponent(camp.id)}</loc>\n`;
+    xml += `    <lastmod>${campDate}</lastmod>\n`;
+    xml += `    <changefreq>daily</changefreq>\n`;
+    xml += `    <priority>0.8</priority>\n`;
+    xml += `    <video:video>\n`;
+    xml += `      <video:thumbnail_loc>${escapeXml(camp.thumbnailUrl || `${baseUrl}/pwa-512x512.png`)}</video:thumbnail_loc>\n`;
+    xml += `      <video:title>${escapeXml(camp.title || 'AtoPlay Video Promotion')}</video:title>\n`;
+    xml += `      <video:description>${escapeXml((camp.title || 'AtoPlay Video') + ' - Watch for 60 seconds on AtoPlay and earn coins on AtoViewer')}</video:description>\n`;
+    xml += `      <video:player_loc allow_embed="yes">${escapeXml(camp.videoUrl)}</video:player_loc>\n`;
+    xml += `      <video:duration>${camp.durationSeconds || 60}</video:duration>\n`;
+    xml += `      <video:publication_date>${camp.createdAt || new Date().toISOString()}</video:publication_date>\n`;
+    xml += `      <video:family_friendly>yes</video:family_friendly>\n`;
+    xml += `    </video:video>\n`;
+    xml += `  </url>\n`;
+  }
+
+  xml += `</urlset>\n`;
+  return xml;
+}
+
+function persistSitemapToDisk(): void {
+  try {
+    const publicSitemap = path.join(process.cwd(), "public", "sitemap.xml");
+    fs.writeFileSync(publicSitemap, buildSitemapXml(campaigns), "utf-8");
+  } catch (err) {
+    console.warn("Could not write sitemap.xml to disk:", err);
+  }
+}
+
+// Robots.txt route for Googlebot and search crawlers
+app.get("/robots.txt", (_req, res) => {
+  res.setHeader("Content-Type", "text/plain; charset=utf-8");
+  res.setHeader("Cache-Control", "public, max-age=3600");
+  const robotsPath = path.join(process.cwd(), "public", "robots.txt");
+  if (fs.existsSync(robotsPath)) {
+    res.sendFile(robotsPath);
+  } else {
+    res.send(`# Robots.txt for AtoViewer\nUser-agent: *\nAllow: /\nDisallow: /api/\n\nSitemap: https://ato-play-viewe-increase.vercel.app/sitemap.xml\n`);
+  }
+});
+
+// Dynamic Sitemap.xml route for Google Search Console
+app.get("/sitemap.xml", (_req, res) => {
+  res.setHeader("Content-Type", "application/xml; charset=utf-8");
+  res.setHeader("Cache-Control", "public, max-age=3600");
+  const xml = buildSitemapXml(campaigns);
+  res.send(xml);
 });
 
 // Support Google Search Console HTML File Verification (e.g. google1234567890abcdef.html)

@@ -8,54 +8,8 @@ const STORAGE_KEYS = {
   CHECKIN_PREFIX: 'atoviewer_checkin_'
 };
 
-// Initial starter AtoPlay booster campaigns so home feed has videos immediately
-const SEED_CAMPAIGNS: Campaign[] = [
-  {
-    id: 'camp_init_1',
-    displayId: 'ATO1',
-    userId: 'system_creator_1',
-    userName: 'AtoPlay Official Tech',
-    videoUrl: 'https://atoplay.com/v/technology-future-2026',
-    title: 'Top 10 Emerging Tech Trends & AI Innovations 2026',
-    thumbnailUrl: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80',
-    targetViews: 200,
-    completedViews: 42,
-    durationSeconds: 45,
-    totalCoinsCost: 2000,
-    status: 'active',
-    createdAt: new Date().toISOString()
-  },
-  {
-    id: 'camp_init_2',
-    displayId: 'ATO2',
-    userId: 'system_creator_2',
-    userName: 'AtoPlay Gaming Hub',
-    videoUrl: 'https://atoplay.com/v/top-gaming-highlights-epic',
-    title: 'Epic Gaming Moments & Unreal Engine 5 Showcase',
-    thumbnailUrl: 'https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=800&q=80',
-    targetViews: 150,
-    completedViews: 68,
-    durationSeconds: 30,
-    totalCoinsCost: 1500,
-    status: 'active',
-    createdAt: new Date().toISOString()
-  },
-  {
-    id: 'camp_init_3',
-    displayId: 'ATO3',
-    userId: 'system_creator_3',
-    userName: 'AtoPlay Music Beats',
-    videoUrl: 'https://atoplay.com/v/lofi-chill-vibes-relaxing',
-    title: 'Lofi Chill Beats to Relax & Code to',
-    thumbnailUrl: 'https://images.unsplash.com/photo-1511512578047-dfb367046420?auto=format&fit=crop&w=800&q=80',
-    targetViews: 300,
-    completedViews: 110,
-    durationSeconds: 60,
-    totalCoinsCost: 3000,
-    status: 'active',
-    createdAt: new Date().toISOString()
-  }
-];
+// Empty initial list: Only real user-promoted videos will be displayed
+const SEED_CAMPAIGNS: Campaign[] = [];
 
 function getStoredUser(): User | null {
   try {
@@ -74,13 +28,17 @@ function getStoredCampaigns(): Campaign[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEYS.CAMPAIGNS);
     if (!raw) {
-      localStorage.setItem(STORAGE_KEYS.CAMPAIGNS, JSON.stringify(SEED_CAMPAIGNS));
-      return SEED_CAMPAIGNS;
+      return [];
     }
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) && parsed.length > 0 ? parsed : SEED_CAMPAIGNS;
+    if (Array.isArray(parsed)) {
+      // Filter out any leftover sample dummy campaigns
+      const realOnly = parsed.filter(c => c && !String(c.id).startsWith('camp_init_'));
+      return realOnly;
+    }
+    return [];
   } catch {
-    return SEED_CAMPAIGNS;
+    return [];
   }
 }
 
