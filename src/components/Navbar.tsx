@@ -29,12 +29,22 @@ export const Navbar: React.FC<NavbarProps> = ({
       <header className="sticky top-0 z-40 bg-white border-b border-zinc-200/90 shadow-xs">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           
-          {/* Brand Logo - Top Left (Text branding only, icon removed as requested) */}
-          <div className="flex items-center space-x-2 cursor-pointer select-none" onClick={() => setActiveTab('home')}>
-            <span className="font-black text-xl text-zinc-900 tracking-tight">AtoPlay</span>
-            <span className="text-[11px] px-2 py-0.5 rounded-full bg-blue-600 text-white font-black uppercase tracking-wider shadow-xs">
-              BOOSTER
-            </span>
+          {/* Brand Logo - Top Left with User's Uploaded Logo */}
+          <div className="flex items-center space-x-2.5 cursor-pointer select-none" onClick={() => setActiveTab('home')}>
+            <img
+              src="/icon.png"
+              alt="AtoPlay Booster Logo"
+              className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl object-contain shadow-xs border border-zinc-200/80"
+              onError={(e) => {
+                (e.currentTarget as HTMLImageElement).src = '/favicon.png';
+              }}
+            />
+            <div className="flex items-center space-x-1.5">
+              <span className="font-black text-lg sm:text-xl text-zinc-900 tracking-tight">AtoPlay</span>
+              <span className="text-[10px] sm:text-[11px] px-2 py-0.5 rounded-full bg-blue-600 text-white font-black uppercase tracking-wider shadow-xs">
+                BOOSTER
+              </span>
+            </div>
           </div>
 
           {/* Desktop Nav Links */}

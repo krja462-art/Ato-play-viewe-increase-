@@ -47,9 +47,9 @@ export const PWAInstallBanner: React.FC = () => {
           {/* App Icon + Information */}
           <div className="flex items-center space-x-3 min-w-0">
             <img
-              src="/pwa-192x192.png"
-              alt="AtoViewer Logo"
-              className="w-11 h-11 rounded-xl shadow-xs border border-zinc-100 object-cover shrink-0"
+              src="/icon.png"
+              alt="AtoPlay Booster Logo"
+              className="w-11 h-11 rounded-xl shadow-xs border border-zinc-100 object-contain shrink-0"
               onError={(e) => {
                 // Fallback to favicon if needed
                 (e.target as HTMLImageElement).src = '/favicon.png';
@@ -57,7 +57,7 @@ export const PWAInstallBanner: React.FC = () => {
             />
             <div className="min-w-0">
               <div className="flex items-center space-x-1.5">
-                <h4 className="font-extrabold text-sm text-zinc-900 truncate">AtoViewer</h4>
+                <h4 className="font-extrabold text-sm text-zinc-900 truncate">AtoPlay Booster</h4>
                 <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-800 font-black">
                   APP
                 </span>

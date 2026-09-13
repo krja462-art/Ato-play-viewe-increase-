@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Campaign, User, format4CharId } from '../types';
 import { Plus, MoreVertical, Clock, Trash2, Coins, AlertCircle, Sparkles, X, Video, ExternalLink, Check, Search, ShieldCheck } from 'lucide-react';
+import { AtoPlayBadge } from './AtoPlayBadge';
 import { apiFetch } from '../lib/api';
 import { saveCampaignToFirestore, deleteCampaignInFirestore, saveUserCoinsToFirestore } from '../lib/firebase';
 
@@ -337,6 +338,9 @@ export const Campaigns: React.FC<CampaignsProps> = ({
                 
                 {/* Stretched Thumbnail on left */}
                 <div className="w-28 sm:w-36 aspect-video rounded-xl bg-zinc-950 overflow-hidden shrink-0 border border-zinc-200 shadow-xs relative">
+                  {/* AtoPlay Official Video Thumbnail Badge */}
+                  <AtoPlayBadge size="sm" className="absolute top-1 left-1 z-10" />
+
                   <img 
                     src={camp.thumbnailUrl} 
                     alt={camp.title} 
@@ -500,6 +504,9 @@ export const Campaigns: React.FC<CampaignsProps> = ({
 
                   {/* Stretched Live Thumbnail */}
                   <div className="relative w-full aspect-video rounded-xl bg-zinc-950 overflow-hidden border border-zinc-200 shadow-xs">
+                    {/* AtoPlay Official Video Thumbnail Badge */}
+                    <AtoPlayBadge size="md" className="absolute top-2 left-2 z-10" />
+
                     <img 
                       src={previewData.thumbnailUrl} 
                       alt="Preview" 

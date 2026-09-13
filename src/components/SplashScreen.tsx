@@ -163,8 +163,8 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onLoginSuccess }) =>
       <div className="w-full max-w-md text-center pt-8 sm:pt-14 space-y-3 relative z-10">
         <div className="w-20 h-20 rounded-3xl bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center mx-auto shadow-2xl overflow-hidden p-2.5">
           <img
-            src="/pwa-192x192.png"
-            alt="AtoViewer"
+            src="/icon.png"
+            alt="AtoPlay Booster"
             className="w-full h-full object-contain drop-shadow-md"
             onError={(e) => {
               (e.target as HTMLImageElement).src = '/favicon.png';

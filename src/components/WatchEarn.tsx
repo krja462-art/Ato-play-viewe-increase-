@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Campaign, User } from '../types';
 import { Play, ShieldAlert, CheckCircle2, Coins, Clock, AlertTriangle, RotateCcw, ExternalLink } from 'lucide-react';
+import { AtoPlayBadge } from './AtoPlayBadge';
 import { apiFetch } from '../lib/api';
 
 interface WatchEarnProps {
@@ -199,6 +200,9 @@ export const WatchEarn: React.FC<WatchEarnProps> = ({ user, onCoinEarned }) => {
         
         {/* Simulated AtoPlay Video Stage */}
         <div className="relative aspect-video bg-zinc-950 flex flex-col items-center justify-center overflow-hidden group">
+          {/* AtoPlay Badge Overlay */}
+          <AtoPlayBadge size="md" className="absolute top-3 left-3 z-20 shadow-md" />
+
           <img 
             src={currentCampaign.thumbnailUrl} 
             alt={currentCampaign.title}

@@ -187,8 +187,15 @@ export const SlideDrawer: React.FC<SlideDrawerProps> = ({
             
             {/* Header bar with close button */}
             <div className="flex items-center justify-between pb-3 border-b border-zinc-100">
-              <div className="flex items-center space-x-2">
-                <Sparkles className="w-5 h-5 text-blue-600" />
+              <div className="flex items-center space-x-2.5">
+                <img
+                  src="/icon.png"
+                  alt="AtoPlay Booster"
+                  className="w-7 h-7 rounded-lg object-contain shadow-xs border border-zinc-200/80"
+                  onError={(e) => {
+                    (e.currentTarget as HTMLImageElement).src = '/favicon.png';
+                  }}
+                />
                 <h2 className="font-extrabold text-base text-zinc-900 tracking-tight">Account & Menu</h2>
               </div>
               <button
@@ -419,8 +426,9 @@ export const SlideDrawer: React.FC<SlideDrawerProps> = ({
               </button>
             )}
 
-            <div className="text-center text-[11px] text-zinc-400 font-medium">
-              AtoPlay Booster • Version 2.5.0
+            <div className="flex items-center justify-center space-x-1.5 text-[11px] text-zinc-400 font-medium">
+              <img src="/icon.png" alt="AtoPlay" className="w-4 h-4 rounded-xs object-contain opacity-80" />
+              <span>AtoPlay Booster • Version 2.5.0</span>
             </div>
           </div>
 

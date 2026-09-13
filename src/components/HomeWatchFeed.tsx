@@ -3,6 +3,7 @@ import { User, Campaign, format4CharId, ActiveWatchState } from '../types';
 import { Play, CheckCircle2, Clock, ArrowLeft, Video, ExternalLink, RefreshCw, Award, Coins, AlertCircle, ShieldCheck, Key } from 'lucide-react';
 import { RewardPopupModal } from './RewardPopupModal';
 import { SessionExpiredModal } from './SessionExpiredModal';
+import { AtoPlayBadge } from './AtoPlayBadge';
 import { apiFetch } from '../lib/api';
 import { updateCampaignViewsInFirestore, saveUserCoinsToFirestore } from '../lib/firebase';
 
@@ -458,6 +459,9 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
 
           {/* Real Video Thumbnail Banner */}
           <div className="relative w-full aspect-video sm:h-72 rounded-2xl overflow-hidden border border-zinc-200 shadow-md bg-zinc-950">
+            {/* AtoPlay Official Video Badge */}
+            <AtoPlayBadge size="md" className="absolute top-3 left-3 z-20 shadow-lg" />
+
             <img
               src={selectedCampaign.thumbnailUrl}
               alt={selectedCampaign.title}
@@ -721,6 +725,9 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
                 <div className="flex items-start space-x-3 sm:space-x-4">
                   {/* High Quality 16:9 Thumbnail */}
                   <div className="relative w-28 sm:w-36 aspect-video rounded-xl bg-zinc-950 overflow-hidden shrink-0 shadow-xs border border-zinc-200">
+                    {/* AtoPlay Official Video Thumbnail Badge */}
+                    <AtoPlayBadge size="sm" className="absolute top-1 left-1 z-10" />
+
                     <img
                       src={camp.thumbnailUrl}
                       alt={camp.title}
