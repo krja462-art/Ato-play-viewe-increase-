@@ -41,10 +41,10 @@ let campaigns: Campaign[] = [
   {
     id: "camp_starter_2",
     userId: "creator_starter_2",
-    userName: "Tech & Coding Tutorials",
-    videoUrl: "https://atoplay.com/video/b509f6b9-ea16-43b9-a292-1c09930777fa",
-    title: "How to Build Modern Fast Web Apps",
-    thumbnailUrl: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80",
+    userName: "Tapas creation",
+    videoUrl: "https://atoplay.com/video/b079eff5-e942-4d88-813d-6bc5a40d08e9",
+    title: "Nilakantha verni Episode -35",
+    thumbnailUrl: "https://cdn.atoplay.in/atoplay-thumbnails/58d4d4aa-c235-48a1-8423-57fbeefa914e/thumbnails/b079eff5-e942-4d88-813d-6bc5a40d08e9.webp",
     viewsRequired: 15,
     viewsCompleted: 4,
     rewardPerView: 60,
@@ -54,7 +54,7 @@ let campaigns: Campaign[] = [
     totalCoinsCost: 1200,
     status: "active",
     createdAt: new Date(Date.now() - 7200000).toISOString(),
-    displayId: "77FA",
+    displayId: "08E9",
     countryFlag: "🇮🇳"
   }
 ];
@@ -302,59 +302,68 @@ async function extractVideoMetadata(videoUrl: string) {
   let displayId = generate4CharId();
   let title = "AtoPlay Video Promotion";
   let thumbnailUrl = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=600&q=80";
+  let channelName = "AtoPlay Creator";
+  let durationSeconds = 60;
+  let durationText = "1:00";
+  let isRealVideo = false;
 
   try {
-    const trimmedUrl = videoUrl.trim();
-    const urlObj = new URL(trimmedUrl);
+    let trimmedUrl = (videoUrl || '').trim().replace(/^["']|["']$/g, '');
     
-    // Validate hostname format before attempting any network fetch
-    const hostname = urlObj.hostname;
+    // Check if user entered a bare UUID or 32-hex string directly
+    const directUuidMatch = trimmedUrl.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
+    const directHex32Match = trimmedUrl.match(/^[0-9a-f]{32}$/i);
+    if (directUuidMatch) {
+      trimmedUrl = `https://atoplay.com/video/${directUuidMatch[0]}`;
+    } else if (directHex32Match) {
+      const h = directHex32Match[0];
+      const formatted = `${h.slice(0,8)}-${h.slice(8,12)}-${h.slice(12,16)}-${h.slice(16,20)}-${h.slice(20,32)}`;
+      trimmedUrl = `https://atoplay.com/video/${formatted}`;
+    } else if (!trimmedUrl.startsWith('http://') && !trimmedUrl.startsWith('https://')) {
+      trimmedUrl = `https://${trimmedUrl}`;
+    }
+
+    const urlObj = new URL(trimmedUrl);
+    const hostname = urlObj.hostname.toLowerCase();
     const isValidHostname = /^[a-zA-Z0-9-]+(\.[a-zA-Z0-9-]+)*\.[a-zA-Z]{2,}$/.test(hostname) || hostname === 'localhost';
 
-    // Check for YouTube URLs (including shorts, youtu.be, etc.)
-    if (isValidHostname && (hostname.includes('youtube.com') || hostname.includes('youtu.be'))) {
+    // 1. Direct AtoPlay Official Platform API Integration
+    const isAtoPlay = isValidHostname && (hostname.includes('atoplay.com') || hostname.includes('atoplay.in'));
+    const uuidMatch = trimmedUrl.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i) ||
+                     trimmedUrl.match(/(?:video\/|player\/|v\/)([0-9a-f]{32})/i);
+
+    if (isAtoPlay || uuidMatch) {
       let videoId = '';
-      if (hostname.includes('youtu.be')) {
-        videoId = urlObj.pathname.slice(1).split('?')[0];
-      } else if (urlObj.pathname.includes('/shorts/')) {
-        const parts = urlObj.pathname.split('/shorts/');
-        videoId = parts[1]?.split('/')[0]?.split('?')[0] || '';
-      } else {
-        videoId = urlObj.searchParams.get('v') || '';
+      if (uuidMatch) {
+        if (uuidMatch[0].includes('-')) {
+          videoId = uuidMatch[0].toLowerCase();
+        } else {
+          const h = uuidMatch[1].toLowerCase();
+          videoId = `${h.slice(0,8)}-${h.slice(8,12)}-${h.slice(12,16)}-${h.slice(16,20)}-${h.slice(20,32)}`;
+        }
       }
 
       if (videoId) {
         displayId = generate4CharId(videoId);
-        thumbnailUrl = `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
         try {
-          const oembedRes = await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(trimmedUrl)}&format=json`);
-          if (oembedRes.ok) {
-            const data = await oembedRes.json();
-            if (data.title) {
-              title = decodeHtmlEntities(data.title);
-            }
-          }
-        } catch {
-          title = `YouTube Video (${videoId})`;
-        }
-        return { displayId, title, thumbnailUrl };
-      }
-    }
-
-    // Direct AtoPlay Official Platform API Integration
-    if (isValidHostname && (hostname.includes('atoplay.com') || hostname.includes('atoplay.in'))) {
-      try {
-        // 1. Check if URL contains an AtoPlay UUID video ID
-        const uuidMatch = trimmedUrl.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
-        if (uuidMatch) {
-          const videoId = uuidMatch[0];
-          displayId = generate4CharId(videoId);
-          const apiRes = await fetch(`https://api.atoplay.com/api/videos/v2/${videoId}`, {
+          // Probe endpoint 1: https://api.atoplay.com/api/videos/${videoId}
+          let apiRes = await fetch(`https://api.atoplay.com/api/videos/${videoId}`, {
             headers: {
               'Accept': 'application/json',
               'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
             }
           });
+
+          // Probe endpoint 2: fallback to /videos/v2/ if needed
+          if (!apiRes.ok) {
+            apiRes = await fetch(`https://api.atoplay.com/api/videos/v2/${videoId}`, {
+              headers: {
+                'Accept': 'application/json',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+              }
+            });
+          }
+
           if (apiRes.ok) {
             const vData = await apiRes.json();
             if (vData?.title) {
@@ -362,17 +371,34 @@ async function extractVideoMetadata(videoUrl: string) {
             }
             if (vData?.thumbnailUrl) {
               thumbnailUrl = vData.thumbnailUrl;
+              if (!thumbnailUrl.startsWith('http')) {
+                thumbnailUrl = `https://cdn.atoplay.in/${thumbnailUrl.replace(/^\//, '')}`;
+              }
             }
-            return { displayId, title, thumbnailUrl };
+            if (vData?.channel?.name || vData?.channelName) {
+              channelName = vData.channel?.name || vData.channelName;
+            }
+            if (vData?.durationSeconds || vData?.duration) {
+              durationSeconds = Number(vData.durationSeconds || vData.duration) || 60;
+              const mins = Math.floor(durationSeconds / 60);
+              const secs = durationSeconds % 60;
+              durationText = `${mins}:${secs.toString().padStart(2, '0')}`;
+            }
+            isRealVideo = true;
+            return { displayId, title, thumbnailUrl, channelName, durationSeconds, durationText, isRealVideo };
           }
+        } catch (atoErr) {
+          console.warn('AtoPlay direct API error:', atoErr);
         }
+      }
 
-        // 2. Check if URL contains slug or keyword in pathname
-        const pathSegments = urlObj.pathname.split('/').filter(Boolean);
-        const lastSegment = pathSegments.length > 0 ? pathSegments[pathSegments.length - 1] : '';
-        const searchKeywords = decodeURIComponent(lastSegment).replace(/[-_]/g, ' ').trim();
+      // If no UUID or API failed, check if URL contains slug or keyword
+      const pathSegments = urlObj.pathname.split('/').filter(Boolean);
+      const lastSegment = pathSegments.length > 0 ? pathSegments[pathSegments.length - 1] : '';
+      const searchKeywords = decodeURIComponent(lastSegment).replace(/[-_]/g, ' ').trim();
 
-        if (searchKeywords && searchKeywords !== 'video' && searchKeywords !== 'watch' && searchKeywords !== 'v') {
+      if (searchKeywords && searchKeywords !== 'video' && searchKeywords !== 'watch' && searchKeywords !== 'v') {
+        try {
           const searchRes = await fetch(`https://api.atoplay.com/api/search/search?query=${encodeURIComponent(searchKeywords)}&page=1&limit=5`, {
             headers: {
               'Accept': 'application/json',
@@ -388,21 +414,65 @@ async function extractVideoMetadata(videoUrl: string) {
               }
               if (bestMatch?.thumbnailUrl) {
                 thumbnailUrl = bestMatch.thumbnailUrl;
+                if (!thumbnailUrl.startsWith('http')) {
+                  thumbnailUrl = `https://cdn.atoplay.in/${thumbnailUrl.replace(/^\//, '')}`;
+                }
               }
               if (bestMatch?.id || bestMatch?.videoId) {
                 displayId = generate4CharId(bestMatch.id || bestMatch.videoId);
               }
-              return { displayId, title, thumbnailUrl };
+              if (bestMatch?.channel?.name || bestMatch?.channelName) {
+                channelName = bestMatch.channel?.name || bestMatch.channelName;
+              }
+              isRealVideo = true;
+              return { displayId, title, thumbnailUrl, channelName, durationSeconds, durationText, isRealVideo };
             }
           }
+        } catch {
+          // ignore search fallback
         }
-      } catch (atoErr) {
-        console.warn('AtoPlay API fetch fallback to scraper:', atoErr);
       }
     }
 
-    // For other video platforms or generic URLs:
-    // Extract display ID from URL path or query params (ensure 4 chars)
+    // 2. Check for YouTube URLs (including shorts, youtu.be, etc.)
+    if (isValidHostname && (hostname.includes('youtube.com') || hostname.includes('youtu.be'))) {
+      let videoId = '';
+      if (hostname.includes('youtu.be')) {
+        videoId = urlObj.pathname.slice(1).split('?')[0];
+      } else if (urlObj.pathname.includes('/shorts/')) {
+        const parts = urlObj.pathname.split('/shorts/');
+        videoId = parts[1]?.split('/')[0]?.split('?')[0] || '';
+      } else if (urlObj.pathname.includes('/embed/')) {
+        const parts = urlObj.pathname.split('/embed/');
+        videoId = parts[1]?.split('/')[0]?.split('?')[0] || '';
+      } else {
+        videoId = urlObj.searchParams.get('v') || '';
+      }
+
+      if (videoId) {
+        displayId = generate4CharId(videoId);
+        thumbnailUrl = `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
+        channelName = "YouTube Creator";
+        try {
+          const oembedRes = await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(trimmedUrl)}&format=json`);
+          if (oembedRes.ok) {
+            const data = await oembedRes.json();
+            if (data.title) {
+              title = decodeHtmlEntities(data.title);
+            }
+            if (data.author_name) {
+              channelName = data.author_name;
+            }
+          }
+        } catch {
+          title = `YouTube Video (${videoId})`;
+        }
+        isRealVideo = true;
+        return { displayId, title, thumbnailUrl, channelName, durationSeconds, durationText, isRealVideo };
+      }
+    }
+
+    // 3. For other video platforms or generic URLs:
     const vParam = urlObj.searchParams.get('v') || urlObj.searchParams.get('id') || urlObj.searchParams.get('video_id');
     if (vParam) {
       displayId = generate4CharId(vParam);
@@ -413,7 +483,7 @@ async function extractVideoMetadata(videoUrl: string) {
       }
     }
 
-    // Only attempt live network scrape if hostname is valid and has at least 2 path segments or a video query
+    // Attempt live network scrape for OpenGraph/Twitter/HTML tags
     if (isValidHostname && (urlObj.pathname.length > 1 || urlObj.search.length > 1)) {
       try {
         const controller = new AbortController();
@@ -434,7 +504,7 @@ async function extractVideoMetadata(videoUrl: string) {
         if (res.ok) {
           const html = await res.text();
 
-          // 1. Scrape Title: check og:title, twitter:title, meta name=title, <title>, or JSON-LD
+          // 1. Scrape Title
           const ogTitleMatch = html.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)["']/i) ||
                                html.match(/<meta[^>]*content=["']([^"']+)["'][^>]*property=["']og:title["']/i) ||
                                html.match(/<meta[^>]*name=["']twitter:title["'][^>]*content=["']([^"']+)["']/i) ||
@@ -443,6 +513,7 @@ async function extractVideoMetadata(videoUrl: string) {
 
           if (ogTitleMatch && ogTitleMatch[1]) {
             title = decodeHtmlEntities(ogTitleMatch[1]);
+            isRealVideo = true;
           } else {
             const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
             if (titleMatch && titleMatch[1]) {
@@ -450,7 +521,6 @@ async function extractVideoMetadata(videoUrl: string) {
             }
           }
 
-          // Clean up common suffix
           title = title
             .replace(/\s*\|\s*AtoPlay.*$/i, '')
             .replace(/\s*-\s*AtoPlay.*$/i, '')
@@ -458,7 +528,7 @@ async function extractVideoMetadata(videoUrl: string) {
             .replace(/\s*-\s*YouTube.*$/i, '')
             .trim();
 
-          // 2. Scrape Thumbnail: check og:image, og:image:secure_url, twitter:image, video poster, link rel="image_src", JSON-LD
+          // 2. Scrape Thumbnail
           const ogImageMatch = html.match(/<meta[^>]*property=["']og:image(?::secure_url)?["'][^>]*content=["']([^"']+)["']/i) ||
                                html.match(/<meta[^>]*content=["']([^"']+)["'][^>]*property=["']og:image(?::secure_url)?["']/i) ||
                                html.match(/<meta[^>]*name=["']twitter:image(?::src)?["'][^>]*content=["']([^"']+)["']/i) ||
@@ -470,11 +540,11 @@ async function extractVideoMetadata(videoUrl: string) {
             let rawImg = ogImageMatch[1].trim();
             try {
               thumbnailUrl = new URL(rawImg, trimmedUrl).href;
+              isRealVideo = true;
             } catch {
               thumbnailUrl = rawImg;
             }
           } else {
-            // Check for JSON-LD structured data or Next.js state
             const jsonLdMatch = html.match(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/i);
             if (jsonLdMatch && jsonLdMatch[1]) {
               try {
@@ -482,27 +552,16 @@ async function extractVideoMetadata(videoUrl: string) {
                 const item = Array.isArray(parsed) ? parsed[0] : parsed;
                 if (item.thumbnailUrl) {
                   thumbnailUrl = Array.isArray(item.thumbnailUrl) ? item.thumbnailUrl[0] : item.thumbnailUrl;
+                  isRealVideo = true;
                 } else if (item.image) {
                   thumbnailUrl = typeof item.image === 'string' ? item.image : (item.image.url || thumbnailUrl);
+                  isRealVideo = true;
                 }
                 if (item.name && title === "AtoPlay Video Promotion") {
                   title = decodeHtmlEntities(item.name);
                 }
               } catch {
                 // ignore json parse error
-              }
-            }
-
-            // Check for image tags with thumbnail/poster in class or id or atoplay video thumb
-            if (thumbnailUrl.includes('unsplash.com')) {
-              const imgTagMatch = html.match(/<img[^>]+(?:class|id)=["'][^"']*(?:thumb|poster|video-img)[^"']*["'][^>]+src=["']([^"']+)["']/i) ||
-                                  html.match(/<img[^>]+src=["']([^"']+(?:thumb|poster|\/uploads\/videos\/)[^"']*)["']/i);
-              if (imgTagMatch && imgTagMatch[1]) {
-                try {
-                  thumbnailUrl = new URL(imgTagMatch[1], trimmedUrl).href;
-                } catch {
-                  thumbnailUrl = imgTagMatch[1];
-                }
               }
             }
           }
@@ -530,11 +589,9 @@ async function extractVideoMetadata(videoUrl: string) {
     // If thumbnail still not found, select a high-resolution video-styled card
     if (thumbnailUrl.includes('unsplash.com')) {
       const thumbs = [
-        "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80",
-        "https://images.unsplash.com/photo-1538481199705-c710c4e965fc?auto=format&fit=crop&w=800&q=80",
-        "https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=800&q=80",
-        "https://images.unsplash.com/photo-1511512578047-dfb367046420?auto=format&fit=crop&w=800&q=80",
-        "https://images.unsplash.com/photo-1574717024653-61fd2cf4d44d?auto=format&fit=crop&w=800&q=80"
+        "https://cdn.atoplay.in/atoplay-thumbnails/58d4d4aa-c235-48a1-8423-57fbeefa914e/thumbnails/61f8d5c2-3b2b-4789-8581-c6727ce0388a.webp",
+        "https://cdn.atoplay.in/atoplay-thumbnails/58d4d4aa-c235-48a1-8423-57fbeefa914e/thumbnails/b079eff5-e942-4d88-813d-6bc5a40d08e9.webp",
+        "https://cdn.atoplay.in/atoplay-thumbnails/58d4d4aa-c235-48a1-8423-57fbeefa914e/thumbnails/12093053-ff39-4dd8-9c1f-a1a801b54b28.webp"
       ];
       const hash = displayId.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
       thumbnailUrl = thumbs[hash % thumbs.length];
@@ -544,7 +601,7 @@ async function extractVideoMetadata(videoUrl: string) {
     title = `AtoPlay Video #${displayId}`;
   }
 
-  return { displayId, title, thumbnailUrl };
+  return { displayId, title, thumbnailUrl, channelName, durationSeconds, durationText, isRealVideo };
 }
 
 // Route to live-extract metadata for preview in frontend
@@ -629,7 +686,9 @@ app.post("/api/campaigns", async (req, res) => {
     status: "active",
     createdAt: new Date().toISOString(),
     displayId: generate4CharId(metadata.displayId),
-    countryFlag: "🇮🇳"
+    countryFlag: "🇮🇳",
+    channelName: metadata.channelName || activeUser.name,
+    durationText: metadata.durationText || "1:00"
   };
 
   campaigns.unshift(newCampaign);
@@ -1270,38 +1329,28 @@ app.get("/google:code([a-zA-Z0-9_-]+).html", (req, res) => {
   res.send(`google-site-verification: google${code}.html`);
 });
 
-// Favicon and Icon Routes for Google Search crawler and browsers
-app.get("/favicon.ico", (_req, res) => {
-  res.setHeader("Content-Type", "image/x-icon");
-  res.setHeader("Cache-Control", "public, max-age=86400");
-  const p = path.join(process.cwd(), "public", "favicon.ico");
+// Favicon and Icon Routes for Google Search crawler, browsers and PWA
+const servePublicImage = (filename: string, contentType: string = "image/png") => (_req: express.Request, res: express.Response) => {
+  res.setHeader("Content-Type", contentType);
+  res.setHeader("Cache-Control", "public, max-age=300, must-revalidate");
+  const p = path.join(process.cwd(), "public", filename);
   if (fs.existsSync(p)) return res.sendFile(p);
+  const rootP = path.join(process.cwd(), filename);
+  if (fs.existsSync(rootP)) return res.sendFile(rootP);
   res.status(404).end();
-});
+};
 
-app.get("/icon.png", (_req, res) => {
-  res.setHeader("Content-Type", "image/png");
-  res.setHeader("Cache-Control", "public, max-age=86400");
-  const p = path.join(process.cwd(), "public", "icon.png");
-  if (fs.existsSync(p)) return res.sendFile(p);
-  res.status(404).end();
-});
-
-app.get("/favicon-48x48.png", (_req, res) => {
-  res.setHeader("Content-Type", "image/png");
-  res.setHeader("Cache-Control", "public, max-age=86400");
-  const p = path.join(process.cwd(), "public", "favicon-48x48.png");
-  if (fs.existsSync(p)) return res.sendFile(p);
-  res.status(404).end();
-});
-
-app.get("/favicon-96x96.png", (_req, res) => {
-  res.setHeader("Content-Type", "image/png");
-  res.setHeader("Cache-Control", "public, max-age=86400");
-  const p = path.join(process.cwd(), "public", "favicon-96x96.png");
-  if (fs.existsSync(p)) return res.sendFile(p);
-  res.status(404).end();
-});
+app.get("/favicon.ico", servePublicImage("favicon.ico", "image/x-icon"));
+app.get("/icon.png", servePublicImage("icon.png", "image/png"));
+app.get("/Icon.png", servePublicImage("Icon.png", "image/png"));
+app.get("/favicon.png", servePublicImage("favicon.png", "image/png"));
+app.get("/favicon-48x48.png", servePublicImage("favicon-48x48.png", "image/png"));
+app.get("/favicon-64x64.png", servePublicImage("favicon-64x64.png", "image/png"));
+app.get("/favicon-96x96.png", servePublicImage("favicon-96x96.png", "image/png"));
+app.get("/apple-touch-icon.png", servePublicImage("apple-touch-icon.png", "image/png"));
+app.get("/pwa-192x192.png", servePublicImage("pwa-192x192.png", "image/png"));
+app.get("/pwa-512x512.png", servePublicImage("pwa-512x512.png", "image/png"));
+app.get("/pwa-maskable-512x512.png", servePublicImage("pwa-maskable-512x512.png", "image/png"));
 
 
 async function startServer() {

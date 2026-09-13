@@ -32,6 +32,8 @@ export interface Campaign {
   createdAt: string;
   displayId?: string;
   countryFlag?: string;
+  channelName?: string;
+  durationText?: string;
 }
 
 export interface Transaction {

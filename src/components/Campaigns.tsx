@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Campaign, User, format4CharId } from '../types';
-import { Plus, MoreVertical, Clock, Trash2, Coins, AlertCircle, Sparkles, X, Video, ExternalLink, Check, Search, ShieldCheck } from 'lucide-react';
+import { Plus, MoreVertical, Clock, Trash2, Coins, AlertCircle, Sparkles, X, Video, ExternalLink, Check, Search, ShieldCheck, Clipboard, Image as ImageIcon, CheckCircle2 } from 'lucide-react';
 import { AtoPlayBadge } from './AtoPlayBadge';
 import { apiFetch } from '../lib/api';
 import { saveCampaignToFirestore, deleteCampaignInFirestore, saveUserCoinsToFirestore } from '../lib/firebase';
@@ -53,8 +53,14 @@ export const Campaigns: React.FC<CampaignsProps> = ({
     title: string;
     thumbnailUrl: string;
     displayId: string;
+    channelName?: string;
+    durationSeconds?: number;
+    durationText?: string;
+    isRealVideo?: boolean;
   } | null>(null);
   const [customTitle, setCustomTitle] = useState('');
+  const [customThumbnailUrl, setCustomThumbnailUrl] = useState('');
+  const [showCustomThumbInput, setShowCustomThumbInput] = useState(false);
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Coin Economics: 80 coins/view (60 reward + 20 fee)
@@ -71,13 +77,23 @@ export const Campaigns: React.FC<CampaignsProps> = ({
     { views: 100, cost: 8000 }
   ];
 
-  // Helper to validate complete URL before requesting extraction
+  // Helper to validate video URL or video ID before requesting extraction
   const isValidVideoUrl = (url: string) => {
     try {
-      const parsed = new URL(url.trim());
+      const trimmed = (url || '').trim().replace(/^["']|["']$/g, '');
+      if (!trimmed) return false;
+      // Direct AtoPlay UUID or 32-hex ID
+      if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed)) return true;
+      if (/^[0-9a-f]{32}$/i.test(trimmed)) return true;
+
+      const toParse = (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) 
+        ? `https://${trimmed}` 
+        : trimmed;
+
+      const parsed = new URL(toParse);
       if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
-      const hostname = parsed.hostname;
-      // Must have at least one dot and a TLD of at least 2 chars
+      const hostname = parsed.hostname.toLowerCase();
+      // Must have at least one dot and a TLD of at least 2 chars, or localhost
       if (!/^[a-zA-Z0-9-]+(\.[a-zA-Z0-9-]+)*\.[a-zA-Z]{2,}$/.test(hostname) && hostname !== 'localhost') {
         return false;
       }
@@ -114,16 +130,24 @@ export const Campaigns: React.FC<CampaignsProps> = ({
 
   // Fetch real video metadata on demand
   const handleFetchMetadata = async (urlToFetch?: string) => {
-    const url = (urlToFetch || videoUrl).trim();
-    if (!isValidVideoUrl(url)) return;
+    const raw = (urlToFetch !== undefined ? urlToFetch : videoUrl).trim().replace(/^["']|["']$/g, '');
+    if (!raw) return;
+
+    if (!isValidVideoUrl(raw)) {
+      setErrorMsg('Please enter a valid video URL (e.g. https://atoplay.com/video/...)');
+      return;
+    }
 
     try {
       setFetchingPreview(true);
       setErrorMsg(null);
-      const data = await apiFetch(`/api/campaigns/extract-metadata?url=${encodeURIComponent(url)}`);
+      const data = await apiFetch(`/api/campaigns/extract-metadata?url=${encodeURIComponent(raw)}`);
       if (data?.success && data?.metadata) {
         setPreviewData(data.metadata);
         setCustomTitle(data.metadata.title);
+        setCustomThumbnailUrl('');
+      } else {
+        setErrorMsg('Unable to fetch video details from this link. You can still proceed.');
       }
     } catch {
       // Silently continue with standard fallback
@@ -132,11 +156,38 @@ export const Campaigns: React.FC<CampaignsProps> = ({
     }
   };
 
+  // Immediate paste event handler
+  const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
+    const pasted = e.clipboardData.getData('text').trim().replace(/^["']|["']$/g, '');
+    if (pasted) {
+      setVideoUrl(pasted);
+      if (isValidVideoUrl(pasted)) {
+        handleFetchMetadata(pasted);
+      }
+    }
+  };
+
+  // 1-tap paste from clipboard
+  const handlePasteClipboard = async () => {
+    try {
+      if (navigator?.clipboard?.readText) {
+        const text = (await navigator.clipboard.readText()).trim().replace(/^["']|["']$/g, '');
+        if (text) {
+          setVideoUrl(text);
+          if (isValidVideoUrl(text)) {
+            handleFetchMetadata(text);
+          }
+        }
+      }
+    } catch {
+      // Clipboard access denied or unsupported
+    }
+  };
+
   // Debounced auto-fetch preview when typing or pasting a complete valid URL
   const handleUrlChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newUrl = e.target.value;
     setVideoUrl(newUrl);
-    setPreviewData(null);
 
     if (debounceTimerRef.current) {
       clearTimeout(debounceTimerRef.current);
@@ -145,7 +196,7 @@ export const Campaigns: React.FC<CampaignsProps> = ({
     if (isValidVideoUrl(newUrl)) {
       debounceTimerRef.current = setTimeout(() => {
         handleFetchMetadata(newUrl);
-      }, 700);
+      }, 600);
     }
   };
 
@@ -198,7 +249,7 @@ export const Campaigns: React.FC<CampaignsProps> = ({
           rewardPerView: 60,
           durationSeconds: 60,
           title: customTitle || previewData?.title,
-          thumbnailUrl: previewData?.thumbnailUrl
+          thumbnailUrl: customThumbnailUrl || previewData?.thumbnailUrl
         })
       });
 
@@ -207,6 +258,8 @@ export const Campaigns: React.FC<CampaignsProps> = ({
         setVideoUrl('');
         setPreviewData(null);
         setCustomTitle('');
+        setCustomThumbnailUrl('');
+        setShowCustomThumbInput(false);
         setIsModalOpen(false);
 
         // Sync campaign to Firestore
@@ -355,7 +408,7 @@ export const Campaigns: React.FC<CampaignsProps> = ({
                     className="w-full h-full object-cover" 
                   />
                   <div className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-black/80 text-white text-[9px] font-bold">
-                    60s
+                    {camp.durationText || '60s'}
                   </div>
                 </div>
 
@@ -366,6 +419,12 @@ export const Campaigns: React.FC<CampaignsProps> = ({
                       {camp.title}
                     </h3>
                   </div>
+
+                  {camp.channelName && (
+                    <p className="text-xs text-zinc-500 font-medium truncate">
+                      {camp.channelName}
+                    </p>
+                  )}
 
                   <div className="flex items-center space-x-3 text-xs text-zinc-500 font-mono">
                     <span>ID: <span className="font-extrabold text-zinc-700">{format4CharId(camp.displayId, camp.id)}</span></span>
@@ -462,44 +521,77 @@ export const Campaigns: React.FC<CampaignsProps> = ({
                 <label className="text-xs font-bold uppercase tracking-wider text-zinc-700 flex items-center justify-between">
                   <span>AtoPlay / Video URL</span>
                   {fetchingPreview && (
-                    <span className="text-blue-600 text-[11px] font-semibold flex items-center space-x-1 lowercase">
+                    <span className="text-blue-600 text-[11px] font-semibold flex items-center space-x-1">
                       <Search className="w-3 h-3 animate-spin" />
-                      <span>fetching details...</span>
+                      <span>Fetching details...</span>
                     </span>
                   )}
                 </label>
-                <div className="relative">
+                <div className="relative flex items-center">
                   <input
-                    type="url"
+                    type="text"
                     required
-                    placeholder="https://atoplay.com/video/... or https://youtu.be/..."
+                    placeholder="https://atoplay.com/video/... or paste link"
                     value={videoUrl}
                     onChange={handleUrlChange}
-                    className="w-full px-4 py-3.5 pr-24 rounded-2xl bg-zinc-50 border border-zinc-200 text-sm text-zinc-900 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                    onPaste={handlePaste}
+                    className="w-full px-4 py-3.5 pr-36 rounded-2xl bg-zinc-50 border border-zinc-200 text-sm text-zinc-900 focus:outline-none focus:ring-2 focus:ring-blue-600 font-medium"
                   />
-                  <button
-                    type="button"
-                    onClick={() => handleFetchMetadata()}
-                    disabled={fetchingPreview || !videoUrl}
-                    className="absolute right-2 top-2 px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:bg-zinc-300 text-white text-xs font-bold transition-colors cursor-pointer"
-                  >
-                    {fetchingPreview ? 'Fetching...' : 'Fetch'}
-                  </button>
+                  <div className="absolute right-2 flex items-center space-x-1.5">
+                    <button
+                      type="button"
+                      onClick={handlePasteClipboard}
+                      className="px-2.5 py-1.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-700 text-xs font-bold transition-colors cursor-pointer flex items-center space-x-1"
+                      title="Paste from clipboard"
+                    >
+                      <Clipboard className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">Paste</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleFetchMetadata()}
+                      disabled={fetchingPreview || !videoUrl}
+                      className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:bg-zinc-300 text-white text-xs font-bold transition-colors cursor-pointer flex items-center space-x-1"
+                    >
+                      {fetchingPreview ? (
+                        <>
+                          <Search className="w-3 h-3 animate-spin" />
+                          <span>Fetching...</span>
+                        </>
+                      ) : (
+                        <span>Fetch</span>
+                      )}
+                    </button>
+                  </div>
                 </div>
                 <p className="text-[11px] text-zinc-400">
-                  Real video thumbnail and title will be extracted automatically from the page.
+                  Direct URL paste karte hi video ka real title aur thumbnail fetch ho jata hai.
                 </p>
               </div>
 
+              {/* Loading Skeleton */}
+              {fetchingPreview && !previewData && (
+                <div className="p-4 rounded-2xl bg-blue-50/60 border border-blue-200 space-y-3 animate-pulse">
+                  <div className="flex items-center space-x-2 text-blue-700 text-xs font-bold">
+                    <Search className="w-3.5 h-3.5 animate-spin" />
+                    <span>Fetching real video thumbnail & title from URL...</span>
+                  </div>
+                  <div className="w-full aspect-video rounded-xl bg-blue-100/70" />
+                  <div className="h-4 bg-blue-100/80 rounded w-3/4" />
+                </div>
+              )}
+
               {/* Real Video Preview Card (Shows extracted Title & Stretched Thumbnail) */}
               {previewData && (
-                <div className="p-3.5 rounded-2xl bg-zinc-50 border border-zinc-200 space-y-3">
-                  <div className="flex items-center justify-between text-xs font-bold text-zinc-600">
-                    <span className="flex items-center space-x-1 text-emerald-600 font-extrabold">
-                      <Check className="w-3.5 h-3.5" />
+                <div className="p-4 rounded-2xl bg-zinc-50 border border-zinc-200 space-y-3.5 shadow-xs">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="flex items-center space-x-1.5 text-emerald-600 font-extrabold">
+                      <CheckCircle2 className="w-4 h-4" />
                       <span>Real Video Data Extracted</span>
                     </span>
-                    <span className="font-mono text-zinc-400">ID: {previewData.displayId}</span>
+                    <span className="font-mono text-xs font-bold text-zinc-500 bg-zinc-100 px-2 py-0.5 rounded-md border border-zinc-200">
+                      ID: {previewData.displayId}
+                    </span>
                   </div>
 
                   {/* Stretched Live Thumbnail */}
@@ -507,9 +599,15 @@ export const Campaigns: React.FC<CampaignsProps> = ({
                     {/* AtoPlay Official Video Thumbnail Badge */}
                     <AtoPlayBadge size="md" className="absolute top-2 left-2 z-10" />
 
+                    {previewData.durationText && (
+                      <div className="absolute bottom-2 right-2 px-2 py-0.5 rounded-md bg-black/85 text-white text-[10px] font-bold z-10">
+                        {previewData.durationText}
+                      </div>
+                    )}
+
                     <img 
-                      src={previewData.thumbnailUrl} 
-                      alt="Preview" 
+                      src={customThumbnailUrl || previewData.thumbnailUrl} 
+                      alt={previewData.title} 
                       referrerPolicy="no-referrer"
                       crossOrigin="anonymous"
                       onError={(e) => {
@@ -522,15 +620,70 @@ export const Campaigns: React.FC<CampaignsProps> = ({
                     />
                   </div>
 
+                  {/* Channel Name */}
+                  {previewData.channelName && (
+                    <div className="flex items-center justify-between text-xs text-zinc-600">
+                      <span className="font-semibold text-zinc-700 truncate">
+                        Channel: <span className="font-bold text-blue-600">{previewData.channelName}</span>
+                      </span>
+                      <span className="text-[11px] text-emerald-600 font-bold bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                        Verified
+                      </span>
+                    </div>
+                  )}
+
                   {/* Editable Title */}
                   <div className="space-y-1">
-                    <label className="text-[11px] font-bold text-zinc-500 uppercase">Video Title</label>
+                    <div className="flex items-center justify-between">
+                      <label className="text-[11px] font-bold text-zinc-600 uppercase">Video Title</label>
+                      <span className="text-[10px] text-zinc-400">Extracted from page</span>
+                    </div>
                     <input
                       type="text"
                       value={customTitle}
                       onChange={e => setCustomTitle(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl bg-white border border-zinc-200 text-xs font-bold text-zinc-800 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                      placeholder="Enter video title"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-zinc-200 text-xs sm:text-sm font-bold text-zinc-900 focus:outline-none focus:ring-2 focus:ring-blue-600"
                     />
+                  </div>
+
+                  {/* Optional Custom Thumbnail toggle */}
+                  <div className="pt-0.5">
+                    {!showCustomThumbInput ? (
+                      <button
+                        type="button"
+                        onClick={() => setShowCustomThumbInput(true)}
+                        className="text-[11px] font-bold text-blue-600 hover:text-blue-700 flex items-center space-x-1 cursor-pointer"
+                      >
+                        <ImageIcon className="w-3 h-3" />
+                        <span>Change Thumbnail Image (Optional)</span>
+                      </button>
+                    ) : (
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between">
+                          <label className="text-[11px] font-bold text-zinc-600 uppercase">
+                            Custom Thumbnail Image URL
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowCustomThumbInput(false);
+                              setCustomThumbnailUrl('');
+                            }}
+                            className="text-[10px] text-zinc-400 hover:text-zinc-600"
+                          >
+                            Reset
+                          </button>
+                        </div>
+                        <input
+                          type="url"
+                          value={customThumbnailUrl}
+                          onChange={e => setCustomThumbnailUrl(e.target.value)}
+                          placeholder="https://..."
+                          className="w-full px-3 py-2 rounded-xl bg-white border border-zinc-200 text-xs text-zinc-800 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                        />
+                      </div>
+                    )}
                   </div>
                 </div>
               )}

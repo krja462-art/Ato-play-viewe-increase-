@@ -39,21 +39,6 @@
     <priority>0.5</priority>
   </url>
   <url>
-    <loc>https://ato-play-viewe-increase.vercel.app/?watch=camp_1789286923366</loc>
-    <lastmod>2026-09-13</lastmod>
-    <changefreq>daily</changefreq>
-    <priority>0.8</priority>
-    <video:video>
-      <video:thumbnail_loc>https://banner-atoplay.b-cdn.net/atoplay-social-banner.jpg</video:thumbnail_loc>
-      <video:title>Admin Test Promo</video:title>
-      <video:description>Admin Test Promo - Watch for 60 seconds on AtoPlay and earn coins on AtoViewer</video:description>
-      <video:player_loc allow_embed="yes">https://atoplay.com/video/sample123</video:player_loc>
-      <video:duration>60</video:duration>
-      <video:publication_date>2026-09-13T08:08:43.366Z</video:publication_date>
-      <video:family_friendly>yes</video:family_friendly>
-    </video:video>
-  </url>
-  <url>
     <loc>https://ato-play-viewe-increase.vercel.app/?watch=camp_starter_1</loc>
     <lastmod>2026-09-13</lastmod>
     <changefreq>daily</changefreq>
@@ -64,7 +49,7 @@
       <video:description>Jagannath cartoon animation video -14 - Watch for 60 seconds on AtoPlay and earn coins on AtoViewer</video:description>
       <video:player_loc allow_embed="yes">https://atoplay.com/video/61f8d5c2-3b2b-4789-8581-c6727ce0388a</video:player_loc>
       <video:duration>60</video:duration>
-      <video:publication_date>2026-09-13T07:08:31.757Z</video:publication_date>
+      <video:publication_date>2026-09-13T07:54:48.272Z</video:publication_date>
       <video:family_friendly>yes</video:family_friendly>
     </video:video>
   </url>
@@ -74,12 +59,12 @@
     <changefreq>daily</changefreq>
     <priority>0.8</priority>
     <video:video>
-      <video:thumbnail_loc>https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&amp;fit=crop&amp;w=800&amp;q=80</video:thumbnail_loc>
-      <video:title>How to Build Modern Fast Web Apps</video:title>
-      <video:description>How to Build Modern Fast Web Apps - Watch for 60 seconds on AtoPlay and earn coins on AtoViewer</video:description>
-      <video:player_loc allow_embed="yes">https://atoplay.com/video/b509f6b9-ea16-43b9-a292-1c09930777fa</video:player_loc>
+      <video:thumbnail_loc>https://cdn.atoplay.in/atoplay-thumbnails/58d4d4aa-c235-48a1-8423-57fbeefa914e/thumbnails/b079eff5-e942-4d88-813d-6bc5a40d08e9.webp</video:thumbnail_loc>
+      <video:title>Nilakantha verni Episode -35</video:title>
+      <video:description>Nilakantha verni Episode -35 - Watch for 60 seconds on AtoPlay and earn coins on AtoViewer</video:description>
+      <video:player_loc allow_embed="yes">https://atoplay.com/video/b079eff5-e942-4d88-813d-6bc5a40d08e9</video:player_loc>
       <video:duration>60</video:duration>
-      <video:publication_date>2026-09-13T06:08:31.758Z</video:publication_date>
+      <video:publication_date>2026-09-13T06:54:48.272Z</video:publication_date>
       <video:family_friendly>yes</video:family_friendly>
     </video:video>
   </url>
