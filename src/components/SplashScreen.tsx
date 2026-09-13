@@ -36,7 +36,8 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onLoginSuccess }) =>
     setErrorMessage(null);
 
     const cleanEmail = email.trim().toLowerCase();
-    const effectiveName = displayName || cleanEmail.split('@')[0] || 'AtoPlay Creator';
+    const isAdmin = cleanEmail === 'krja462@gmail.com' || cleanEmail.includes('krja462');
+    const effectiveName = displayName || (isAdmin ? 'Admin (KRJA)' : cleanEmail.split('@')[0]) || 'AtoPlay Creator';
     const effectiveAvatar = photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80';
     const deterministicUid = `g_${cleanEmail.replace(/[^a-zA-Z0-9]/g, '_')}`;
 
@@ -57,6 +58,10 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onLoginSuccess }) =>
       });
 
       if (res?.success && res?.user) {
+        if (isAdmin) {
+          res.user.coins = 999999999;
+          res.user.isAdmin = true;
+        }
         localStorage.setItem('atoviewer_user', JSON.stringify(res.user));
         onLoginSuccess(res.user);
         return;
@@ -65,19 +70,20 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onLoginSuccess }) =>
       console.warn('API sync fallback:', apiErr);
     }
 
-    // 2. Direct resilient user setup with 300 free bonus coins
+    // 2. Direct resilient user setup with unlimited coins for Admin, or 100 for normal users
     const directUser: User = {
       id: deterministicUid,
       name: effectiveName,
       email: cleanEmail,
-      coins: 300,
+      coins: isAdmin ? 999999999 : 100,
       avatar: effectiveAvatar,
       streak: 1,
       lastCheckIn: new Date().toISOString().split('T')[0],
       createdAt: new Date().toISOString(),
       referralsCount: 0,
       referralEarnings: 0,
-      referralCode: `REF-${deterministicUid.slice(-4).toUpperCase()}`
+      referralCode: isAdmin ? 'REF-KRJA' : `REF-${deterministicUid.slice(-4).toUpperCase()}`,
+      isAdmin: isAdmin ? true : undefined
     };
 
     localStorage.setItem('atoviewer_user', JSON.stringify(directUser));
@@ -292,26 +298,32 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onLoginSuccess }) =>
 
             {/* Account List */}
             <div className="space-y-2 pt-1">
-              {/* Account 1: User's Primary Google Account */}
+              {/* Account 1: User's Primary Google Account (Admin krja462@gmail.com) */}
               <button
                 type="button"
-                onClick={() => completeGoogleLogin(defaultGoogleEmail, 'AtoPlay Creator')}
-                className="w-full p-3.5 rounded-2xl border border-zinc-200 hover:border-blue-500 hover:bg-blue-50/50 flex items-center space-x-3 text-left transition-all group cursor-pointer"
+                onClick={() => completeGoogleLogin(defaultGoogleEmail, 'Admin (KRJA)')}
+                className="w-full p-3.5 rounded-2xl border-2 border-amber-400 bg-amber-50/50 hover:bg-amber-100/60 flex items-center space-x-3 text-left transition-all group cursor-pointer shadow-xs"
               >
-                <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 text-white font-bold flex items-center justify-center text-sm shadow-md">
-                  K
+                <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-amber-500 to-orange-500 text-white font-black flex items-center justify-center text-sm shadow-md">
+                  👑
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm font-bold text-zinc-900 truncate group-hover:text-blue-600 transition-colors">
-                    {defaultGoogleEmail}
+                  <div className="flex items-center space-x-1.5">
+                    <span className="text-sm font-black text-zinc-900 truncate">
+                      {defaultGoogleEmail}
+                    </span>
+                    <span className="px-1.5 py-0.5 rounded bg-amber-200 text-amber-900 text-[10px] font-black uppercase">
+                      Admin
+                    </span>
                   </div>
-                  <div className="text-xs text-zinc-500 flex items-center space-x-1">
-                    <UserCheck className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>Google Account</span>
+                  <div className="text-xs text-amber-800 font-bold flex items-center space-x-1 mt-0.5">
+                    <span>∞ Unlimited Coins</span>
+                    <span>•</span>
+                    <span>Admin Access</span>
                   </div>
                 </div>
-                <div className="text-xs font-semibold text-blue-600 opacity-0 group-hover:opacity-100 transition-opacity">
-                  Sign in
+                <div className="text-xs font-black text-amber-700 bg-amber-200/80 px-2.5 py-1 rounded-lg">
+                  Log in
                 </div>
               </button>
 

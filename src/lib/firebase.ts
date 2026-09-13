@@ -75,14 +75,20 @@ export const logOut = async (): Promise<void> => {
   await signOut(auth);
 };
 
+export const ADMIN_EMAIL = 'krja462@gmail.com';
+export const ADMIN_UNLIMITED_COINS = 999999999;
+
 /**
  * Synchronize Google Firebase User profile with Cloud Firestore `/users/{uid}`
  * Loads saved coins and state if existing user, or awards 100 Welcome Bonus Coins if new user.
+ * Grants Unlimited Coins (999,999,999) to Admin Account (krja462@gmail.com).
  */
 export const syncFirebaseUserWithFirestore = async (fbUser: FirebaseUser): Promise<User> => {
   const userRef = doc(db, 'users', fbUser.uid);
   const now = new Date().toISOString();
   const today = now.split('T')[0];
+  const cleanEmail = (fbUser.email || '').toLowerCase().trim();
+  const isAdmin = cleanEmail === ADMIN_EMAIL || fbUser.uid.includes('krja462');
 
   try {
     const docSnap = await getDoc(userRef);
@@ -91,26 +97,27 @@ export const syncFirebaseUserWithFirestore = async (fbUser: FirebaseUser): Promi
       const data = docSnap.data();
       const existingUser: User = {
         id: fbUser.uid,
-        name: data.name || fbUser.displayName || 'AtoPlay Creator',
-        email: fbUser.email || data.email || '',
-        coins: typeof data.coins === 'number' ? data.coins : 100,
+        name: data.name || fbUser.displayName || (isAdmin ? 'Admin (KRJA)' : 'AtoPlay Creator'),
+        email: fbUser.email || data.email || cleanEmail,
+        coins: isAdmin ? ADMIN_UNLIMITED_COINS : (typeof data.coins === 'number' ? data.coins : 100),
         avatar: fbUser.photoURL || data.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80',
         streak: typeof data.streak === 'number' ? data.streak : 1,
         lastCheckIn: data.lastCheckIn || today,
         createdAt: data.createdAt || now,
-        referralCode: data.referralCode || `REF-${fbUser.uid.slice(-4).toUpperCase()}`,
+        referralCode: data.referralCode || (isAdmin ? 'REF-KRJA' : `REF-${fbUser.uid.slice(-4).toUpperCase()}`),
         referralsCount: typeof data.referralsCount === 'number' ? data.referralsCount : 0,
         referralEarnings: typeof data.referralEarnings === 'number' ? data.referralEarnings : 0,
-        referredBy: data.referredBy
+        referredBy: data.referredBy,
+        isAdmin: isAdmin ? true : Boolean(data.isAdmin)
       };
 
-      // Keep avatar and name updated
-      if (fbUser.displayName || fbUser.photoURL) {
-        updateDoc(userRef, {
-          name: fbUser.displayName || existingUser.name,
-          avatar: fbUser.photoURL || existingUser.avatar
-        }).catch(() => {});
-      }
+      // Keep avatar, name, and admin unlimited coins updated in Firestore
+      updateDoc(userRef, {
+        name: existingUser.name,
+        avatar: existingUser.avatar,
+        coins: isAdmin ? ADMIN_UNLIMITED_COINS : existingUser.coins,
+        isAdmin: isAdmin ? true : Boolean(data.isAdmin)
+      }).catch(() => {});
 
       return existingUser;
     }
@@ -118,19 +125,20 @@ export const syncFirebaseUserWithFirestore = async (fbUser: FirebaseUser): Promi
     console.warn('Could not read user doc from Firestore, checking fallback:', readErr);
   }
 
-  // Create new user profile with 100 Welcome Bonus Coins
+  // Create new user profile with unlimited coins if admin or 100 Welcome Bonus Coins
   const newUser: User = {
     id: fbUser.uid,
-    name: fbUser.displayName || (fbUser.email ? fbUser.email.split('@')[0] : 'AtoPlay Creator'),
-    email: fbUser.email || '',
-    coins: 100, // +100 Free Welcome Bonus Coins on first login
+    name: fbUser.displayName || (isAdmin ? 'Admin (KRJA)' : (cleanEmail ? cleanEmail.split('@')[0] : 'AtoPlay Creator')),
+    email: cleanEmail,
+    coins: isAdmin ? ADMIN_UNLIMITED_COINS : 100, // Unlimited coins for Admin, 100 Welcome Bonus Coins for new user
     avatar: fbUser.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80',
     streak: 1,
     lastCheckIn: today,
     createdAt: now,
-    referralCode: `REF-${fbUser.uid.slice(-4).toUpperCase()}`,
+    referralCode: isAdmin ? 'REF-KRJA' : `REF-${fbUser.uid.slice(-4).toUpperCase()}`,
     referralsCount: 0,
-    referralEarnings: 0
+    referralEarnings: 0,
+    isAdmin: isAdmin ? true : undefined
   };
 
   try {
@@ -145,11 +153,17 @@ export const syncFirebaseUserWithFirestore = async (fbUser: FirebaseUser): Promi
 /**
  * Update user coins in Cloud Firestore
  */
-export const saveUserCoinsToFirestore = async (userId: string, newCoins: number): Promise<void> => {
+export const saveUserCoinsToFirestore = async (userId: string, newCoins: number, email?: string): Promise<void> => {
   if (!userId || userId.startsWith('guest_')) return;
+  const isAdmin = email?.toLowerCase().trim() === ADMIN_EMAIL || userId.includes('krja462');
+  const coinsToPersist = isAdmin ? ADMIN_UNLIMITED_COINS : newCoins;
+
   try {
     const userRef = doc(db, 'users', userId);
-    await updateDoc(userRef, { coins: newCoins });
+    await updateDoc(userRef, { 
+      coins: coinsToPersist,
+      ...(isAdmin ? { isAdmin: true } : {})
+    });
   } catch (err) {
     console.warn('Error updating coins in Firestore:', err);
   }

@@ -152,6 +152,8 @@ export const Campaigns: React.FC<CampaignsProps> = ({
     c => c.status === 'active' && ((c.viewsCompleted ?? c.completedViews ?? 0) < (c.viewsRequired ?? c.targetViews ?? 10))
   );
 
+  const isUserAdmin = Boolean(user.isAdmin || user.email?.toLowerCase().trim() === 'krja462@gmail.com');
+
   const handleCreateCampaign = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
@@ -174,7 +176,7 @@ export const Campaigns: React.FC<CampaignsProps> = ({
     }
 
     // Check if user's balance >= totalCost. If not, show alert: "Insufficient coins! Watch more videos to earn."
-    if (user.coins < totalCost) {
+    if (!isUserAdmin && user.coins < totalCost) {
       alert('Insufficient coins! Watch more videos to earn.');
       setErrorMsg('Insufficient coins! Watch more videos to earn.');
       return;
@@ -598,14 +600,14 @@ export const Campaigns: React.FC<CampaignsProps> = ({
                   </div>
                   <div className="text-right">
                     <p className="text-[11px] text-zinc-500 font-bold uppercase">Your Balance</p>
-                    <p className={`text-base font-extrabold ${user.coins >= totalCost ? 'text-emerald-600' : 'text-red-600'}`}>
-                      {user.coins.toLocaleString()} Coins
+                    <p className={`text-base font-extrabold ${isUserAdmin ? 'text-amber-600' : (user.coins >= totalCost ? 'text-emerald-600' : 'text-red-600')}`}>
+                      {isUserAdmin ? '∞ Unlimited Coins (Admin)' : `${user.coins.toLocaleString()} Coins`}
                     </p>
                   </div>
                 </div>
 
-                {/* Insufficient coins warning */}
-                {user.coins < totalCost && (
+                {/* Insufficient coins warning (only shown for non-admin) */}
+                {!isUserAdmin && user.coins < totalCost && (
                   <div className="p-2.5 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs font-bold flex items-center space-x-1.5">
                     <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
                     <span>Insufficient coins! Watch more videos to earn.</span>
@@ -625,12 +627,16 @@ export const Campaigns: React.FC<CampaignsProps> = ({
                   type="submit"
                   disabled={submitting}
                   className={`flex-1 py-3.5 rounded-2xl font-bold text-sm shadow-lg transition-transform cursor-pointer disabled:opacity-50 ${
-                    user.coins < totalCost
+                    !isUserAdmin && user.coins < totalCost
                       ? 'bg-amber-600 hover:bg-amber-700 text-white shadow-amber-600/30'
                       : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-600/30 hover:scale-102'
                   }`}
                 >
-                  {submitting ? 'Creating Campaign...' : `Promote / Submit (${totalCost.toLocaleString()} Coins)`}
+                  {submitting 
+                    ? 'Creating Campaign...' 
+                    : (isUserAdmin 
+                        ? 'Launch Campaign (Admin Free / Unlimited)' 
+                        : `Promote / Submit (${totalCost.toLocaleString()} Coins)`)}
                 </button>
               </div>
 

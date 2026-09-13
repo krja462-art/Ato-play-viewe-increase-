@@ -119,6 +119,7 @@ function handleClientFallback<T>(endpoint: string, options?: RequestInit, active
   if (endpoint.startsWith('/api/auth/firebase-login')) {
     const { uid, email, name, avatar } = parsedBody;
     const cleanEmail = String(email || 'user@gmail.com').trim().toLowerCase();
+    const isAdmin = cleanEmail === 'krja462@gmail.com' || String(uid || '').includes('krja462');
     const effectiveUid = uid || `g_${cleanEmail.replace(/[^a-zA-Z0-9]/g, '_')}`;
 
     let user = getStoredUser();
@@ -128,27 +129,32 @@ function handleClientFallback<T>(endpoint: string, options?: RequestInit, active
       isNewUser = true;
       user = {
         id: effectiveUid,
-        name: name || cleanEmail.split('@')[0],
+        name: name || (isAdmin ? 'Admin (KRJA)' : cleanEmail.split('@')[0]),
         email: cleanEmail,
-        coins: 100, // 100 Welcome Bonus coins on first login
+        coins: isAdmin ? 999999999 : 100, // Unlimited coins for Admin, 100 Welcome Bonus coins on first login
         avatar: avatar || `https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80`,
         streak: 1,
         lastCheckIn: new Date().toISOString().split('T')[0],
         createdAt: new Date().toISOString(),
         referralsCount: 0,
         referralEarnings: 0,
-        referralCode: `REF-${effectiveUid.slice(-4).toUpperCase()}`
+        referralCode: isAdmin ? 'REF-KRJA' : `REF-${effectiveUid.slice(-4).toUpperCase()}`,
+        isAdmin: isAdmin ? true : undefined
       };
 
       addStoredTransaction({
         id: `tx_${Date.now()}`,
         userId: user.id,
         type: 'bonus_signup',
-        amount: 100,
-        description: 'Welcome Bonus Coins on Google Sign In (+100 Coins)',
+        amount: isAdmin ? 999999999 : 100,
+        description: isAdmin ? 'Admin Unlimited Coins Granted' : 'Welcome Bonus Coins on Google Sign In (+100 Coins)',
         createdAt: new Date().toISOString()
       });
     } else {
+      if (isAdmin) {
+        user.coins = 999999999;
+        user.isAdmin = true;
+      }
       if (name) user.name = name;
       if (avatar) user.avatar = avatar;
     }
@@ -214,13 +220,19 @@ function handleClientFallback<T>(endpoint: string, options?: RequestInit, active
 
     // 80 coins per view (60 reward + 20 platform fee)
     const totalCost = views * 80;
+    const isUserAdmin = Boolean(activeUser.isAdmin || activeUser.email?.toLowerCase().trim() === 'krja462@gmail.com' || activeUser.id.includes('krja462'));
 
-    if (activeUser.coins < totalCost) {
+    if (!isUserAdmin && activeUser.coins < totalCost) {
       return { success: false, message: 'Insufficient coins! Watch more videos to earn.' } as any;
     }
 
-    // Deduct coins from user
-    activeUser.coins -= totalCost;
+    // Keep admin coins unlimited
+    if (isUserAdmin) {
+      activeUser.coins = 999999999;
+      activeUser.isAdmin = true;
+    } else {
+      activeUser.coins -= totalCost;
+    }
     setStoredUser(activeUser);
 
     addStoredTransaction({

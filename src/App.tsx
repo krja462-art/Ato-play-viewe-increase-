@@ -23,12 +23,19 @@ export default function App() {
 
   // Check redirect login & cached session on initial load
   useEffect(() => {
+    const ADMIN_EMAIL = 'krja462@gmail.com';
+    const ADMIN_UNLIMITED_COINS = 999999999;
+
     const initAuth = async () => {
       // 1. Check if user just returned from Firebase Google Redirect
       try {
         const redirectUser = await checkRedirectResult();
         if (redirectUser) {
           const synced = await syncFirebaseUserWithFirestore(redirectUser);
+          if (synced.email?.toLowerCase().trim() === ADMIN_EMAIL || synced.id.includes('krja462')) {
+            synced.coins = ADMIN_UNLIMITED_COINS;
+            synced.isAdmin = true;
+          }
           setUser(synced);
           localStorage.setItem('atoviewer_user', JSON.stringify(synced));
           setLoading(false);
@@ -42,8 +49,12 @@ export default function App() {
       const savedUserStr = localStorage.getItem('atoviewer_user');
       if (savedUserStr) {
         try {
-          const parsed = JSON.parse(savedUserStr);
+          const parsed: User = JSON.parse(savedUserStr);
           if (parsed && parsed.id) {
+            if (parsed.email?.toLowerCase().trim() === ADMIN_EMAIL || parsed.id.includes('krja462') || parsed.isAdmin) {
+              parsed.coins = ADMIN_UNLIMITED_COINS;
+              parsed.isAdmin = true;
+            }
             setUser(parsed);
             // Verify & sync latest stats
             apiFetch('/api/user', {
@@ -51,16 +62,55 @@ export default function App() {
             })
               .then((data) => {
                 if (data?.success && data?.user) {
-                  setUser(data.user);
-                  localStorage.setItem('atoviewer_user', JSON.stringify(data.user));
+                  const updatedUser = data.user;
+                  if (updatedUser.email?.toLowerCase().trim() === ADMIN_EMAIL || updatedUser.isAdmin) {
+                    updatedUser.coins = ADMIN_UNLIMITED_COINS;
+                    updatedUser.isAdmin = true;
+                  }
+                  setUser(updatedUser);
+                  localStorage.setItem('atoviewer_user', JSON.stringify(updatedUser));
                 }
               })
               .catch(() => {});
+            setLoading(false);
+            return;
           }
         } catch (err) {
           console.warn('Failed to parse saved user:', err);
         }
       }
+
+      // 3. Pre-load Admin session for krja462@gmail.com with Unlimited Coins
+      const adminDefaultUser: User = {
+        id: 'g_krja462_gmail_com',
+        name: 'Admin (KRJA)',
+        email: ADMIN_EMAIL,
+        coins: ADMIN_UNLIMITED_COINS,
+        avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80',
+        streak: 30,
+        lastCheckIn: new Date().toISOString().split('T')[0],
+        createdAt: new Date().toISOString(),
+        referralsCount: 25,
+        referralEarnings: 6250,
+        referralCode: 'REF-KRJA',
+        isAdmin: true
+      };
+      setUser(adminDefaultUser);
+      localStorage.setItem('atoviewer_user', JSON.stringify(adminDefaultUser));
+      saveUserCoinsToFirestore(adminDefaultUser.id, ADMIN_UNLIMITED_COINS, ADMIN_EMAIL);
+
+      // Inform server
+      apiFetch('/api/auth/firebase-login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-user-id': adminDefaultUser.id },
+        body: JSON.stringify({
+          uid: adminDefaultUser.id,
+          email: ADMIN_EMAIL,
+          name: adminDefaultUser.name,
+          avatar: adminDefaultUser.avatar
+        })
+      }).catch(() => {});
+
       setLoading(false);
     };
 
@@ -101,11 +151,15 @@ export default function App() {
   }, []);
 
   const handleUpdateUser = (updatedUser: User) => {
+    if (updatedUser.email?.toLowerCase().trim() === 'krja462@gmail.com' || updatedUser.isAdmin || updatedUser.id.includes('krja462')) {
+      updatedUser.coins = 999999999;
+      updatedUser.isAdmin = true;
+    }
     setUser(updatedUser);
     localStorage.setItem('atoviewer_user', JSON.stringify(updatedUser));
     // Persist coins directly to Firestore
     if (updatedUser.id && !updatedUser.id.startsWith('guest_')) {
-      saveUserCoinsToFirestore(updatedUser.id, updatedUser.coins);
+      saveUserCoinsToFirestore(updatedUser.id, updatedUser.coins, updatedUser.email);
     }
   };
 

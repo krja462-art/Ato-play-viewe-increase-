@@ -95,12 +95,38 @@ interface ServerWatchSession {
 }
 const watchSessions: Record<string, ServerWatchSession> = {};
 
+// Admin Account Configuration
+const ADMIN_EMAIL = "krja462@gmail.com";
+const ADMIN_UNLIMITED_COINS = 999999999;
+
+// Pre-provision Admin Account with Unlimited Coins
+const adminUid = `g_krja462_gmail_com`;
+users[adminUid] = {
+  id: adminUid,
+  name: "Admin (KRJA)",
+  email: ADMIN_EMAIL,
+  coins: ADMIN_UNLIMITED_COINS, // Unlimited Coins
+  avatar: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80",
+  streak: 30,
+  lastCheckIn: new Date().toISOString().split('T')[0],
+  createdAt: new Date().toISOString(),
+  referralsCount: 25,
+  referralEarnings: 6250,
+  referralCode: "REF-KRJA",
+  isAdmin: true
+};
+referralCodes["REF-KRJA"] = adminUid;
+
 function getActiveUser(req: express.Request): User | null {
   const uid = (req.headers['x-user-id'] as string) || (req.body && req.body.userId) || (req.query && (req.query.uid as string));
-  if (uid && users[uid]) {
-    return users[uid];
+  let user = (uid && users[uid]) ? users[uid] : currentSessionUser;
+  
+  // Enforce Unlimited Coins for Admin account
+  if (user && (user.email?.toLowerCase().trim() === ADMIN_EMAIL || user.id.includes('krja462') || user.isAdmin)) {
+    user.isAdmin = true;
+    user.coins = ADMIN_UNLIMITED_COINS;
   }
-  return currentSessionUser;
+  return user;
 }
 
 // API Routes
@@ -122,6 +148,7 @@ app.post("/api/auth/firebase-login", (req, res) => {
   }
 
   const cleanEmail = String(email).trim().toLowerCase();
+  const isAdmin = cleanEmail === ADMIN_EMAIL || String(uid || '').includes('krja462');
   const effectiveUid = uid || `g_${cleanEmail.replace(/[^a-zA-Z0-9]/g, '_')}`;
 
   let user = users[effectiveUid];
@@ -131,15 +158,16 @@ app.post("/api/auth/firebase-login", (req, res) => {
     isNewUser = true;
     user = {
       id: effectiveUid,
-      name: name || cleanEmail.split('@')[0],
+      name: name || (isAdmin ? "Admin (KRJA)" : cleanEmail.split('@')[0]),
       email: cleanEmail,
-      coins: 100, // +100 Welcome Bonus coins on initial Google signup
+      coins: isAdmin ? ADMIN_UNLIMITED_COINS : 100, // Unlimited coins for admin, 100 Welcome Bonus for normal users
       avatar: avatar || `https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80`,
       streak: 1,
       lastCheckIn: new Date().toISOString().split('T')[0],
       createdAt: new Date().toISOString(),
       referralsCount: 0,
-      referralEarnings: 0
+      referralEarnings: 0,
+      isAdmin: isAdmin ? true : undefined
     };
     user.referralCode = generateUserReferralCode(user);
     users[effectiveUid] = user;
@@ -148,8 +176,8 @@ app.post("/api/auth/firebase-login", (req, res) => {
       id: `tx_${Date.now()}`,
       userId: uid,
       type: "bonus_signup",
-      amount: 100,
-      description: "Welcome Bonus Coins on Google Signup (+100 Coins)",
+      amount: isAdmin ? ADMIN_UNLIMITED_COINS : 100,
+      description: isAdmin ? "Admin Unlimited Coins Granted" : "Welcome Bonus Coins on Google Signup (+100 Coins)",
       createdAt: new Date().toISOString(),
     });
 
@@ -188,6 +216,10 @@ app.post("/api/auth/firebase-login", (req, res) => {
       }
     }
   } else {
+    if (isAdmin) {
+      user.coins = ADMIN_UNLIMITED_COINS;
+      user.isAdmin = true;
+    }
     if (name) user.name = name;
     if (avatar) user.avatar = avatar;
     if (!user.referralCode) user.referralCode = generateUserReferralCode(user);
@@ -554,14 +586,21 @@ app.post("/api/campaigns", async (req, res) => {
   const COST_PER_VIEW = 80;
   const totalCost = views * COST_PER_VIEW;
 
-  if (activeUser.coins < totalCost) {
+  const isUserAdmin = Boolean(activeUser.isAdmin || activeUser.email?.toLowerCase().trim() === ADMIN_EMAIL || activeUser.id.includes('krja462'));
+
+  if (!isUserAdmin && activeUser.coins < totalCost) {
     return res.status(400).json({ 
       success: false, 
       message: "Insufficient coins! Watch more videos to earn." 
     });
   }
 
-  activeUser.coins -= totalCost;
+  if (isUserAdmin) {
+    activeUser.isAdmin = true;
+    activeUser.coins = ADMIN_UNLIMITED_COINS; // Always keep admin coins unlimited
+  } else {
+    activeUser.coins -= totalCost;
+  }
 
   const metadata = await extractVideoMetadata(videoUrl);
 

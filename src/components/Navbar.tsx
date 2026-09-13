@@ -75,10 +75,20 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           {/* Right Header Actions: Coin Balance & Three Dots Menu (Avatar & Logout moved inside Slide Drawer) */}
           <div className="flex items-center space-x-2.5">
-            <div className="flex items-center space-x-1.5 px-3 py-1.5 rounded-full bg-amber-50 border border-amber-200 text-amber-800 text-xs sm:text-sm font-extrabold shadow-xs">
-              <Coins className="w-4 h-4 text-amber-600" />
-              <span>{coins.toLocaleString()} Coins</span>
-            </div>
+            {Boolean(user?.isAdmin || user?.email?.toLowerCase().trim() === 'krja462@gmail.com') ? (
+              <div className="flex items-center space-x-1.5 px-3 py-1.5 rounded-full bg-amber-50 border border-amber-300 text-amber-900 text-xs sm:text-sm font-extrabold shadow-xs">
+                <Coins className="w-4 h-4 text-amber-600" />
+                <span>∞ Unlimited Coins</span>
+                <span className="ml-1 px-1.5 py-0.5 rounded bg-amber-200 text-amber-900 text-[10px] font-black uppercase tracking-wider">
+                  Admin 👑
+                </span>
+              </div>
+            ) : (
+              <div className="flex items-center space-x-1.5 px-3 py-1.5 rounded-full bg-amber-50 border border-amber-200 text-amber-800 text-xs sm:text-sm font-extrabold shadow-xs">
+                <Coins className="w-4 h-4 text-amber-600" />
+                <span>{coins.toLocaleString()} Coins</span>
+              </div>
+            )}
 
             {/* Three Dots Button to Open Slide Drawer */}
             <button

@@ -11,6 +11,7 @@ export interface User {
   referralsCount?: number;
   referralEarnings?: number;
   referredBy?: string;
+  isAdmin?: boolean;
 }
 
 export interface Campaign {

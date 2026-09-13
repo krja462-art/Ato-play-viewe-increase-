@@ -221,6 +221,11 @@ export const SlideDrawer: React.FC<SlideDrawerProps> = ({
                       <h3 className="font-extrabold text-sm sm:text-base text-zinc-900 truncate">
                         {user.name}
                       </h3>
+                      {Boolean(user.isAdmin || user.email?.toLowerCase().trim() === 'krja462@gmail.com') && (
+                        <span className="px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-900 text-[10px] font-black uppercase tracking-wider">
+                          👑 Admin
+                        </span>
+                      )}
                     </div>
                     <p className="text-xs text-zinc-500 truncate font-medium">
                       {user.email}
@@ -238,7 +243,9 @@ export const SlideDrawer: React.FC<SlideDrawerProps> = ({
                     <span className="text-xs font-bold text-zinc-700">Total Coins</span>
                   </div>
                   <span className="text-sm font-black text-amber-700">
-                    {user.coins.toLocaleString()} Coins
+                    {Boolean(user.isAdmin || user.email?.toLowerCase().trim() === 'krja462@gmail.com')
+                      ? '∞ Unlimited Coins'
+                      : `${user.coins.toLocaleString()} Coins`}
                   </span>
                 </div>
               </div>
