@@ -1,4 +1,11 @@
 import { User, Campaign, Transaction } from '../types';
+import { extractVideoMetadata, VideoMetadata } from './videoExtractor';
+
+export { extractVideoMetadata };
+export type { VideoMetadata };
+
+// Re-export for backward compatibility
+export const extractVideoMetadataClient = extractVideoMetadata;
 
 const STORAGE_KEYS = {
   USER: 'atoviewer_user',
@@ -77,134 +84,6 @@ function addWatchedId(userId: string, campaignId: string): void {
 }
 
 /**
- * Real client-side video metadata extractor.
- * Connects directly to AtoPlay API (with CORS support) and YouTube oEmbed
- * so that thumbnail and title extraction works seamlessly on Vercel or static hosts.
- */
-export async function extractVideoMetadataClient(rawUrl: string): Promise<{
-  displayId: string;
-  title: string;
-  thumbnailUrl: string;
-  channelName: string;
-  durationSeconds: number;
-  durationText: string;
-  isRealVideo: boolean;
-} | null> {
-  const trimmed = rawUrl.trim().replace(/^["']|["']$/g, '');
-  if (!trimmed) return null;
-
-  let urlObj: URL;
-  try {
-    const toParse = !trimmed.startsWith('http://') && !trimmed.startsWith('https://')
-      ? `https://${trimmed}`
-      : trimmed;
-    urlObj = new URL(toParse);
-  } catch {
-    return null;
-  }
-
-  const hostname = urlObj.hostname.toLowerCase();
-  let title = "AtoPlay Video Promotion";
-  let thumbnailUrl = "https://cdn.atoplay.in/atoplay-thumbnails/58d4d4aa-c235-48a1-8423-57fbeefa914e/thumbnails/61f8d5c2-3b2b-4789-8581-c6727ce0388a.webp";
-  let channelName = "AtoPlay Creator";
-  let durationSeconds = 60;
-  let durationText = "1:00";
-  let displayId = "PLAY";
-  let isRealVideo = false;
-
-  // 1. AtoPlay Video Detection & Extraction
-  if (hostname.includes('atoplay.com') || hostname.includes('atoplay.in')) {
-    const uuidMatch = urlObj.pathname.match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
-    const videoId = uuidMatch ? uuidMatch[1] : '';
-
-    if (videoId) {
-      displayId = videoId.slice(-4).toUpperCase();
-      try {
-        // AtoPlay API allows CORS for any origin!
-        let apiRes = await fetch(`https://api.atoplay.com/api/videos/${videoId}`, {
-          headers: { 'Accept': 'application/json' }
-        });
-        if (!apiRes.ok) {
-          apiRes = await fetch(`https://api.atoplay.com/api/videos/v2/${videoId}`, {
-            headers: { 'Accept': 'application/json' }
-          });
-        }
-        if (apiRes.ok) {
-          const vData = await apiRes.json();
-          if (vData?.title) title = vData.title;
-          if (vData?.thumbnailUrl) {
-            thumbnailUrl = vData.thumbnailUrl.startsWith('http')
-              ? vData.thumbnailUrl
-              : `https://cdn.atoplay.in/${vData.thumbnailUrl.replace(/^\//, '')}`;
-          }
-          if (vData?.channel?.name || vData?.channelName) {
-            channelName = vData.channel?.name || vData.channelName;
-          }
-          if (vData?.durationSeconds || vData?.duration) {
-            durationSeconds = Number(vData.durationSeconds || vData.duration) || 60;
-            const mins = Math.floor(durationSeconds / 60);
-            const secs = durationSeconds % 60;
-            durationText = `${mins}:${secs.toString().padStart(2, '0')}`;
-          }
-          isRealVideo = true;
-          return { displayId, title, thumbnailUrl, channelName, durationSeconds, durationText, isRealVideo };
-        }
-      } catch (atoErr) {
-        console.warn('AtoPlay client direct API note:', atoErr);
-      }
-    }
-
-    // Slug / keyword fallback
-    const pathSegments = urlObj.pathname.split('/').filter(Boolean);
-    const lastSegment = pathSegments.length > 0 ? pathSegments[pathSegments.length - 1] : '';
-    const cleanSlug = decodeURIComponent(lastSegment).replace(/[-_]/g, ' ').trim();
-    if (cleanSlug && cleanSlug !== 'video' && cleanSlug !== 'watch') {
-      title = cleanSlug.charAt(0).toUpperCase() + cleanSlug.slice(1);
-    }
-  }
-
-  // 2. YouTube Video Detection & Extraction
-  if (hostname.includes('youtube.com') || hostname.includes('youtu.be')) {
-    let ytId = '';
-    if (hostname.includes('youtu.be')) {
-      ytId = urlObj.pathname.slice(1).split('?')[0];
-    } else if (urlObj.pathname.includes('/shorts/')) {
-      ytId = urlObj.pathname.split('/shorts/')[1]?.split('/')[0]?.split('?')[0] || '';
-    } else {
-      ytId = urlObj.searchParams.get('v') || '';
-    }
-
-    if (ytId) {
-      displayId = ytId.slice(-4).toUpperCase();
-      thumbnailUrl = `https://img.youtube.com/vi/${ytId}/hqdefault.jpg`;
-      channelName = "YouTube Creator";
-      try {
-        const oembedRes = await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(trimmed)}&format=json`);
-        if (oembedRes.ok) {
-          const data = await oembedRes.json();
-          if (data.title) title = data.title;
-          if (data.author_name) channelName = data.author_name;
-        }
-      } catch {
-        title = `YouTube Video (${ytId})`;
-      }
-      isRealVideo = true;
-      return { displayId, title, thumbnailUrl, channelName, durationSeconds, durationText, isRealVideo };
-    }
-  }
-
-  // Fallback high quality CDN thumbnail
-  const thumbs = [
-    "https://cdn.atoplay.in/atoplay-thumbnails/58d4d4aa-c235-48a1-8423-57fbeefa914e/thumbnails/61f8d5c2-3b2b-4789-8581-c6727ce0388a.webp",
-    "https://cdn.atoplay.in/atoplay-thumbnails/58d4d4aa-c235-48a1-8423-57fbeefa914e/thumbnails/b079eff5-e942-4d88-813d-6bc5a40d08e9.webp",
-    "https://cdn.atoplay.in/atoplay-thumbnails/58d4d4aa-c235-48a1-8423-57fbeefa914e/thumbnails/12093053-ff39-4dd8-9c1f-a1a801b54b28.webp"
-  ];
-  thumbnailUrl = thumbs[0];
-
-  return { displayId, title, thumbnailUrl, channelName, durationSeconds, durationText, isRealVideo };
-}
-
-/**
  * Universal safe API caller that tries real backend first,
  * and seamlessly falls back to resilient client storage on static platforms like Vercel.
  */
@@ -244,10 +123,10 @@ async function handleClientFallback<T>(endpoint: string, options?: RequestInit, 
   const parsedBody = options?.body && typeof options.body === 'string' ? JSON.parse(options.body) : (options?.body || {});
 
   // 0. Extract Real Video Metadata Fallback (for Vercel URL)
-  if (endpoint.startsWith('/api/campaigns/extract-metadata')) {
+  if (endpoint.startsWith('/api/campaigns/extract-metadata') || endpoint.startsWith('/api/extract-metadata')) {
     try {
-      const urlParam = new URL(endpoint, 'http://localhost').searchParams.get('url') || '';
-      const meta = await extractVideoMetadataClient(urlParam);
+      const urlParam = new URL(endpoint, 'http://localhost').searchParams.get('url') || parsedBody?.url || '';
+      const meta = await extractVideoMetadata(urlParam);
       if (meta) {
         return { success: true, metadata: meta } as any;
       }
@@ -371,6 +250,23 @@ async function handleClientFallback<T>(endpoint: string, options?: RequestInit, 
       return { success: false, message: 'Minimum campaign is 10 views (800 coins required).' } as any;
     }
 
+    let finalTitle = title;
+    let finalThumbnail = thumbnailUrl;
+    let finalDisplayId = '';
+
+    if ((!finalTitle || !finalThumbnail) && videoUrl) {
+      try {
+        const autoMeta = await extractVideoMetadata(videoUrl);
+        if (autoMeta) {
+          if (!finalTitle) finalTitle = autoMeta.title;
+          if (!finalThumbnail) finalThumbnail = autoMeta.thumbnailUrl;
+          finalDisplayId = autoMeta.displayId;
+        }
+      } catch {
+        // continue
+      }
+    }
+
     // 80 coins per view (60 reward + 20 platform fee)
     const totalCost = views * 80;
     const isUserAdmin = Boolean(activeUser.isAdmin || activeUser.email?.toLowerCase().trim() === 'krja462@gmail.com' || activeUser.id.includes('krja462'));
@@ -393,18 +289,18 @@ async function handleClientFallback<T>(endpoint: string, options?: RequestInit, 
       userId: activeUser.id,
       type: 'spent_campaign',
       amount: -totalCost,
-      description: `Created Promotion Campaign for: ${title || 'AtoPlay Video'} (${views} views @ 80 coins/view)`,
+      description: `Created Promotion Campaign for: ${finalTitle || 'AtoPlay Video'} (${views} views @ 80 coins/view)`,
       createdAt: new Date().toISOString()
     });
 
     const newCampaign: Campaign = {
       id: `camp_${Date.now()}`,
-      displayId: String(Math.floor(1000 + Math.random() * 9000)),
+      displayId: finalDisplayId || String(Math.floor(1000 + Math.random() * 9000)),
       userId: activeUser.id,
       userName: activeUser.name,
       videoUrl: videoUrl.trim(),
-      title: title || 'AtoPlay Video Promotion',
-      thumbnailUrl: thumbnailUrl || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80',
+      title: finalTitle || 'AtoPlay Video Promotion',
+      thumbnailUrl: finalThumbnail || 'https://cdn.atoplay.in/atoplay-thumbnails/58d4d4aa-c235-48a1-8423-57fbeefa914e/thumbnails/61f8d5c2-3b2b-4789-8581-c6727ce0388a.webp',
       viewsRequired: views,
       viewsCompleted: 0,
       rewardPerView: 60,

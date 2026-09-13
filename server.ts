@@ -631,9 +631,9 @@ async function extractVideoMetadata(videoUrl: string) {
   return { displayId, title, thumbnailUrl, channelName, durationSeconds, durationText, isRealVideo };
 }
 
-// Route to live-extract metadata for preview in frontend
-app.get("/api/campaigns/extract-metadata", async (req, res) => {
-  const url = req.query.url as string;
+// Route to live-extract metadata for preview in frontend (supports both paths and GET/POST)
+app.all(["/api/campaigns/extract-metadata", "/api/extract-metadata"], async (req, res) => {
+  const url = (req.query.url as string) || (req.body && req.body.url);
   if (!url) {
     return res.status(400).json({ success: false, message: "URL parameter is required" });
   }
