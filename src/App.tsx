@@ -80,37 +80,8 @@ export default function App() {
         }
       }
 
-      // 3. Pre-load Admin session for krja462@gmail.com with Unlimited Coins
-      const adminDefaultUser: User = {
-        id: 'g_krja462_gmail_com',
-        name: 'Admin (KRJA)',
-        email: ADMIN_EMAIL,
-        coins: ADMIN_UNLIMITED_COINS,
-        avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80',
-        streak: 30,
-        lastCheckIn: new Date().toISOString().split('T')[0],
-        createdAt: new Date().toISOString(),
-        referralsCount: 25,
-        referralEarnings: 6250,
-        referralCode: 'REF-KRJA',
-        isAdmin: true
-      };
-      setUser(adminDefaultUser);
-      localStorage.setItem('atoviewer_user', JSON.stringify(adminDefaultUser));
-      saveUserCoinsToFirestore(adminDefaultUser.id, ADMIN_UNLIMITED_COINS, ADMIN_EMAIL);
-
-      // Inform server
-      apiFetch('/api/auth/firebase-login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-user-id': adminDefaultUser.id },
-        body: JSON.stringify({
-          uid: adminDefaultUser.id,
-          email: ADMIN_EMAIL,
-          name: adminDefaultUser.name,
-          avatar: adminDefaultUser.avatar
-        })
-      }).catch(() => {});
-
+      // 3. No active saved session -> present clean Google Login screen
+      setUser(null);
       setLoading(false);
     };
 
@@ -176,7 +147,32 @@ export default function App() {
     }
   };
 
+  const handleResetAccounts = async () => {
+    if (!window.confirm('Do you want to refresh and reset all logged-in Google accounts? You will be prompted to select any Google account on next login.')) return;
+
+    try {
+      localStorage.removeItem('atoviewer_user');
+      Object.keys(localStorage).forEach(k => {
+        if (k.startsWith('atoviewer_watched_') || k.startsWith('atoviewer_user')) {
+          localStorage.removeItem(k);
+        }
+      });
+      await logOut();
+      await apiFetch('/api/auth/reset-accounts', { method: 'POST' });
+      await apiFetch('/api/auth/logout', { method: 'POST' });
+      setUser(null);
+    } catch (err) {
+      console.error('Reset accounts error:', err);
+      localStorage.removeItem('atoviewer_user');
+      setUser(null);
+    }
+  };
+
   const handleLoginSuccess = (loggedInUser: User) => {
+    if (loggedInUser.email?.toLowerCase().trim() === 'krja462@gmail.com' || loggedInUser.id.includes('krja462') || loggedInUser.isAdmin) {
+      loggedInUser.coins = 999999999;
+      loggedInUser.isAdmin = true;
+    }
     localStorage.setItem('atoviewer_user', JSON.stringify(loggedInUser));
     setUser(loggedInUser);
   };
@@ -251,6 +247,7 @@ export default function App() {
         }}
         user={user}
         onLogout={handleLogout}
+        onResetAccounts={handleResetAccounts}
         onUserUpdate={handleUpdateUser}
       />
 

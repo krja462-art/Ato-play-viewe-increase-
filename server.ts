@@ -239,6 +239,33 @@ app.post("/api/auth/logout", (req, res) => {
   res.json({ success: true, message: "Logged out successfully" });
 });
 
+// Refresh / Reset all stored Google accounts
+app.post("/api/auth/reset-accounts", (req, res) => {
+  // Clear all non-admin stored user records in server memory
+  Object.keys(users).forEach(uid => {
+    if (uid !== adminUid && users[uid]?.email?.toLowerCase().trim() !== ADMIN_EMAIL) {
+      delete users[uid];
+    }
+  });
+  // Ensure official Admin account is fresh with Unlimited Coins
+  users[adminUid] = {
+    id: adminUid,
+    name: "Admin (KRJA)",
+    email: ADMIN_EMAIL,
+    coins: ADMIN_UNLIMITED_COINS,
+    avatar: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80",
+    streak: 30,
+    lastCheckIn: new Date().toISOString().split('T')[0],
+    createdAt: new Date().toISOString(),
+    referralsCount: 25,
+    referralEarnings: 6250,
+    referralCode: "REF-KRJA",
+    isAdmin: true
+  };
+  currentSessionUser = null;
+  res.json({ success: true, message: "All logged in Google accounts refreshed successfully" });
+});
+
 app.get("/api/campaigns", (req, res) => {
   const filter = req.query.filter; // 'my' or 'all'
   const activeUser = getActiveUser(req);
@@ -719,7 +746,8 @@ app.delete("/api/campaigns/:id", (req, res) => {
   }
 
   const { id } = req.params;
-  const campaignIndex = campaigns.findIndex(c => c.id === id && c.userId === activeUser.id);
+  const isUserAdmin = Boolean(activeUser.isAdmin || activeUser.email?.toLowerCase().trim() === ADMIN_EMAIL || activeUser.id.includes('krja462'));
+  const campaignIndex = campaigns.findIndex(c => c.id === id && (c.userId === activeUser.id || isUserAdmin));
 
   if (campaignIndex === -1) {
     return res.status(404).json({ success: false, message: "Campaign not found or unauthorized" });
@@ -733,7 +761,9 @@ app.delete("/api/campaigns/:id", (req, res) => {
     const coinRate = 80; // 80 coins per remaining view refund
     const refundAmount = Math.floor(remainingViews * coinRate);
     if (refundAmount > 0) {
-      activeUser.coins += refundAmount;
+      if (!isUserAdmin) {
+        activeUser.coins += refundAmount;
+      }
       transactions.unshift({
         id: `tx_${Date.now()}`,
         userId: activeUser.id,

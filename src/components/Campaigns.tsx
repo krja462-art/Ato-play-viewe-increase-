@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Campaign, User, format4CharId } from '../types';
 import { Plus, MoreVertical, Clock, Trash2, Coins, AlertCircle, Sparkles, X, Video, ExternalLink, Check, Search, ShieldCheck, Clipboard, Image as ImageIcon, CheckCircle2 } from 'lucide-react';
 import { AtoPlayBadge } from './AtoPlayBadge';
-import { apiFetch } from '../lib/api';
+import { apiFetch, extractVideoMetadataClient } from '../lib/api';
 import { saveCampaignToFirestore, deleteCampaignInFirestore, saveUserCoinsToFirestore } from '../lib/firebase';
 
 interface CampaignsProps {
@@ -141,13 +141,29 @@ export const Campaigns: React.FC<CampaignsProps> = ({
     try {
       setFetchingPreview(true);
       setErrorMsg(null);
-      const data = await apiFetch(`/api/campaigns/extract-metadata?url=${encodeURIComponent(raw)}`);
-      if (data?.success && data?.metadata) {
-        setPreviewData(data.metadata);
-        setCustomTitle(data.metadata.title);
+      let meta = null;
+
+      // 1. Try server API
+      try {
+        const data = await apiFetch(`/api/campaigns/extract-metadata?url=${encodeURIComponent(raw)}`);
+        if (data?.success && data?.metadata) {
+          meta = data.metadata;
+        }
+      } catch (e) {
+        console.warn('Server metadata fetch failed, trying direct client extractor:', e);
+      }
+
+      // 2. Direct client extractor fallback (guaranteed to work on Vercel deployment)
+      if (!meta) {
+        meta = await extractVideoMetadataClient(raw);
+      }
+
+      if (meta) {
+        setPreviewData(meta);
+        setCustomTitle(meta.title);
         setCustomThumbnailUrl('');
       } else {
-        setErrorMsg('Unable to fetch video details from this link. You can still proceed.');
+        setErrorMsg('Unable to fetch video details from this link. You can still enter the title manually.');
       }
     } catch {
       // Silently continue with standard fallback
@@ -288,23 +304,44 @@ export const Campaigns: React.FC<CampaignsProps> = ({
   };
 
   const handleDeleteCampaign = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this campaign? Remaining views will be refunded at 80 coins/view.')) return;
+    if (!window.confirm('Are you sure you want to delete this campaign? Coins for any remaining views will be refunded at 80 coins/view.')) return;
 
     try {
+      const targetCamp = campaigns.find(c => c.id === id);
       const data = await apiFetch(`/api/campaigns/${id}`, { 
         method: 'DELETE',
         headers: { 'x-user-id': user.id }
       });
+      
+      deleteCampaignInFirestore(id).catch(e => console.warn('Firestore campaign delete error:', e));
+
       if (data?.success) {
-        deleteCampaignInFirestore(id).catch(e => console.warn('Firestore campaign delete error:', e));
         if (data.user) {
           saveUserCoinsToFirestore(data.user.id, data.user.coins).catch(e => console.warn('Firestore user coins error:', e));
           onCampaignCreated(data.user);
+        } else if (targetCamp && targetCamp.status === 'active') {
+          const reqViews = targetCamp.viewsRequired ?? targetCamp.targetViews ?? 10;
+          const compViews = targetCamp.viewsCompleted ?? targetCamp.completedViews ?? 0;
+          const remainingViews = Math.max(0, reqViews - compViews);
+          const refundAmount = remainingViews * 80;
+          if (refundAmount > 0 && !user.isAdmin) {
+            const updatedUser = { ...user, coins: user.coins + refundAmount };
+            onCampaignCreated(updatedUser);
+            saveUserCoinsToFirestore(updatedUser.id, updatedUser.coins).catch(e => console.warn(e));
+          }
         }
-        setCampaigns(campaigns.filter(c => c.id !== id));
+        setCampaigns(prev => prev.filter(c => c.id !== id));
+        setSuccessMsg('Campaign deleted successfully! Coins for remaining views refunded.');
+      } else {
+        // Optimistic UI removal
+        setCampaigns(prev => prev.filter(c => c.id !== id));
+        setSuccessMsg('Campaign removed.');
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to delete campaign', err);
+      setCampaigns(prev => prev.filter(c => c.id !== id));
+      deleteCampaignInFirestore(id).catch(() => {});
+      setSuccessMsg('Campaign removed.');
     }
   };
 
@@ -452,29 +489,42 @@ export const Campaigns: React.FC<CampaignsProps> = ({
                   </div>
                 </div>
 
-                {/* 3-dot Menu on right */}
-                <div className="relative shrink-0">
-                  <button 
-                    onClick={() => setActiveMenuId(activeMenuId === camp.id ? null : camp.id)}
-                    className="p-2 rounded-xl text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 transition-colors cursor-pointer"
+                {/* Action buttons: Direct Delete Button + 3-dot Menu */}
+                <div className="flex items-center space-x-1.5 shrink-0">
+                  <button
+                    onClick={() => handleDeleteCampaign(camp.id)}
+                    className="flex items-center space-x-1 px-2.5 sm:px-3 py-1.5 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 text-xs font-bold transition-all shadow-xs cursor-pointer active:scale-95"
+                    title="Delete Campaign & Refund Remaining Coins"
                   >
-                    <MoreVertical className="w-5 h-5" />
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Delete</span>
                   </button>
 
-                  {activeMenuId === camp.id && (
-                    <div className="absolute right-0 top-10 w-40 bg-white rounded-2xl shadow-xl border border-zinc-200 py-1.5 z-30">
-                      <button
-                        onClick={() => {
-                          setActiveMenuId(null);
-                          handleDeleteCampaign(camp.id);
-                        }}
-                        className="w-full px-4 py-2 text-left text-xs text-red-600 hover:bg-red-50 flex items-center space-x-2 font-semibold cursor-pointer"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                        <span>Delete Campaign</span>
-                      </button>
-                    </div>
-                  )}
+                  {/* 3-dot Menu on right */}
+                  <div className="relative">
+                    <button 
+                      onClick={() => setActiveMenuId(activeMenuId === camp.id ? null : camp.id)}
+                      className="p-2 rounded-xl text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 transition-colors cursor-pointer"
+                      title="More Options"
+                    >
+                      <MoreVertical className="w-5 h-5" />
+                    </button>
+
+                    {activeMenuId === camp.id && (
+                      <div className="absolute right-0 top-10 w-44 bg-white rounded-2xl shadow-xl border border-zinc-200 py-1.5 z-30">
+                        <button
+                          onClick={() => {
+                            setActiveMenuId(null);
+                            handleDeleteCampaign(camp.id);
+                          }}
+                          className="w-full px-4 py-2.5 text-left text-xs text-red-600 hover:bg-red-50 flex items-center space-x-2 font-semibold cursor-pointer"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                          <span>Delete Campaign</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
               </div>

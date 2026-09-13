@@ -11,6 +11,7 @@ interface NavbarProps {
   onOpenCreate: () => void;
   user?: User | null;
   onLogout?: () => void;
+  onResetAccounts?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -19,7 +20,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   coins,
   onOpenCreate,
   user,
-  onLogout
+  onLogout,
+  onResetAccounts
 }) => {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 
@@ -119,6 +121,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         onClose={() => setIsDrawerOpen(false)}
         user={user || null}
         onLogout={onLogout}
+        onResetAccounts={onResetAccounts}
       />
 
       {/* Professional Fixed Bottom Navigation Bar (Home | Center Elevated Plus (+) Button | Campaign) */}

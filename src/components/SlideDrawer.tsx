@@ -22,7 +22,8 @@ import {
   Download,
   Smartphone,
   Share,
-  PlusSquare
+  PlusSquare,
+  RotateCw
 } from 'lucide-react';
 import { User } from '../types';
 import { usePWAInstall } from '../hooks/usePWAInstall';
@@ -33,6 +34,7 @@ interface SlideDrawerProps {
   onClose: () => void;
   user: User | null;
   onLogout?: () => void;
+  onResetAccounts?: () => void;
   onUserUpdate?: (updatedUser: User) => void;
 }
 
@@ -41,6 +43,7 @@ export const SlideDrawer: React.FC<SlideDrawerProps> = ({
   onClose,
   user,
   onLogout,
+  onResetAccounts,
   onUserUpdate
 }) => {
   const [activeModal, setActiveModal] = useState<'privacy' | 'terms' | 'contact' | 'referral' | 'ios_install' | null>(null);
@@ -411,8 +414,22 @@ export const SlideDrawer: React.FC<SlideDrawerProps> = ({
 
           </div>
 
-          {/* Bottom Footer Section with Logout Button */}
+          {/* Bottom Footer Section with Refresh & Logout Buttons */}
           <div className="p-5 sm:p-6 border-t border-zinc-100 space-y-3 bg-zinc-50/50">
+            {onResetAccounts && (
+              <button
+                onClick={() => {
+                  onClose();
+                  onResetAccounts();
+                }}
+                className="w-full py-3.5 px-4 rounded-2xl bg-blue-50 hover:bg-blue-100 text-blue-700 font-extrabold text-sm flex items-center justify-center space-x-2 border border-blue-200 shadow-xs transition-all hover:scale-101 active:scale-98 cursor-pointer"
+                title="Refresh and switch Google accounts"
+              >
+                <RotateCw className="w-4 h-4 text-blue-600" />
+                <span>Refresh / Switch Google Account</span>
+              </button>
+            )}
+
             {onLogout && (
               <button
                 onClick={() => {

@@ -48,6 +48,7 @@ googleProvider.setCustomParameters({ prompt: 'select_account' });
  * Real Google Account Sign-In via Firebase Popup
  */
 export const signInWithGoogle = async (): Promise<FirebaseUser> => {
+  googleProvider.setCustomParameters({ prompt: 'select_account' });
   const result = await signInWithPopup(auth, googleProvider);
   return result.user;
 };
@@ -56,6 +57,7 @@ export const signInWithGoogle = async (): Promise<FirebaseUser> => {
  * Real Google Account Sign-In via Firebase Redirect (for mobile browsers or strict popup blockers)
  */
 export const signInWithGoogleRedirect = async (): Promise<void> => {
+  googleProvider.setCustomParameters({ prompt: 'select_account' });
   await signInWithRedirect(auth, googleProvider);
 };
 
