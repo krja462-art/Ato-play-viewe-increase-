@@ -301,7 +301,19 @@ export const Campaigns: React.FC<CampaignsProps> = ({
                 
                 {/* Stretched Thumbnail on left */}
                 <div className="w-28 sm:w-36 aspect-video rounded-xl bg-zinc-950 overflow-hidden shrink-0 border border-zinc-200 shadow-xs relative">
-                  <img src={camp.thumbnailUrl} alt={camp.title} className="w-full h-full object-cover" />
+                  <img 
+                    src={camp.thumbnailUrl} 
+                    alt={camp.title} 
+                    referrerPolicy="no-referrer"
+                    crossOrigin="anonymous"
+                    onError={(e) => {
+                      const target = e.currentTarget;
+                      if (!target.src.includes('unsplash.com')) {
+                        target.src = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80";
+                      }
+                    }}
+                    className="w-full h-full object-cover" 
+                  />
                   <div className="absolute bottom-1 right-1 px-1 py-0.5 rounded bg-black/80 text-white text-[9px] font-bold">
                     60s
                   </div>
@@ -451,6 +463,14 @@ export const Campaigns: React.FC<CampaignsProps> = ({
                     <img 
                       src={previewData.thumbnailUrl} 
                       alt="Preview" 
+                      referrerPolicy="no-referrer"
+                      crossOrigin="anonymous"
+                      onError={(e) => {
+                        const target = e.currentTarget;
+                        if (!target.src.includes('unsplash.com')) {
+                          target.src = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80";
+                        }
+                      }}
                       className="w-full h-full object-cover"
                     />
                   </div>

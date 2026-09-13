@@ -268,7 +268,67 @@ async function extractVideoMetadata(videoUrl: string) {
       }
     }
 
-    // For AtoPlay and other video platforms:
+    // Direct AtoPlay Official Platform API Integration
+    if (isValidHostname && (hostname.includes('atoplay.com') || hostname.includes('atoplay.in'))) {
+      try {
+        // 1. Check if URL contains an AtoPlay UUID video ID
+        const uuidMatch = trimmedUrl.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+        if (uuidMatch) {
+          const videoId = uuidMatch[0];
+          displayId = generate4CharId(videoId);
+          const apiRes = await fetch(`https://api.atoplay.com/api/videos/v2/${videoId}`, {
+            headers: {
+              'Accept': 'application/json',
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
+          });
+          if (apiRes.ok) {
+            const vData = await apiRes.json();
+            if (vData?.title) {
+              title = decodeHtmlEntities(vData.title);
+            }
+            if (vData?.thumbnailUrl) {
+              thumbnailUrl = vData.thumbnailUrl;
+            }
+            return { displayId, title, thumbnailUrl };
+          }
+        }
+
+        // 2. Check if URL contains slug or keyword in pathname
+        const pathSegments = urlObj.pathname.split('/').filter(Boolean);
+        const lastSegment = pathSegments.length > 0 ? pathSegments[pathSegments.length - 1] : '';
+        const searchKeywords = decodeURIComponent(lastSegment).replace(/[-_]/g, ' ').trim();
+
+        if (searchKeywords && searchKeywords !== 'video' && searchKeywords !== 'watch' && searchKeywords !== 'v') {
+          const searchRes = await fetch(`https://api.atoplay.com/api/search/search?query=${encodeURIComponent(searchKeywords)}&page=1&limit=5`, {
+            headers: {
+              'Accept': 'application/json',
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
+          });
+          if (searchRes.ok) {
+            const sData = await searchRes.json();
+            if (Array.isArray(sData) && sData.length > 0) {
+              const bestMatch = sData[0];
+              if (bestMatch?.title) {
+                title = decodeHtmlEntities(bestMatch.title);
+              }
+              if (bestMatch?.thumbnailUrl) {
+                thumbnailUrl = bestMatch.thumbnailUrl;
+              }
+              if (bestMatch?.id || bestMatch?.videoId) {
+                displayId = generate4CharId(bestMatch.id || bestMatch.videoId);
+              }
+              return { displayId, title, thumbnailUrl };
+            }
+          }
+        }
+      } catch (atoErr) {
+        console.warn('AtoPlay API fetch fallback to scraper:', atoErr);
+      }
+    }
+
+    // For other video platforms or generic URLs:
     // Extract display ID from URL path or query params (ensure 4 chars)
     const vParam = urlObj.searchParams.get('v') || urlObj.searchParams.get('id') || urlObj.searchParams.get('video_id');
     if (vParam) {
@@ -490,7 +550,7 @@ app.post("/api/campaigns", async (req, res) => {
     status: "active",
     createdAt: new Date().toISOString(),
     displayId: generate4CharId(metadata.displayId),
-    countryFlag: "🇧🇷"
+    countryFlag: "🇮🇳"
   };
 
   campaigns.unshift(newCampaign);
@@ -1116,6 +1176,39 @@ app.get("/google:code([a-zA-Z0-9_-]+).html", (req, res) => {
   const code = req.params.code;
   res.setHeader("Content-Type", "text/html; charset=utf-8");
   res.send(`google-site-verification: google${code}.html`);
+});
+
+// Favicon and Icon Routes for Google Search crawler and browsers
+app.get("/favicon.ico", (_req, res) => {
+  res.setHeader("Content-Type", "image/x-icon");
+  res.setHeader("Cache-Control", "public, max-age=86400");
+  const p = path.join(process.cwd(), "public", "favicon.ico");
+  if (fs.existsSync(p)) return res.sendFile(p);
+  res.status(404).end();
+});
+
+app.get("/icon.png", (_req, res) => {
+  res.setHeader("Content-Type", "image/png");
+  res.setHeader("Cache-Control", "public, max-age=86400");
+  const p = path.join(process.cwd(), "public", "icon.png");
+  if (fs.existsSync(p)) return res.sendFile(p);
+  res.status(404).end();
+});
+
+app.get("/favicon-48x48.png", (_req, res) => {
+  res.setHeader("Content-Type", "image/png");
+  res.setHeader("Cache-Control", "public, max-age=86400");
+  const p = path.join(process.cwd(), "public", "favicon-48x48.png");
+  if (fs.existsSync(p)) return res.sendFile(p);
+  res.status(404).end();
+});
+
+app.get("/favicon-96x96.png", (_req, res) => {
+  res.setHeader("Content-Type", "image/png");
+  res.setHeader("Cache-Control", "public, max-age=86400");
+  const p = path.join(process.cwd(), "public", "favicon-96x96.png");
+  if (fs.existsSync(p)) return res.sendFile(p);
+  res.status(404).end();
 });
 
 

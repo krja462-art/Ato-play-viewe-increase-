@@ -457,6 +457,14 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
             <img
               src={selectedCampaign.thumbnailUrl}
               alt={selectedCampaign.title}
+              referrerPolicy="no-referrer"
+              crossOrigin="anonymous"
+              onError={(e) => {
+                const target = e.currentTarget;
+                if (!target.src.includes('unsplash.com')) {
+                  target.src = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80";
+                }
+              }}
               className="w-full h-full object-cover"
             />
             
@@ -712,6 +720,14 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
                     <img
                       src={camp.thumbnailUrl}
                       alt={camp.title}
+                      referrerPolicy="no-referrer"
+                      crossOrigin="anonymous"
+                      onError={(e) => {
+                        const target = e.currentTarget;
+                        if (!target.src.includes('unsplash.com')) {
+                          target.src = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80";
+                        }
+                      }}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                     />
                     <div className="absolute inset-0 bg-black/10 group-hover:bg-transparent transition-colors" />
