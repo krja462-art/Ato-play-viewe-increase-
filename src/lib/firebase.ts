@@ -11,6 +11,7 @@ import {
 } from 'firebase/auth';
 import { 
   initializeFirestore, 
+  setLogLevel,
   doc, 
   getDoc, 
   setDoc, 
@@ -27,11 +28,14 @@ export const app = initializeApp(firebaseConfig);
 // Initialize Firebase Auth
 export const auth = getAuth(app);
 
-// Initialize Firestore with auto-detecting long-polling for proxy/iframe compatibility
+// Suppress benign connection retry / offline warnings in sandbox environment
+setLogLevel('error');
+
+// Initialize Firestore with forced HTTP long-polling to prevent WebSocket timeouts in iframe/proxy environments
 export const db = initializeFirestore(
   app,
   {
-    experimentalAutoDetectLongPolling: true,
+    experimentalForceLongPolling: true,
   },
   firebaseConfig.firestoreDatabaseId || undefined
 );
