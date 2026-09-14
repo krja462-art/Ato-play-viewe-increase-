@@ -68,7 +68,7 @@ function addStoredTransaction(tx: Transaction): void {
   localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(list.slice(0, 100)));
 }
 
-function getWatchedIds(userId: string): Set<string> {
+export function getWatchedIds(userId: string): Set<string> {
   try {
     const raw = localStorage.getItem(`${STORAGE_KEYS.WATCHED}_${userId}`);
     return raw ? new Set(JSON.parse(raw)) : new Set();
@@ -77,7 +77,7 @@ function getWatchedIds(userId: string): Set<string> {
   }
 }
 
-function addWatchedId(userId: string, campaignId: string): void {
+export function addWatchedId(userId: string, campaignId: string): void {
   const set = getWatchedIds(userId);
   set.add(campaignId);
   localStorage.setItem(`${STORAGE_KEYS.WATCHED}_${userId}`, JSON.stringify(Array.from(set)));

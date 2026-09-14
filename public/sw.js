@@ -1,5 +1,6 @@
-// AtoViewer PWA Service Worker
-const CACHE_NAME = 'atoviewer-cache-v1';
+// AtoViewer PWA Service Worker (TWA & Google Play Store Ready)
+const CACHE_NAME = 'atoviewer-cache-v2';
+const RUNTIME_CACHE = 'atoviewer-runtime-v2';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -15,20 +16,21 @@ const STATIC_ASSETS = [
 
 // 1. Install event: Pre-cache shell assets
 self.addEventListener('install', (event) => {
+  self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
       return cache.addAll(STATIC_ASSETS);
-    }).then(() => self.skipWaiting())
+    })
   );
 });
 
-// 2. Activate event: Clear outdated caches and claim clients
+// 2. Activate event: Clear outdated caches and claim clients immediately
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(
         cacheNames.map((name) => {
-          if (name !== CACHE_NAME) {
+          if (name !== CACHE_NAME && name !== RUNTIME_CACHE) {
             return caches.delete(name);
           }
         })
@@ -37,7 +39,14 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// 3. Fetch event: Network-first for dynamic & API, Cache-first / stale-while-revalidate for static assets
+// 3. Message event: Allow client to trigger immediate skipWaiting
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
+});
+
+// 4. Fetch event: Network-first for dynamic & API, Stale-while-revalidate for static assets
 self.addEventListener('fetch', (event) => {
   const { request } = event;
 
@@ -48,11 +57,36 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(request.url);
 
-  // Bypass API and internal calls to network directly
+  // Special offline support for GET /api/campaigns
+  if (url.pathname === '/api/campaigns') {
+    event.respondWith(
+      fetch(request)
+        .then((networkResponse) => {
+          if (networkResponse && networkResponse.status === 200) {
+            const clone = networkResponse.clone();
+            caches.open(RUNTIME_CACHE).then((cache) => cache.put(request, clone));
+          }
+          return networkResponse;
+        })
+        .catch(async () => {
+          // Fallback to cached campaigns if offline
+          const cached = await caches.match(request);
+          if (cached) {
+            return cached;
+          }
+          return new Response(JSON.stringify({ success: true, campaigns: [], offline: true }), {
+            headers: { 'Content-Type': 'application/json' }
+          });
+        })
+    );
+    return;
+  }
+
+  // Other API endpoints -> Network with clean offline JSON fallback
   if (url.pathname.startsWith('/api/')) {
     event.respondWith(
       fetch(request).catch(() => {
-        return new Response(JSON.stringify({ error: 'Offline', offline: true }), {
+        return new Response(JSON.stringify({ error: 'Offline', offline: true, message: 'You are currently offline. Please reconnect to internet.' }), {
           headers: { 'Content-Type': 'application/json' }
         });
       })
@@ -84,7 +118,7 @@ self.addEventListener('fetch', (event) => {
   event.respondWith(
     caches.match(request).then((cachedResponse) => {
       if (cachedResponse) {
-        // Return cached and update in background (stale-while-revalidate)
+        // Stale-while-revalidate: return cached response and refresh cache in background
         fetch(request)
           .then((networkResponse) => {
             if (networkResponse && networkResponse.status === 200) {

@@ -1,5 +1,5 @@
 {
-  "id": "https://ato-play-viewe-increase.vercel.app/",
+  "id": "/?source=pwa",
   "name": "AtoPlay Booster - Ato Play Views Increase",
   "short_name": "AtoPlay Booster",
   "description": "AtoPlay Booster (Ato Play Booster) is India's #1 AtoPlay video view exchange and watch time booster platform. Increase real AtoPlay views, earn coins, and monetize your channel faster.",
@@ -8,25 +8,40 @@
   "start_url": "/?source=pwa",
   "scope": "/",
   "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
   "orientation": "portrait",
   "background_color": "#ffffff",
   "theme_color": "#2563eb",
   "categories": ["entertainment", "utilities", "social"],
+  "prefer_related_applications": false,
+  "handle_links": "preferred",
   "icons": [
     {
       "src": "/pwa-192x192.png",
       "sizes": "192x192",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
     },
     {
       "src": "/pwa-512x512.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
     },
     {
       "src": "/pwa-maskable-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/pwa-512x512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"

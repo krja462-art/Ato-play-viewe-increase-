@@ -4,8 +4,13 @@ import { Play, CheckCircle2, Clock, ArrowLeft, Video, ExternalLink, RefreshCw, A
 import { RewardPopupModal } from './RewardPopupModal';
 import { SessionExpiredModal } from './SessionExpiredModal';
 import { AtoPlayBadge } from './AtoPlayBadge';
-import { apiFetch } from '../lib/api';
-import { updateCampaignViewsInFirestore, saveUserCoinsToFirestore } from '../lib/firebase';
+import { apiFetch, getWatchedIds, addWatchedId } from '../lib/api';
+import { 
+  updateCampaignViewsInFirestore, 
+  saveUserCoinsToFirestore,
+  getPublicCampaignsFromFirestore,
+  seedStarterCampaignsToFirestore
+} from '../lib/firebase';
 
 interface HomeWatchFeedProps {
   user: User;
@@ -13,6 +18,7 @@ interface HomeWatchFeedProps {
   setActiveTab: (tab: string) => void;
   onClaimCheckin: () => void;
   onWatchAd: () => void;
+  refreshTrigger?: number;
 }
 
 const STORAGE_KEY = 'atoplay_active_watch_session';
@@ -20,7 +26,8 @@ const STORAGE_KEY = 'atoplay_active_watch_session';
 export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
   user,
   onCoinEarned,
-  setActiveTab
+  setActiveTab,
+  refreshTrigger
 }) => {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [selectedCampaign, setSelectedCampaign] = useState<Campaign | null>(null);
@@ -70,11 +77,91 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
   const fetchCampaigns = async () => {
     try {
       setLoading(true);
-      const data = await apiFetch('/api/campaigns', {
-        headers: { 'x-user-id': user.id }
+      const watchedLocal = getWatchedIds(user.id);
+      const watchedArray = Array.from(watchedLocal);
+
+      // Ensure starters exist in Firestore
+      seedStarterCampaignsToFirestore().catch(() => {});
+
+      // 1. Fetch from server API
+      let serverCampaigns: Campaign[] = [];
+      try {
+        const data = await apiFetch('/api/campaigns', {
+          headers: { 
+            'x-user-id': user.id,
+            'x-watched-ids': watchedArray.join(',')
+          }
+        });
+        if (data?.success && Array.isArray(data.campaigns)) {
+          serverCampaigns = data.campaigns;
+        }
+      } catch (err) {
+        console.warn('apiFetch /api/campaigns error:', err);
+      }
+
+      // 2. Fetch live public campaigns from Firestore
+      let firestoreCampaigns: Campaign[] = [];
+      try {
+        firestoreCampaigns = await getPublicCampaignsFromFirestore(user.id);
+      } catch (err) {
+        console.warn('Firestore getPublicCampaigns error:', err);
+      }
+
+      // 3. Merge server and Firestore campaigns into Map by campaign.id
+      const map = new Map<string, Campaign>();
+      for (const c of serverCampaigns) {
+        map.set(c.id, c);
+      }
+      for (const c of firestoreCampaigns) {
+        if (!map.has(c.id)) {
+          map.set(c.id, c);
+        } else {
+          const existing = map.get(c.id)!;
+          const mergedCompletedUserIds = Array.from(new Set([
+            ...(existing.completedUserIds || []),
+            ...(c.completedUserIds || [])
+          ]));
+          map.set(c.id, {
+            ...existing,
+            ...c,
+            viewsCompleted: Math.max(existing.viewsCompleted ?? 0, c.viewsCompleted ?? 0),
+            completedViews: Math.max(existing.completedViews ?? 0, c.completedViews ?? 0),
+            completedUserIds: mergedCompletedUserIds
+          });
+        }
+      }
+
+      // 4. Strict Public Home Video Rules:
+      // - "har user home page dusre user ke campaign dikhe":
+      //   c.userId !== user.id (only other users' campaigns)
+      // - "ek bar jo user 60 s dekh le us user ke page se hat":
+      //   !watchedLocal.has(c.id) && !c.completedUserIds?.includes(user.id)
+      // - "baki all user ke page per dikhe":
+      //   remains visible for all other users who haven't completed it yet
+      // - active status & remaining views:
+      //   c.status === 'active' && viewsCompleted < viewsRequired
+      const publicFiltered = Array.from(map.values()).filter(c => {
+        const reqViews = Number(c.viewsRequired ?? c.targetViews ?? 10);
+        const compViews = Number(c.viewsCompleted ?? c.completedViews ?? 0);
+        if (c.status !== 'active' || compViews >= reqViews) return false;
+        if (c.userId === user.id) return false; // creator's own campaign
+        if (watchedLocal.has(c.id)) return false; // watched locally by this user
+        if (c.completedUserIds && Array.isArray(c.completedUserIds) && c.completedUserIds.includes(user.id)) return false; // watched on server/Firestore
+        return true;
       });
-      if (data?.success && Array.isArray(data.campaigns)) {
-        setCampaigns(data.campaigns);
+
+      // Sort newest first
+      publicFiltered.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+      setCampaigns(publicFiltered);
+
+      // Background sync all active firestore campaigns to server in-memory store
+      if (firestoreCampaigns.length > 0) {
+        apiFetch('/api/campaigns/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ campaigns: firestoreCampaigns })
+        }).catch(() => {});
       }
     } catch (err) {
       console.error('Failed to load campaigns', err);
@@ -85,7 +172,7 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
 
   useEffect(() => {
     fetchCampaigns();
-  }, [user.id]);
+  }, [user.id, refreshTrigger]);
 
   // Invalidate and expire session both locally and on backend when returned < 60s
   const handleExpireSession = useCallback(async (
@@ -164,6 +251,9 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
         }
         updateCampaignViewsInFirestore(cId, user.id, data.campaign?.viewsCompleted, data.campaign?.status === 'completed')
           .catch(e => console.warn('Firestore campaign view sync error:', e));
+
+        // Immediately register watched ID in persistent local storage
+        addWatchedId(user.id, cId);
 
         setIsCompleted(true);
         setIsPlaying(false);
@@ -912,11 +1002,12 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
                   </div>
                 </div>
 
-                {/* Bottom Row: Views progress & Watch Action Button */}
-                <div className="flex items-center justify-between pt-3 mt-2.5 border-t border-zinc-100">
-                  <div className="flex items-center space-x-2">
-                    <span className="text-xs text-zinc-500 font-semibold">
-                      {camp.viewsCompleted ?? camp.completedViews ?? 0}/{camp.viewsRequired ?? camp.targetViews ?? 10} Views
+                {/* Bottom Row: Verified Badge & Watch Action Button (2/100 Views removed as requested) */}
+                <div className="flex items-center justify-between pt-2.5 mt-2.5 border-t border-zinc-100">
+                  <div className="flex items-center space-x-1.5">
+                    <span className="inline-flex items-center text-[11px] text-blue-700 font-bold bg-blue-50 px-2 py-0.5 rounded-lg border border-blue-200/60">
+                      <ShieldCheck className="w-3.5 h-3.5 text-blue-600 mr-1" />
+                      60s Verified
                     </span>
                   </div>
 

@@ -1,10 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { User } from './types';
 import { Navbar } from './components/Navbar';
 import { HomeWatchFeed } from './components/HomeWatchFeed';
 import { Campaigns } from './components/Campaigns';
 import { SplashScreen } from './components/SplashScreen';
 import { PWAInstallBanner } from './components/PWAInstallBanner';
+import { OfflineBanner } from './components/OfflineBanner';
+import { useOnlineStatus } from './hooks/useOnlineStatus';
 import { 
   auth, 
   logOut, 
@@ -20,6 +22,10 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<string>('home');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
+
+  const { isOnline, isReconnected } = useOnlineStatus();
 
   // Check redirect login & cached session on initial load
   useEffect(() => {
@@ -213,6 +219,42 @@ export default function App() {
     }
   };
 
+  const handleAppRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    setRefreshTrigger((prev) => prev + 1);
+
+    // Refresh user balance if logged in
+    if (user?.id) {
+      try {
+        const res = await apiFetch('/api/user', {
+          headers: { 'x-user-id': user.id }
+        });
+        if (res?.success && res?.user) {
+          handleUpdateUser(res.user);
+        }
+      } catch (err) {
+        console.warn('Silent refresh user error:', err);
+      }
+    }
+
+    // Check service worker updates smoothly
+    if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+      try {
+        const reg = await navigator.serviceWorker.getRegistration();
+        if (reg) {
+          await reg.update();
+          if (reg.waiting) {
+            reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+          }
+        }
+      } catch {}
+    }
+
+    setTimeout(() => {
+      setIsRefreshing(false);
+    }, 600);
+  }, [user]);
+
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center text-white space-y-4">
@@ -226,6 +268,12 @@ export default function App() {
   if (!user) {
     return (
       <>
+        <OfflineBanner
+          isOnline={isOnline}
+          isReconnected={isReconnected}
+          onRefresh={handleAppRefresh}
+          isRefreshing={isRefreshing}
+        />
         <SplashScreen onLoginSuccess={handleLoginSuccess} />
         <PWAInstallBanner />
       </>
@@ -235,6 +283,14 @@ export default function App() {
   return (
     <div className="min-h-screen bg-white text-zinc-900 flex flex-col font-sans antialiased selection:bg-blue-600 selection:text-white">
       
+      {/* Offline Status & Reconnection Banner */}
+      <OfflineBanner
+        isOnline={isOnline}
+        isReconnected={isReconnected}
+        onRefresh={handleAppRefresh}
+        isRefreshing={isRefreshing}
+      />
+
       {/* Top Navbar & Drawer Navigation */}
       <Navbar
         activeTab={activeTab}
@@ -247,6 +303,8 @@ export default function App() {
         }}
         user={user}
         onLogout={handleLogout}
+        onRefresh={handleAppRefresh}
+        isRefreshing={isRefreshing}
       />
 
       {/* Main Content Area (Home Feed or Campaign Page) */}
@@ -258,6 +316,7 @@ export default function App() {
             setActiveTab={setActiveTab}
             onClaimCheckin={handleClaimCheckin}
             onWatchAd={handleWatchAd}
+            refreshTrigger={refreshTrigger}
           />
         )}
 

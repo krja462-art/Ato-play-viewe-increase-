@@ -18,7 +18,11 @@ import {
   updateDoc,
   deleteDoc,
   increment,
-  arrayUnion
+  arrayUnion,
+  collection,
+  getDocs,
+  query,
+  limit
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 import { User, Campaign } from '../types';
@@ -237,6 +241,225 @@ export const deleteCampaignInFirestore = async (campaignId: string): Promise<voi
     await deleteDoc(campRef);
   } catch (err) {
     console.warn('Error deleting campaign from Firestore:', err);
+  }
+};
+
+/**
+ * Fetch all public active campaigns from Cloud Firestore.
+ * Strictly respects user requirements:
+ * 1. Shows other users' campaigns to every user ("har user home page dusre user ke campaign dikhe")
+ * 2. If a user completes 60s watch, it is removed from that specific user's page ("ek bar jo user 60 s dekh le us user ke page se hat")
+ * 3. Continues showing to all other users until target views completed ("baki all user ke page per dikhe")
+ */
+export const getPublicCampaignsFromFirestore = async (currentUserId?: string): Promise<Campaign[]> => {
+  try {
+    const colRef = collection(db, 'campaigns');
+    const q = query(colRef, limit(100));
+    const snapshot = await getDocs(q);
+
+    const publicCampaigns: Campaign[] = [];
+
+    snapshot.forEach(docSnap => {
+      const data = docSnap.data() as any;
+      if (!data) return;
+
+      const reqViews = Number(data.viewsRequired ?? data.targetViews ?? 10);
+      const compViews = Number(data.viewsCompleted ?? data.completedViews ?? 0);
+      const status = data.status || 'active';
+      const completedUserIds: string[] = Array.isArray(data.completedUserIds) ? data.completedUserIds : [];
+
+      // Filter: only active campaigns with remaining views
+      if (status !== 'active' || compViews >= reqViews) {
+        return;
+      }
+
+      // If user is authenticated:
+      if (currentUserId) {
+        // Creator's own campaign is managed in "Campaigns" tab, not in earn feed
+        if (data.userId === currentUserId) {
+          return;
+        }
+        // If this user already completed 60s watch, hide from this user's page
+        if (completedUserIds.includes(currentUserId)) {
+          return;
+        }
+      }
+
+      const camp: Campaign = {
+        id: docSnap.id,
+        userId: data.userId || 'creator',
+        userName: data.userName || 'AtoPlay Creator',
+        videoUrl: data.videoUrl || '',
+        title: data.title || 'AtoPlay Video Promotion',
+        thumbnailUrl: data.thumbnailUrl || 'https://cdn.atoplay.in/atoplay-thumbnails/58d4d4aa-c235-48a1-8423-57fbeefa914e/thumbnails/61f8d5c2-3b2b-4789-8581-c6727ce0388a.webp',
+        viewsRequired: reqViews,
+        viewsCompleted: compViews,
+        rewardPerView: Number(data.rewardPerView || 60),
+        targetViews: reqViews,
+        completedViews: compViews,
+        durationSeconds: Number(data.durationSeconds || 60),
+        totalCoinsCost: Number(data.totalCoinsCost || 800),
+        status: 'active',
+        createdAt: data.createdAt || new Date().toISOString(),
+        displayId: data.displayId || '48A1',
+        countryFlag: data.countryFlag || '🇮🇳',
+        channelName: data.channelName,
+        durationText: data.durationText || '1:00',
+        completedUserIds
+      };
+
+      publicCampaigns.push(camp);
+    });
+
+    // Sort newest first
+    publicCampaigns.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+    return publicCampaigns;
+  } catch (err) {
+    console.warn('Could not fetch public campaigns from Firestore:', err);
+    return [];
+  }
+};
+
+/**
+ * Fetch all campaigns created by a specific user from Cloud Firestore
+ */
+export const getMyCampaignsFromFirestore = async (userId: string): Promise<Campaign[]> => {
+  if (!userId) return [];
+  try {
+    const colRef = collection(db, 'campaigns');
+    const snapshot = await getDocs(colRef);
+    const myCampaigns: Campaign[] = [];
+
+    snapshot.forEach(docSnap => {
+      const data = docSnap.data() as any;
+      if (data && data.userId === userId) {
+        myCampaigns.push({
+          id: docSnap.id,
+          userId: data.userId,
+          userName: data.userName || 'My Campaign',
+          videoUrl: data.videoUrl,
+          title: data.title || 'AtoPlay Video Promotion',
+          thumbnailUrl: data.thumbnailUrl,
+          viewsRequired: Number(data.viewsRequired ?? data.targetViews ?? 10),
+          viewsCompleted: Number(data.viewsCompleted ?? data.completedViews ?? 0),
+          rewardPerView: Number(data.rewardPerView || 60),
+          targetViews: Number(data.targetViews ?? data.viewsRequired ?? 10),
+          completedViews: Number(data.completedViews ?? data.viewsCompleted ?? 0),
+          durationSeconds: Number(data.durationSeconds || 60),
+          totalCoinsCost: Number(data.totalCoinsCost || 800),
+          status: data.status || 'active',
+          createdAt: data.createdAt || new Date().toISOString(),
+          displayId: data.displayId || '48A1',
+          countryFlag: data.countryFlag || '🇮🇳',
+          channelName: data.channelName,
+          durationText: data.durationText || '1:00',
+          completedUserIds: Array.isArray(data.completedUserIds) ? data.completedUserIds : []
+        });
+      }
+    });
+
+    myCampaigns.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    return myCampaigns;
+  } catch (err) {
+    console.warn('Could not fetch my campaigns from Firestore:', err);
+    return [];
+  }
+};
+
+/**
+ * Ensure starter public campaigns exist in Firestore so every user sees videos immediately
+ */
+export const seedStarterCampaignsToFirestore = async (): Promise<void> => {
+  try {
+    const starters: Campaign[] = [
+      {
+        id: "camp_starter_1",
+        userId: "creator_starter_1",
+        userName: "Creative AtoPlay Hub",
+        videoUrl: "https://atoplay.com/video/58d4d4aa-c235-48a1-8423-57fbeefa914e",
+        title: "1000 Views in 1 Day? AtoPlay Algorithm Secret!",
+        thumbnailUrl: "https://cdn.atoplay.in/atoplay-thumbnails/58d4d4aa-c235-48a1-8423-57fbeefa914e/thumbnails/61f8d5c2-3b2b-4789-8581-c6727ce0388a.webp",
+        viewsRequired: 50,
+        viewsCompleted: 6,
+        rewardPerView: 60,
+        targetViews: 50,
+        completedViews: 6,
+        durationSeconds: 60,
+        totalCoinsCost: 4000,
+        status: "active",
+        createdAt: new Date(Date.now() - 3600000).toISOString(),
+        displayId: "914E",
+        countryFlag: "🇮🇳",
+        channelName: "Creative AtoPlay Hub",
+        durationText: "1:00",
+        completedUserIds: []
+      },
+      {
+        id: "camp_starter_2",
+        userId: "creator_starter_2",
+        userName: "Tapas creation",
+        videoUrl: "https://atoplay.com/video/b079eff5-e942-4d88-813d-6bc5a40d08e9",
+        title: "Best Trending Video Setup 2025 (Earn Fast Coins)",
+        thumbnailUrl: "https://cdn.atoplay.in/atoplay-thumbnails/58d4d4aa-c235-48a1-8423-57fbeefa914e/thumbnails/b079eff5-e942-4d88-813d-6bc5a40d08e9.webp",
+        viewsRequired: 30,
+        viewsCompleted: 4,
+        rewardPerView: 60,
+        targetViews: 30,
+        completedViews: 4,
+        durationSeconds: 60,
+        totalCoinsCost: 2400,
+        status: "active",
+        createdAt: new Date(Date.now() - 7200000).toISOString(),
+        displayId: "08E9",
+        countryFlag: "🇮🇳",
+        channelName: "Tapas creation",
+        durationText: "1:00",
+        completedUserIds: []
+      }
+    ];
+
+    for (const starter of starters) {
+      const campRef = doc(db, 'campaigns', starter.id);
+      const snap = await getDoc(campRef);
+      if (!snap.exists()) {
+        await setDoc(campRef, starter);
+      }
+    }
+  } catch (err) {
+    console.warn('Could not seed starter campaigns to Firestore:', err);
+  }
+};
+
+/**
+ * Save user support message to Cloud Firestore destined for krja462@gmail.com
+ */
+export const saveSupportMessageToFirestore = async (messageData: {
+  userId: string;
+  userName: string;
+  userEmail: string;
+  targetEmail?: string;
+  subject: string;
+  message: string;
+}): Promise<string> => {
+  try {
+    const messageId = `msg_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const docRef = doc(db, 'support_messages', messageId);
+    await setDoc(docRef, {
+      id: messageId,
+      userId: messageData.userId || 'anonymous',
+      userName: messageData.userName || 'AtoPlay User',
+      userEmail: messageData.userEmail || '',
+      targetEmail: 'krja462@gmail.com',
+      subject: messageData.subject || 'Support Request',
+      message: messageData.message || '',
+      createdAt: new Date().toISOString(),
+      status: 'new'
+    });
+    return messageId;
+  } catch (err) {
+    console.warn('Could not save support message to Firestore:', err);
+    return '';
   }
 };
 

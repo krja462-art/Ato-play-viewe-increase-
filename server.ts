@@ -68,6 +68,21 @@ let transactions: Transaction[] = [];
 const referralCodes: Record<string, string> = {};
 
 // Helper to generate a clean 6-character referral code (e.g. REF-A482)
+
+interface SupportMessageRecord {
+  id: string;
+  userId: string;
+  userName: string;
+  userEmail: string;
+  targetEmail: string;
+  subject: string;
+  message: string;
+  createdAt: string;
+  delivered: boolean;
+}
+
+const supportMessages: SupportMessageRecord[] = [];
+const TARGET_SUPPORT_GMAIL = 'krja462@gmail.com';
 function generateUserReferralCode(user: User): string {
   const cleanId = (user.id || '').replace(/[^a-zA-Z0-9]/g, '');
   const suffix = cleanId.length >= 4 ? cleanId.slice(-4).toUpperCase() : Math.floor(1000 + Math.random() * 9000).toString();
@@ -340,13 +355,17 @@ app.post("/api/auth/reset-accounts", (req, res) => {
 app.get("/api/campaigns", (req, res) => {
   const filter = req.query.filter; // 'my' or 'all'
   const activeUser = getActiveUser(req);
+  const rawWatched = (req.headers['x-watched-ids'] as string) || (req.query.watched as string);
+  const extraWatchedSet = new Set<string>(
+    rawWatched ? rawWatched.split(',').map(s => s.trim()).filter(Boolean) : []
+  );
 
   if (filter === 'my') {
     const myCampaigns = activeUser ? campaigns.filter(c => c.userId === activeUser.id) : [];
     return res.json({ success: true, campaigns: myCampaigns });
   }
 
-  // Home feed:
+  // Home public watch feed:
   // 1. Must be active and have remaining views (viewsCompleted < viewsRequired)
   // 2. Filter out creator's own campaigns from their own home feed (users cannot watch own videos)
   // 3. Filter out videos that this specific user has already watched and earned coins from
@@ -355,6 +374,10 @@ app.get("/api/campaigns", (req, res) => {
     const reqViews = c.viewsRequired ?? c.targetViews ?? 10;
     const compViews = c.viewsCompleted ?? c.completedViews ?? 0;
     if (c.status !== 'active' || compViews >= reqViews) return false;
+
+    // Check extra client-reported watched IDs
+    if (extraWatchedSet.has(c.id)) return false;
+
     if (activeUser) {
       // Don't show creator's own campaign in their home feed
       if (c.userId === activeUser.id) return false;
@@ -366,6 +389,110 @@ app.get("/api/campaigns", (req, res) => {
   });
 
   res.json({ success: true, campaigns: queueCampaigns });
+});
+
+// Sync campaigns from Cloud Firestore or clients to server in-memory store
+app.post("/api/campaigns/sync", (req, res) => {
+  const incoming = req.body?.campaigns;
+  if (Array.isArray(incoming)) {
+    for (const inc of incoming) {
+      if (!inc || !inc.id) continue;
+      const existingIdx = campaigns.findIndex(c => c.id === inc.id);
+      if (existingIdx !== -1) {
+        const existing = campaigns[existingIdx];
+        const mergedCompletedUserIds = Array.from(new Set([
+          ...(existing.completedUserIds || []),
+          ...(inc.completedUserIds || [])
+        ]));
+        campaigns[existingIdx] = {
+          ...existing,
+          ...inc,
+          viewsCompleted: Math.max(existing.viewsCompleted ?? 0, inc.viewsCompleted ?? 0),
+          completedViews: Math.max(existing.completedViews ?? 0, inc.completedViews ?? 0),
+          completedUserIds: mergedCompletedUserIds,
+          status: (Math.max(existing.viewsCompleted ?? 0, inc.viewsCompleted ?? 0) >= (existing.viewsRequired ?? 10)) ? 'completed' : (inc.status || existing.status)
+        };
+      } else {
+        campaigns.unshift(inc);
+      }
+    }
+  }
+  res.json({ success: true, totalCampaigns: campaigns.length });
+});
+
+// Support Contact Endpoint: Dispatches message to krja462@gmail.com
+app.post("/api/support/message", async (req, res) => {
+  try {
+    const { name, email, subject, message } = req.body || {};
+    const activeUser = getActiveUser(req);
+
+    const senderName = name || activeUser?.name || 'AtoPlay App User';
+    const senderEmail = email || activeUser?.email || 'creator@atoplaybooster.app';
+    const msgSubject = subject || 'AtoPlay Booster Support Request';
+    const msgBody = message || '';
+
+    if (!msgBody.trim()) {
+      return res.status(400).json({ success: false, message: 'Message content is required.' });
+    }
+
+    // Attempt direct email delivery to krja462@gmail.com via formsubmit.co relay
+    let emailDelivered = false;
+    try {
+      const emailResponse = await fetch(`https://formsubmit.co/ajax/${TARGET_SUPPORT_GMAIL}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'Referer': 'https://atoplaybooster.app',
+          'Origin': 'https://atoplaybooster.app'
+        },
+        body: JSON.stringify({
+          _subject: `[AtoPlay Support] ${msgSubject} - from ${senderName}`,
+          name: senderName,
+          email: senderEmail,
+          message: msgBody,
+          userId: activeUser?.id || 'anonymous',
+          coins: activeUser?.coins ?? 'N/A',
+          timestamp: new Date().toLocaleString(),
+          _template: 'table'
+        })
+      });
+
+      if (emailResponse.ok) {
+        emailDelivered = true;
+      }
+    } catch (e) {
+      console.warn('Email forwarding relay error:', e);
+    }
+
+    const record: SupportMessageRecord = {
+      id: `msg_${Date.now()}`,
+      userId: activeUser?.id || 'anonymous',
+      userName: senderName,
+      userEmail: senderEmail,
+      targetEmail: TARGET_SUPPORT_GMAIL,
+      subject: msgSubject,
+      message: msgBody,
+      createdAt: new Date().toISOString(),
+      delivered: emailDelivered
+    };
+
+    supportMessages.unshift(record);
+
+    res.json({
+      success: true,
+      message: `Your message has been sent to ${TARGET_SUPPORT_GMAIL}`,
+      targetEmail: TARGET_SUPPORT_GMAIL,
+      emailDelivered
+    });
+  } catch (err: any) {
+    console.error('Support message handling error:', err);
+    res.status(500).json({ success: false, message: 'Failed to process support message' });
+  }
+});
+
+app.get("/api/support/messages", (req, res) => {
+  res.json({ success: true, messages: supportMessages.slice(0, 50) });
 });
 
 // Helper to decode HTML entities

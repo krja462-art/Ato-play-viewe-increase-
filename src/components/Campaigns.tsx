@@ -3,7 +3,7 @@ import { Campaign, User, format4CharId } from '../types';
 import { Plus, MoreVertical, Clock, Trash2, Coins, AlertCircle, Sparkles, X, Video, ExternalLink, Check, Search, ShieldCheck, Clipboard, Image as ImageIcon, CheckCircle2 } from 'lucide-react';
 import { AtoPlayBadge } from './AtoPlayBadge';
 import { apiFetch, extractVideoMetadataClient } from '../lib/api';
-import { saveCampaignToFirestore, deleteCampaignInFirestore, saveUserCoinsToFirestore } from '../lib/firebase';
+import { saveCampaignToFirestore, deleteCampaignInFirestore, saveUserCoinsToFirestore, getMyCampaignsFromFirestore } from '../lib/firebase';
 
 interface CampaignsProps {
   user: User;
@@ -106,12 +106,50 @@ export const Campaigns: React.FC<CampaignsProps> = ({
   const fetchMyCampaigns = async () => {
     try {
       setLoading(true);
-      const data = await apiFetch('/api/campaigns?filter=my', {
-        headers: { 'x-user-id': user.id }
-      });
-      if (data?.success && Array.isArray(data.campaigns)) {
-        setCampaigns(data.campaigns);
+
+      // 1. Fetch from server API
+      let serverCamps: Campaign[] = [];
+      try {
+        const data = await apiFetch('/api/campaigns?filter=my', {
+          headers: { 'x-user-id': user.id }
+        });
+        if (data?.success && Array.isArray(data.campaigns)) {
+          serverCamps = data.campaigns;
+        }
+      } catch (err) {
+        console.warn('Server my campaigns error:', err);
       }
+
+      // 2. Fetch from Firestore
+      let firestoreCamps: Campaign[] = [];
+      try {
+        firestoreCamps = await getMyCampaignsFromFirestore(user.id);
+      } catch (err) {
+        console.warn('Firestore my campaigns error:', err);
+      }
+
+      // 3. Merge server and Firestore
+      const campMap = new Map<string, Campaign>();
+      for (const c of serverCamps) {
+        campMap.set(c.id, c);
+      }
+      for (const c of firestoreCamps) {
+        if (!campMap.has(c.id)) {
+          campMap.set(c.id, c);
+        } else {
+          const prev = campMap.get(c.id)!;
+          campMap.set(c.id, {
+            ...prev,
+            ...c,
+            viewsCompleted: Math.max(prev.viewsCompleted ?? 0, c.viewsCompleted ?? 0),
+            completedViews: Math.max(prev.completedViews ?? 0, c.completedViews ?? 0)
+          });
+        }
+      }
+
+      const mergedList = Array.from(campMap.values());
+      mergedList.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      setCampaigns(mergedList);
     } catch (err) {
       console.error('Failed to load campaigns', err);
     } finally {

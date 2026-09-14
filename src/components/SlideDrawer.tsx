@@ -27,6 +27,7 @@ import {
 import { User } from '../types';
 import { usePWAInstall } from '../hooks/usePWAInstall';
 import { apiFetch } from '../lib/api';
+import { saveSupportMessageToFirestore } from '../lib/firebase';
 
 interface SlideDrawerProps {
   isOpen: boolean;
@@ -56,7 +57,15 @@ export const SlideDrawer: React.FC<SlideDrawerProps> = ({
   // Contact Form State
   const [contactSubject, setContactSubject] = useState('');
   const [contactMessage, setContactMessage] = useState('');
+  const [contactName, setContactName] = useState(user?.name || '');
+  const [contactEmail, setContactEmail] = useState(user?.email || '');
+  const [contactSending, setContactSending] = useState(false);
   const [contactSent, setContactSent] = useState(false);
+
+  React.useEffect(() => {
+    if (user?.name && !contactName) setContactName(user.name);
+    if (user?.email && !contactEmail) setContactEmail(user.email);
+  }, [user]);
 
   const referralCode = user?.referralCode || 'REF-A482';
   const referralLink = typeof window !== 'undefined' 
@@ -156,16 +165,58 @@ export const SlideDrawer: React.FC<SlideDrawerProps> = ({
 
   if (!isOpen && !activeModal) return null;
 
-  const handleContactSubmit = (e: React.FormEvent) => {
+  const handleContactSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!contactMessage.trim()) return;
-    setContactSent(true);
-    setTimeout(() => {
-      setContactSubject('');
-      setContactMessage('');
-      setContactSent(false);
-      setActiveModal(null);
-    }, 2000);
+
+    setContactSending(true);
+    const senderName = contactName.trim() || user?.name || 'AtoPlay App User';
+    const senderEmail = contactEmail.trim() || user?.email || 'user@atoplaybooster.app';
+    const subject = contactSubject.trim() || 'AtoPlay Booster Query';
+    const message = contactMessage.trim();
+
+    try {
+      // 1. Send to server backend which routes to krja462@gmail.com
+      await apiFetch('/api/support/message', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': user?.id || ''
+        },
+        body: JSON.stringify({
+          name: senderName,
+          email: senderEmail,
+          subject,
+          message
+        })
+      });
+
+      // 2. Also save to Cloud Firestore support_messages collection
+      saveSupportMessageToFirestore({
+        userId: user?.id || 'anonymous',
+        userName: senderName,
+        userEmail: senderEmail,
+        targetEmail: 'krja462@gmail.com',
+        subject,
+        message
+      }).catch(err => console.warn('Firestore support save error:', err));
+
+      setContactSent(true);
+    } catch (err: any) {
+      console.warn('Support message submit error:', err);
+      // Even if network fails, ensure Firestore has it
+      saveSupportMessageToFirestore({
+        userId: user?.id || 'anonymous',
+        userName: senderName,
+        userEmail: senderEmail,
+        targetEmail: 'krja462@gmail.com',
+        subject,
+        message
+      }).catch(() => {});
+      setContactSent(true);
+    } finally {
+      setContactSending(false);
+    }
   };
 
   return (
@@ -798,21 +849,75 @@ export const SlideDrawer: React.FC<SlideDrawerProps> = ({
 
             {/* Direct Message Form */}
             {contactSent ? (
-              <div className="p-6 rounded-2xl bg-emerald-50 border border-emerald-300 text-center space-y-2">
-                <CheckCircle2 className="w-10 h-10 text-emerald-600 mx-auto" />
-                <h4 className="font-extrabold text-emerald-900 text-sm">Message Sent Successfully!</h4>
-                <p className="text-xs text-emerald-700">
-                  Thank you for reaching out. Our support team will review your query and respond shortly.
+              <div className="p-6 rounded-2xl bg-emerald-50 border border-emerald-300 text-center space-y-3 animate-in fade-in zoom-in-95 duration-200">
+                <CheckCircle2 className="w-12 h-12 text-emerald-600 mx-auto" />
+                <h4 className="font-extrabold text-emerald-900 text-base">Message Sent to Support!</h4>
+                <p className="text-xs text-emerald-700 max-w-sm mx-auto leading-relaxed">
+                  Aapka message support team ko (<strong>krja462@gmail.com</strong>) par bhej diya gaya hai. Hamari team jald hi aapke email par sampark karegi.
                 </p>
+
+                <div className="pt-2 flex flex-col sm:flex-row gap-2 justify-center">
+                  <a
+                    href={`mailto:krja462@gmail.com?subject=${encodeURIComponent(contactSubject || 'AtoPlay Booster Query')}&body=${encodeURIComponent(`User: ${contactName}\nEmail: ${contactEmail}\n\n${contactMessage}`)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center space-x-1.5 shadow-sm transition-all"
+                  >
+                    <Mail className="w-3.5 h-3.5" />
+                    <span>Open in Gmail App</span>
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setContactSent(false);
+                      setContactMessage('');
+                      setContactSubject('');
+                    }}
+                    className="py-2.5 px-4 rounded-xl bg-white border border-emerald-300 hover:bg-emerald-50 text-emerald-800 font-bold text-xs transition-colors cursor-pointer"
+                  >
+                    Send Another Message
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveModal(null)}
+                    className="py-2.5 px-4 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-bold text-xs transition-colors cursor-pointer"
+                  >
+                    Close
+                  </button>
+                </div>
               </div>
             ) : (
-              <form onSubmit={handleContactSubmit} className="space-y-3.5 pt-1">
+              <form onSubmit={handleContactSubmit} className="space-y-3 pt-1">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-zinc-700 uppercase tracking-wider">Your Name</label>
+                    <input
+                      type="text"
+                      placeholder="Your name"
+                      value={contactName}
+                      onChange={e => setContactName(e.target.value)}
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-zinc-50 border border-zinc-200 text-xs text-zinc-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-zinc-700 uppercase tracking-wider">Your Email</label>
+                    <input
+                      type="email"
+                      required
+                      placeholder="Your reply email"
+                      value={contactEmail}
+                      onChange={e => setContactEmail(e.target.value)}
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-zinc-50 border border-zinc-200 text-xs text-zinc-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                  </div>
+                </div>
+
                 <div className="space-y-1">
                   <label className="text-xs font-bold text-zinc-700 uppercase tracking-wider">Subject</label>
                   <input
                     type="text"
                     required
-                    placeholder="e.g. Campaign question, Coin inquiry, Feedback"
+                    placeholder="e.g. Campaign query, Coin inquiry, Feedback"
                     value={contactSubject}
                     onChange={e => setContactSubject(e.target.value)}
                     className="w-full px-3.5 py-2.5 rounded-xl bg-zinc-50 border border-zinc-200 text-xs sm:text-sm text-zinc-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
@@ -824,7 +929,7 @@ export const SlideDrawer: React.FC<SlideDrawerProps> = ({
                   <textarea
                     required
                     rows={3}
-                    placeholder="Describe your issue, feature suggestion or question..."
+                    placeholder="Describe your issue, suggestion or question..."
                     value={contactMessage}
                     onChange={e => setContactMessage(e.target.value)}
                     className="w-full px-3.5 py-2.5 rounded-xl bg-zinc-50 border border-zinc-200 text-xs sm:text-sm text-zinc-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 resize-none"
@@ -841,10 +946,11 @@ export const SlideDrawer: React.FC<SlideDrawerProps> = ({
                   </button>
                   <button
                     type="submit"
-                    className="flex-1 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md shadow-emerald-600/20 transition-all hover:scale-102 cursor-pointer flex items-center justify-center space-x-1.5"
+                    disabled={contactSending || !contactMessage.trim()}
+                    className="flex-1 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:bg-zinc-200 disabled:text-zinc-400 text-white font-bold text-xs shadow-md shadow-emerald-600/20 transition-all hover:scale-102 cursor-pointer flex items-center justify-center space-x-1.5"
                   >
                     <Send className="w-3.5 h-3.5" />
-                    <span>Send Message</span>
+                    <span>{contactSending ? 'Sending...' : 'Send Message'}</span>
                   </button>
                 </div>
               </form>

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Coins, Home, ShieldCheck, Plus, MoreVertical } from 'lucide-react';
+import { Coins, Home, ShieldCheck, Plus, MoreVertical, RefreshCw } from 'lucide-react';
 import { User } from '../types';
 import { SlideDrawer } from './SlideDrawer';
 
@@ -11,6 +11,8 @@ interface NavbarProps {
   onOpenCreate: () => void;
   user?: User | null;
   onLogout?: () => void;
+  onRefresh?: () => void;
+  isRefreshing?: boolean;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -19,7 +21,9 @@ export const Navbar: React.FC<NavbarProps> = ({
   coins,
   onOpenCreate,
   user,
-  onLogout
+  onLogout,
+  onRefresh,
+  isRefreshing = false
 }) => {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 
@@ -98,6 +102,19 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <Coins className="w-4 h-4 text-amber-600" />
                 <span>{coins.toLocaleString()} Coins</span>
               </div>
+            )}
+
+            {/* Quick App & Feed Refresh Button */}
+            {onRefresh && (
+              <button
+                onClick={onRefresh}
+                disabled={isRefreshing}
+                className="p-2 rounded-xl text-zinc-700 hover:text-blue-600 hover:bg-zinc-100 transition-colors cursor-pointer flex items-center justify-center border border-zinc-200/80 shadow-xs active:scale-95"
+                title="Refresh Feed & Sync Coins"
+                aria-label="Refresh Feed & Sync Coins"
+              >
+                <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin text-blue-600' : ''}`} />
+              </button>
             )}
 
             {/* Three Dots Button to Open Slide Drawer */}

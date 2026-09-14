@@ -44,6 +44,22 @@
         }
       },
       "required": ["id", "userId", "videoUrl", "targetViews", "completedViews", "status"]
+    },
+    "SupportMessage": {
+      "title": "SupportMessage",
+      "description": "User support inquiries and messages sent to admin",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Message document ID" },
+        "userId": { "type": "string", "description": "Sender user UID" },
+        "userName": { "type": "string", "description": "Sender user name" },
+        "userEmail": { "type": "string", "description": "Sender email address" },
+        "targetEmail": { "type": "string", "description": "Destination admin recipient email (krja462@gmail.com)" },
+        "subject": { "type": "string", "description": "Message topic or subject" },
+        "message": { "type": "string", "description": "Full message content" },
+        "createdAt": { "type": "string", "description": "Timestamp when message was submitted" }
+      },
+      "required": ["userId", "targetEmail", "message", "createdAt"]
     }
   },
   "firestore": {
@@ -54,6 +70,10 @@
     "/campaigns/{campaignId}": {
       "schema": "Campaign",
       "description": "Stores active and completed video campaigns"
+    },
+    "/support_messages/{messageId}": {
+      "schema": "SupportMessage",
+      "description": "Stores customer support inquiries sent to krja462@gmail.com"
     }
   }
 }
