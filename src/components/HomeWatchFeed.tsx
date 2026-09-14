@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { User, Campaign, format4CharId, ActiveWatchState } from '../types';
-import { Play, CheckCircle2, Clock, ArrowLeft, Video, ExternalLink, RefreshCw, Award, Coins, AlertCircle, ShieldCheck, Key } from 'lucide-react';
+import { Play, CheckCircle2, Clock, ArrowLeft, Video, ExternalLink, RefreshCw, Award, Coins, AlertCircle, ShieldCheck, Key, UserPlus, Sparkles } from 'lucide-react';
 import { RewardPopupModal } from './RewardPopupModal';
 import { SessionExpiredModal } from './SessionExpiredModal';
 import { AtoPlayBadge } from './AtoPlayBadge';
@@ -35,12 +35,22 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
   const [sessionToken, setSessionToken] = useState<string | null>(null);
   const [errorStatus, setErrorStatus] = useState<string | null>(null);
 
+  // Watch + Follow Unified Task Flow State
+  const [userFollowedChannel, setUserFollowedChannel] = useState(false);
+  const [channelCountBefore, setChannelCountBefore] = useState<number | undefined>(undefined);
+
   // Pop notification celebration modal state
   const [showRewardModal, setShowRewardModal] = useState(false);
   const [rewardData, setRewardData] = useState<{
     earnedCoins: number;
     newBalance: number;
     campaign: Campaign | null;
+    baseCoins?: number;
+    bonusCoins?: number;
+    followedBonus?: boolean;
+    message?: string;
+    countBefore?: number;
+    countAfter?: number;
   } | null>(null);
 
   // Expired session notification modal state (when returned < 60s)
@@ -50,6 +60,9 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
 
   const isVerifyingRef = useRef(false);
   isVerifyingRef.current = verifying;
+
+  const userFollowedChannelRef = useRef(false);
+  userFollowedChannelRef.current = userFollowedChannel;
 
   // Track if user actually switched away / minimized the app
   const hasLeftAppRef = useRef(false);
@@ -113,17 +126,20 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
     setShowExpiredModal(true);
   }, []);
 
-  // Direct backend verification method (verifies token & 60s elapsed on server)
+  // Direct backend verification method (verifies token, 60s elapsed, & follow bonus on server)
   const verifyWatchSession = useCallback(async (
     cId: string,
     sId: string,
     sToken: string,
-    camp: Campaign
+    camp: Campaign,
+    didFollow?: boolean
   ) => {
     if (isVerifyingRef.current) return;
     try {
       setVerifying(true);
       setErrorStatus(null);
+
+      const isFollowClaimed = didFollow !== undefined ? didFollow : userFollowedChannelRef.current;
 
       const data = await apiFetch('/api/watch/verify', {
         method: 'POST',
@@ -135,17 +151,19 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
           campaignId: cId,
           sessionId: sId,
           sessionToken: sToken,
-          watchDuration: 60
+          watchDuration: 60,
+          userClickedFollow: isFollowClaimed
         })
       });
 
       if (data?.success) {
-        const earned = data.earnedCoins || data.coinsEarned || 60;
+        const earned = data.earnedCoins || (data.followed ? 90 : 60);
         if (data.user) {
-          saveUserCoinsToFirestore(data.user.id, data.user.coins).catch(e => console.warn('Firestore user coins sync error:', e));
+          saveUserCoinsToFirestore(data.user.id, data.user.coins, data.user.email).catch(e => console.warn('Firestore user coins sync error:', e));
           onCoinEarned(data.user);
         }
-        updateCampaignViewsInFirestore(cId).catch(e => console.warn('Firestore campaign view sync error:', e));
+        updateCampaignViewsInFirestore(cId, user.id, data.campaign?.viewsCompleted, data.campaign?.status === 'completed')
+          .catch(e => console.warn('Firestore campaign view sync error:', e));
 
         setIsCompleted(true);
         setIsPlaying(false);
@@ -157,11 +175,17 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
         // Restore document title
         document.title = 'AtoPlay Booster - Video Promotion Exchange';
 
-        // Trigger celebratory Pop Notification modal
+        // Trigger celebratory Pop Notification modal with exact user messaging & breakdown
         setRewardData({
           earnedCoins: earned,
           newBalance: data.user?.coins ?? (user.coins + earned),
-          campaign: camp
+          campaign: camp,
+          baseCoins: data.baseCoins ?? 60,
+          bonusCoins: data.bonusCoins ?? (data.followed ? 30 : 0),
+          followedBonus: Boolean(data.followed),
+          message: data.message,
+          countBefore: data.countBefore,
+          countAfter: data.countAfter
         });
         setShowRewardModal(true);
       } else {
@@ -303,8 +327,9 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
     try {
       setStartingSession(true);
       setErrorStatus(null);
+      setUserFollowedChannel(false);
 
-      // Step 1: Start secure session on server with crypto token & timestamp
+      // Step 1: Start secure session on server with crypto token, timestamp & countBefore
       const data = await apiFetch('/api/watch/start-session', {
         method: 'POST',
         headers: {
@@ -320,13 +345,18 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
       }
 
       const now = data.startTime || Date.now();
+      const countBefore = data.countBefore;
+      setChannelCountBefore(countBefore);
+
       const newSession: ActiveWatchState = {
         sessionId: data.sessionId,
         sessionToken: data.sessionToken,
         campaign: camp,
         startTime: now,
         durationSeconds: 60,
-        userId: user.id
+        userId: user.id,
+        countBefore: countBefore,
+        userClickedFollow: false
       };
 
       // Step 2: Persist token to localStorage
@@ -380,6 +410,7 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
     setSessionId(null);
     setSessionToken(null);
     setErrorStatus(null);
+    setUserFollowedChannel(false);
     hasLeftAppRef.current = false;
     document.title = 'AtoPlay Booster - Video Promotion Exchange';
     fetchCampaigns();
@@ -397,9 +428,34 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
     if (!startTime || !sessionId || !sessionToken || !selectedCampaign) return;
     const elapsed = (Date.now() - startTime) / 1000;
     if (elapsed >= 60) {
-      verifyWatchSession(selectedCampaign.id, sessionId, sessionToken, selectedCampaign);
+      verifyWatchSession(selectedCampaign.id, sessionId, sessionToken, selectedCampaign, userFollowedChannel);
     } else {
       handleExpireSession(sessionId, sessionToken, elapsed, selectedCampaign);
+    }
+  };
+
+  // Auto-load next video after claiming reward
+  const handleWatchNextVideo = () => {
+    setShowRewardModal(false);
+    const finishedId = rewardData?.campaign?.id;
+    setSelectedCampaign(null);
+    setIsPlaying(false);
+    setIsCompleted(false);
+    setStartTime(null);
+    setSessionId(null);
+    setSessionToken(null);
+    setRewardData(null);
+    setUserFollowedChannel(false);
+
+    // Auto-load next available video card
+    const remaining = campaigns.filter(c => c.id !== finishedId && !c.completedUserIds?.includes(user.id));
+    if (remaining.length > 0) {
+      const nextCamp = remaining[0];
+      setTimeout(() => {
+        handleSelectAndWatch(nextCamp);
+      }, 300);
+    } else {
+      fetchCampaigns();
     }
   };
 
@@ -440,10 +496,10 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
               </div>
               <div>
                 <h4 className="text-sm font-extrabold text-blue-900">
-                  Video Opened in External Browser / Tab
+                  Video & Creator Channel Opened in External Tab
                 </h4>
                 <p className="text-xs text-blue-700">
-                  Poore 60 seconds video dekhkar app par switch karein. Agar pehle switch kiya toh session expire ho jayega.
+                  Poore 60s video dekhein aur AtoPlay par creator channel ko Follow karein taaki total 90 coins credit ho.
                 </p>
               </div>
             </div>
@@ -452,9 +508,89 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
               onClick={handleOpenBrowserAgain}
               className="px-4 py-2 rounded-xl bg-white hover:bg-blue-100 text-blue-700 border border-blue-300 font-bold text-xs flex items-center space-x-1.5 shadow-xs transition-colors shrink-0 cursor-pointer"
             >
-              <span>Re-open / Switch to Video</span>
+              <span>Re-open Video / Channel</span>
               <ExternalLink className="w-3.5 h-3.5" />
             </button>
+          </div>
+
+          {/* Unified Reward Task Breakdown Card */}
+          <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-50 via-yellow-50 to-amber-50 border border-amber-200 shadow-2xs space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <Sparkles className="w-4 h-4 text-amber-600" />
+                <span className="text-xs font-black text-amber-900 uppercase tracking-wide">
+                  Earn: 60 Coins (Watch) + 30 Coins (Follow Bonus) = 90 Coins Total
+                </span>
+              </div>
+              <span className="text-xs font-black text-amber-800 bg-amber-200/80 px-2.5 py-0.5 rounded-full border border-amber-300">
+                Max 90 Coins
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
+              {/* Task 1: 60s Watch */}
+              <div className={`p-3 rounded-xl border flex items-center justify-between ${
+                timeLeft === 0 
+                  ? 'bg-emerald-50 border-emerald-300 text-emerald-900' 
+                  : 'bg-white border-zinc-200 text-zinc-800'
+              }`}>
+                <div className="space-y-0.5">
+                  <div className="font-bold flex items-center space-x-1.5">
+                    {timeLeft === 0 ? (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                    ) : (
+                      <Clock className="w-4 h-4 text-blue-600 animate-spin" />
+                    )}
+                    <span>1. Watch 60s Video</span>
+                  </div>
+                  <div className="text-[11px] text-zinc-500">
+                    {timeLeft === 0 ? '60s Time Met!' : `${timeLeft}s remaining`}
+                  </div>
+                </div>
+                <span className="font-black text-emerald-600 text-xs">+60 Coins</span>
+              </div>
+
+              {/* Task 2: Follow Creator Channel */}
+              <div 
+                onClick={() => setUserFollowedChannel(prev => !prev)}
+                className={`p-3 rounded-xl border flex items-center justify-between cursor-pointer transition-all ${
+                  userFollowedChannel 
+                    ? 'bg-emerald-50 border-emerald-300 ring-2 ring-emerald-200' 
+                    : 'bg-white border-amber-300 hover:border-amber-400'
+                }`}
+              >
+                <div className="space-y-0.5">
+                  <div className="font-bold flex items-center space-x-1.5 text-zinc-900">
+                    <UserPlus className={`w-4 h-4 ${userFollowedChannel ? 'text-emerald-600' : 'text-amber-600'}`} />
+                    <span>2. Follow Creator Channel</span>
+                  </div>
+                  <div className="text-[11px] text-zinc-500">
+                    {userFollowedChannel ? '✅ Follow clicked on AtoPlay' : 'Tap to confirm you followed'}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setUserFollowedChannel(prev => !prev);
+                  }}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-extrabold transition-colors cursor-pointer ${
+                    userFollowedChannel 
+                      ? 'bg-emerald-600 text-white' 
+                      : 'bg-amber-100 text-amber-800 border border-amber-300'
+                  }`}
+                >
+                  {userFollowedChannel ? 'Followed ✓' : '+30 Bonus'}
+                </button>
+              </div>
+            </div>
+
+            {typeof channelCountBefore === 'number' && (
+              <div className="text-[11px] text-zinc-600 flex items-center justify-between px-1 pt-1 border-t border-amber-200/50">
+                <span>Creator: <strong className="text-zinc-900">{selectedCampaign.userName || 'AtoPlay Creator'}</strong></span>
+                <span>Followers at start: <strong className="text-zinc-900">{channelCountBefore}</strong></span>
+              </div>
+            )}
           </div>
 
           {/* Real Video Thumbnail Banner */}
@@ -514,7 +650,7 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
                     ) : isCompleted ? (
                       <span className="text-emerald-600 flex items-center space-x-1">
                         <CheckCircle2 className="w-4 h-4 inline" />
-                        <span>60 Seconds Complete! +100 Coins Claimed 🎉</span>
+                        <span>60 Seconds Complete! Coins Claimed 🎉</span>
                       </span>
                     ) : errorStatus ? (
                       <span className="text-red-600 flex items-center space-x-1">
@@ -530,7 +666,7 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
 
               <div className="text-right">
                 <span className="inline-block px-3 py-1 rounded-full bg-amber-100 border border-amber-300 text-amber-800 text-xs font-black">
-                  +100 Coins
+                  90 Coins Reward
                 </span>
               </div>
             </div>
@@ -570,7 +706,7 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
             {isCompleted && (
               <div className="p-3.5 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold rounded-xl flex items-center space-x-2.5">
                 <Award className="w-5 h-5 text-emerald-600 shrink-0" />
-                <span>Backend token verified! +100 Coins have been securely added to your wallet.</span>
+                <span>Backend token verified! Coins have been securely added to your wallet.</span>
               </div>
             )}
           </div>
@@ -587,9 +723,9 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
               }`}
             >
               {timeLeft === 0 
-                ? 'Claim +100 Coins (60s Complete! 🎉)' 
+                ? (userFollowedChannel ? 'Claim 90 Coins (Watch + Follow Complete! 🎉)' : 'Claim 60 Coins (Watch Complete! 🎉)') 
                 : verifying 
-                  ? 'Verifying Token on Server...' 
+                  ? 'Verifying Token & Follow Status...' 
                   : `Check & Claim Reward (${timeLeft}s remaining)`}
             </button>
 
@@ -619,16 +755,13 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
           earnedCoins={rewardData?.earnedCoins || 60}
           newBalance={rewardData?.newBalance || user.coins}
           campaign={rewardData?.campaign || selectedCampaign}
-          onWatchNext={() => {
-            setShowRewardModal(false);
-            setSelectedCampaign(null);
-            setIsPlaying(false);
-            setIsCompleted(false);
-            setStartTime(null);
-            setSessionId(null);
-            setSessionToken(null);
-            fetchCampaigns();
-          }}
+          baseCoins={rewardData?.baseCoins ?? 60}
+          bonusCoins={rewardData?.bonusCoins ?? 30}
+          followedBonus={rewardData?.followedBonus}
+          message={rewardData?.message}
+          countBefore={rewardData?.countBefore}
+          countAfter={rewardData?.countAfter}
+          onWatchNext={handleWatchNextVideo}
           onPromoteVideo={() => {
             setShowRewardModal(false);
             setSelectedCampaign(null);
@@ -769,13 +902,19 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
                   </div>
                 </div>
 
-                {/* Bottom Row: Coins, Views progress & Watch Action Button */}
-                <div className="flex items-center justify-between pt-3 mt-3 border-t border-zinc-100">
-                  <div className="flex items-center space-x-2">
-                    <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-800 text-xs font-black">
-                      <Coins className="w-3.5 h-3.5 text-amber-600 mr-1" />
-                      +60 Coins
+                {/* Unified Reward Task Flow Badge */}
+                <div className="mt-2.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-amber-50 via-yellow-50 to-amber-50 border border-amber-200 flex items-center justify-between gap-2">
+                  <div className="flex items-center space-x-1.5 text-xs text-amber-900 font-bold">
+                    <Sparkles className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                    <span className="text-[11px] sm:text-xs">
+                      Earn: <span className="font-extrabold text-zinc-900">60 Coins (Watch)</span> + <span className="font-extrabold text-emerald-700">30 Coins (Follow Bonus)</span> = <span className="font-black text-amber-700">90 Coins Total</span>
                     </span>
+                  </div>
+                </div>
+
+                {/* Bottom Row: Views progress & Watch Action Button */}
+                <div className="flex items-center justify-between pt-3 mt-2.5 border-t border-zinc-100">
+                  <div className="flex items-center space-x-2">
                     <span className="text-xs text-zinc-500 font-semibold">
                       {camp.viewsCompleted ?? camp.completedViews ?? 0}/{camp.viewsRequired ?? camp.targetViews ?? 10} Views
                     </span>
@@ -787,10 +926,10 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
                       e.stopPropagation();
                       handleSelectAndWatch(camp);
                     }}
-                    className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs shadow-md shadow-blue-500/20 transition-all hover:scale-102 active:scale-95 cursor-pointer flex items-center space-x-1.5"
+                    className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-black text-xs sm:text-sm shadow-md shadow-blue-500/20 transition-all hover:scale-102 active:scale-95 cursor-pointer flex items-center space-x-1.5"
                   >
-                    <Play className="w-3.5 h-3.5 fill-current" />
-                    <span>Watch Video</span>
+                    <Play className="w-3.5 h-3.5 fill-current shrink-0" />
+                    <span>Watch & Earn (90 Coins)</span>
                   </button>
                 </div>
               </div>
@@ -815,16 +954,13 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
         earnedCoins={rewardData?.earnedCoins || 60}
         newBalance={rewardData?.newBalance || user.coins}
         campaign={rewardData?.campaign || null}
-        onWatchNext={() => {
-          setShowRewardModal(false);
-          setSelectedCampaign(null);
-          setIsPlaying(false);
-          setIsCompleted(false);
-          setStartTime(null);
-          setSessionId(null);
-          setSessionToken(null);
-          fetchCampaigns();
-        }}
+        baseCoins={rewardData?.baseCoins ?? 60}
+        bonusCoins={rewardData?.bonusCoins ?? 30}
+        followedBonus={rewardData?.followedBonus}
+        message={rewardData?.message}
+        countBefore={rewardData?.countBefore}
+        countAfter={rewardData?.countAfter}
+        onWatchNext={handleWatchNextVideo}
         onPromoteVideo={() => {
           setShowRewardModal(false);
           setSelectedCampaign(null);

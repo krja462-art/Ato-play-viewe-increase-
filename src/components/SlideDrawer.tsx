@@ -22,8 +22,7 @@ import {
   Download,
   Smartphone,
   Share,
-  PlusSquare,
-  RotateCw
+  PlusSquare
 } from 'lucide-react';
 import { User } from '../types';
 import { usePWAInstall } from '../hooks/usePWAInstall';
@@ -34,7 +33,6 @@ interface SlideDrawerProps {
   onClose: () => void;
   user: User | null;
   onLogout?: () => void;
-  onResetAccounts?: () => void;
   onUserUpdate?: (updatedUser: User) => void;
 }
 
@@ -43,10 +41,9 @@ export const SlideDrawer: React.FC<SlideDrawerProps> = ({
   onClose,
   user,
   onLogout,
-  onResetAccounts,
   onUserUpdate
 }) => {
-  const [activeModal, setActiveModal] = useState<'privacy' | 'terms' | 'contact' | 'referral' | 'ios_install' | null>(null);
+  const [activeModal, setActiveModal] = useState<'privacy' | 'terms' | 'contact' | 'referral' | 'ios_install' | 'apk_bundle' | null>(null);
   const { isInstallable, isInstalled, isIOS, install } = usePWAInstall();
   
   // Referral State
@@ -382,29 +379,21 @@ export const SlideDrawer: React.FC<SlideDrawerProps> = ({
                 </div>
               ) : (
                 <button
-                  onClick={async () => {
-                    if (isIOS) {
-                      setActiveModal('ios_install');
-                    } else if (isInstallable) {
-                      await install();
-                    } else {
-                      setActiveModal('ios_install');
-                    }
-                  }}
-                  className="w-full p-3 rounded-2xl bg-blue-50/60 hover:bg-blue-100/70 border border-blue-200/70 flex items-center justify-between text-left transition-all cursor-pointer group shadow-xs"
+                  onClick={() => setActiveModal('apk_bundle')}
+                  className="w-full p-3 rounded-2xl bg-gradient-to-r from-blue-50 to-indigo-50 hover:from-blue-100 hover:to-indigo-100 border border-blue-200/80 flex items-center justify-between text-left transition-all cursor-pointer group shadow-xs"
                 >
                   <div className="flex items-center space-x-3">
-                    <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center group-hover:scale-105 transition-transform shadow-xs">
+                    <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center group-hover:scale-105 transition-transform shadow-xs">
                       <Download className="w-5 h-5" />
                     </div>
                     <div>
                       <div className="flex items-center space-x-1.5">
-                        <h4 className="font-bold text-sm text-zinc-900 group-hover:text-blue-600">Install App</h4>
-                        <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-blue-600 text-white font-black">
-                          PWA
+                        <h4 className="font-bold text-sm text-zinc-900 group-hover:text-blue-600">Install App / APK Bundle</h4>
+                        <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-blue-600 text-white font-black uppercase">
+                          Android / PWA
                         </span>
                       </div>
-                      <p className="text-[11px] text-zinc-500">Install on phone or desktop</p>
+                      <p className="text-[11px] text-zinc-500">Direct WebAPK &amp; APK Download</p>
                     </div>
                   </div>
                   <ChevronRight className="w-4 h-4 text-zinc-400 group-hover:text-blue-600 group-hover:translate-x-0.5 transition-all" />
@@ -414,22 +403,8 @@ export const SlideDrawer: React.FC<SlideDrawerProps> = ({
 
           </div>
 
-          {/* Bottom Footer Section with Refresh & Logout Buttons */}
+          {/* Bottom Footer Section with Sign Out Button (Refresh Google button removed as requested) */}
           <div className="p-5 sm:p-6 border-t border-zinc-100 space-y-3 bg-zinc-50/50">
-            {onResetAccounts && (
-              <button
-                onClick={() => {
-                  onClose();
-                  onResetAccounts();
-                }}
-                className="w-full py-3.5 px-4 rounded-2xl bg-blue-50 hover:bg-blue-100 text-blue-700 font-extrabold text-sm flex items-center justify-center space-x-2 border border-blue-200 shadow-xs transition-all hover:scale-101 active:scale-98 cursor-pointer"
-                title="Refresh and switch Google accounts"
-              >
-                <RotateCw className="w-4 h-4 text-blue-600" />
-                <span>Refresh / Switch Google Account</span>
-              </button>
-            )}
-
             {onLogout && (
               <button
                 onClick={() => {
@@ -941,6 +916,105 @@ export const SlideDrawer: React.FC<SlideDrawerProps> = ({
             >
               Understood
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Android APK & PWA Bundle Download Modal */}
+      {activeModal === 'apk_bundle' && (
+        <div className="fixed inset-0 z-60 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 sm:p-7 space-y-4 shadow-2xl relative my-6 max-h-[92vh] overflow-y-auto animate-in fade-in zoom-in-95 duration-200">
+            
+            <div className="flex items-center justify-between pb-3 border-b border-zinc-100">
+              <div className="flex items-center space-x-3">
+                <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center shadow-md shadow-blue-600/20">
+                  <Smartphone className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-base text-zinc-900">AtoPlay Booster App</h3>
+                  <p className="text-[11px] text-zinc-500 font-medium">Android APK &amp; PWA Build Bundle</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setActiveModal(null)}
+                className="p-1.5 rounded-full hover:bg-zinc-100 text-zinc-400 hover:text-zinc-600 cursor-pointer transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Option 1: Direct WebAPK Install */}
+            <div className="p-4 rounded-2xl bg-blue-50/70 border border-blue-200/80 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-black uppercase text-blue-700 tracking-wider">Method 1: Instant Direct WebAPK</span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-600 text-white font-bold">Recommended</span>
+              </div>
+              <p className="text-xs text-zinc-700 leading-relaxed">
+                Install directly on your Android phone without needing to download large files manually. Creates a real Android WebAPK with app drawer icon &amp; full-screen performance.
+              </p>
+              
+              {isInstallable ? (
+                <button
+                  onClick={async () => {
+                    await install();
+                    setActiveModal(null);
+                  }}
+                  className="w-full py-3 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-black text-xs flex items-center justify-center space-x-2 shadow-md shadow-blue-600/20 transition-all active:scale-98 cursor-pointer"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>1-Click Install WebAPK on Android</span>
+                </button>
+              ) : (
+                <div className="p-2.5 rounded-xl bg-white/80 border border-blue-200 text-xs text-blue-900 font-medium">
+                  💡 In your Chrome browser on Android, tap the top-right <strong>Three Dots (⋮)</strong> &gt; tap <strong>"Install app"</strong> or <strong>"Add to Home screen"</strong>.
+                </div>
+              )}
+            </div>
+
+            {/* Option 2: Standalone APK via PWABuilder */}
+            <div className="p-4 rounded-2xl bg-indigo-50/70 border border-indigo-200/80 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-black uppercase text-indigo-700 tracking-wider">Method 2: Standalone APK / AAB Bundle</span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-600 text-white font-bold">Google Play / APK</span>
+              </div>
+              <p className="text-xs text-zinc-700 leading-relaxed">
+                Download a standalone signed <strong>.apk</strong> or Google Play Store ready <strong>.aab</strong> bundle generated directly from our verified PWA manifest via Microsoft PWABuilder.
+              </p>
+
+              <a
+                href="https://www.pwabuilder.com/report?site=https%3A%2F%2Fato-play-viewe-increase.vercel.app"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-black text-xs flex items-center justify-center space-x-2 shadow-md shadow-indigo-600/20 transition-all active:scale-98 cursor-pointer"
+              >
+                <ExternalLink className="w-4 h-4" />
+                <span>Generate &amp; Download APK (PWABuilder)</span>
+              </a>
+            </div>
+
+            {/* Steps & Guidelines */}
+            <div className="space-y-2 pt-1 text-xs text-zinc-600">
+              <h5 className="font-bold text-zinc-900 text-xs flex items-center space-x-1.5">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                <span>How to Install &amp; Sideload APK on Phone:</span>
+              </h5>
+              <ol className="list-decimal list-inside space-y-1 text-[11px] text-zinc-600 pl-1 leading-relaxed">
+                <li>Tap the button above or use Chrome menu to initiate download/install.</li>
+                <li>When prompted, allow <em>"Install unknown apps"</em> for your browser if downloading raw .apk.</li>
+                <li>Tap the installed <strong>AtoPlay Booster</strong> icon on your home screen to launch.</li>
+                <li>Enjoy 0ms latency, persistent coin balance, and faster video boosting!</li>
+              </ol>
+            </div>
+
+            <div className="pt-2 border-t border-zinc-100">
+              <button
+                onClick={() => setActiveModal(null)}
+                className="w-full py-2.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-bold text-xs transition-colors cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+
           </div>
         </div>
       )}

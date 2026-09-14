@@ -11,7 +11,6 @@ interface NavbarProps {
   onOpenCreate: () => void;
   user?: User | null;
   onLogout?: () => void;
-  onResetAccounts?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -20,8 +19,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   coins,
   onOpenCreate,
   user,
-  onLogout,
-  onResetAccounts
+  onLogout
 }) => {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 
@@ -121,55 +119,56 @@ export const Navbar: React.FC<NavbarProps> = ({
         onClose={() => setIsDrawerOpen(false)}
         user={user || null}
         onLogout={onLogout}
-        onResetAccounts={onResetAccounts}
       />
 
-      {/* Professional Fixed Bottom Navigation Bar (Home | Center Elevated Plus (+) Button | Campaign) */}
-      <nav className="fixed bottom-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-md border-t border-zinc-200 px-6 py-2 shadow-2xl flex items-center justify-between max-w-lg mx-auto sm:rounded-t-3xl sm:border-x">
-        
-        {/* Home Tab Button (Left) */}
-        <button
-          onClick={() => setActiveTab('home')}
-          className={`flex flex-col items-center justify-center flex-1 py-1 transition-all cursor-pointer ${
-            activeTab === 'home' 
-              ? 'text-blue-600 font-bold' 
-              : 'text-zinc-500 hover:text-zinc-900 font-medium'
-          }`}
-        >
-          <div className={`p-1.5 rounded-xl transition-colors ${activeTab === 'home' ? 'bg-blue-50' : ''}`}>
-            <Home className="w-5 h-5" />
-          </div>
-          <span className="text-[11px] pt-0.5 font-bold">Home</span>
-        </button>
-
-        {/* Professional Center Elevated Plus Button (Center) */}
-        <div className="flex flex-col items-center justify-center px-4 -mt-6 shrink-0">
+      {/* Professional Fixed Bottom Navigation Bar (Hidden when Slide Drawer is open) */}
+      {!isDrawerOpen && (
+        <nav className="fixed bottom-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-md border-t border-zinc-200 px-6 py-2 shadow-2xl flex items-center justify-between max-w-lg mx-auto sm:rounded-t-3xl sm:border-x">
+          
+          {/* Home Tab Button (Left) */}
           <button
-            onClick={onOpenCreate}
-            className="w-13 h-13 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white flex items-center justify-center shadow-lg shadow-blue-600/40 ring-4 ring-white active:scale-95 transition-all hover:scale-105 cursor-pointer group"
-            title="Create Campaign"
+            onClick={() => setActiveTab('home')}
+            className={`flex flex-col items-center justify-center flex-1 py-1 transition-all cursor-pointer ${
+              activeTab === 'home' 
+                ? 'text-blue-600 font-bold' 
+                : 'text-zinc-500 hover:text-zinc-900 font-medium'
+            }`}
           >
-            <Plus className="w-7 h-7 stroke-[3] transition-transform group-hover:rotate-90 duration-300" />
+            <div className={`p-1.5 rounded-xl transition-colors ${activeTab === 'home' ? 'bg-blue-50' : ''}`}>
+              <Home className="w-5 h-5" />
+            </div>
+            <span className="text-[11px] pt-0.5 font-bold">Home</span>
           </button>
-          <span className="text-[10px] font-black text-blue-600 tracking-tight pt-1">Create</span>
-        </div>
 
-        {/* Campaign Tab Button (Right) */}
-        <button
-          onClick={() => setActiveTab('campaigns')}
-          className={`flex flex-col items-center justify-center flex-1 py-1 transition-all cursor-pointer ${
-            activeTab === 'campaigns' 
-              ? 'text-blue-600 font-bold' 
-              : 'text-zinc-500 hover:text-zinc-900 font-medium'
-          }`}
-        >
-          <div className={`p-1.5 rounded-xl transition-colors ${activeTab === 'campaigns' ? 'bg-blue-50' : ''}`}>
-            <ShieldCheck className="w-5 h-5" />
+          {/* Professional Center Elevated Plus Button (Center) */}
+          <div className="flex flex-col items-center justify-center px-4 -mt-6 shrink-0">
+            <button
+              onClick={onOpenCreate}
+              className="w-13 h-13 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white flex items-center justify-center shadow-lg shadow-blue-600/40 ring-4 ring-white active:scale-95 transition-all hover:scale-105 cursor-pointer group"
+              title="Create Campaign"
+            >
+              <Plus className="w-7 h-7 stroke-[3] transition-transform group-hover:rotate-90 duration-300" />
+            </button>
+            <span className="text-[10px] font-black text-blue-600 tracking-tight pt-1">Create</span>
           </div>
-          <span className="text-[11px] pt-0.5 font-bold">Campaign</span>
-        </button>
 
-      </nav>
+          {/* Campaign Tab Button (Right) */}
+          <button
+            onClick={() => setActiveTab('campaigns')}
+            className={`flex flex-col items-center justify-center flex-1 py-1 transition-all cursor-pointer ${
+              activeTab === 'campaigns' 
+                ? 'text-blue-600 font-bold' 
+                : 'text-zinc-500 hover:text-zinc-900 font-medium'
+            }`}
+          >
+            <div className={`p-1.5 rounded-xl transition-colors ${activeTab === 'campaigns' ? 'bg-blue-50' : ''}`}>
+              <ShieldCheck className="w-5 h-5" />
+            </div>
+            <span className="text-[11px] pt-0.5 font-bold">Campaign</span>
+          </button>
+
+        </nav>
+      )}
     </>
   );
 };

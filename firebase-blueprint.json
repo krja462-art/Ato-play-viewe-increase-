@@ -36,7 +36,12 @@
         "totalCoinsCost": { "type": "number", "description": "Coins spent on campaign" },
         "status": { "type": "string", "enum": ["active", "completed", "cancelled"] },
         "createdAt": { "type": "string", "description": "Creation timestamp" },
-        "displayId": { "type": "string", "description": "Public video ID" }
+        "displayId": { "type": "string", "description": "Public video ID" },
+        "completedUserIds": { 
+          "type": "array", 
+          "items": { "type": "string" }, 
+          "description": "List of user UIDs who have completed this video task" 
+        }
       },
       "required": ["id", "userId", "videoUrl", "targetViews", "completedViews", "status"]
     }

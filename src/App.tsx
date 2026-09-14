@@ -247,8 +247,6 @@ export default function App() {
         }}
         user={user}
         onLogout={handleLogout}
-        onResetAccounts={handleResetAccounts}
-        onUserUpdate={handleUpdateUser}
       />
 
       {/* Main Content Area (Home Feed or Campaign Page) */}

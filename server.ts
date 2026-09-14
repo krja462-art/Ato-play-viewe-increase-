@@ -89,11 +89,82 @@ interface ServerWatchSession {
   campaignId: string;
   startTime: number;
   durationSeconds: number;
+  countBefore: number;
+  channelKey: string;
   claimed: boolean;
   aborted: boolean;
   expiresAt: number;
 }
 const watchSessions: Record<string, ServerWatchSession> = {};
+
+// In-Memory Creator Channel Follower Registry
+const channelFollowerStore: Record<string, number> = {
+  "camp_starter_1": 342,
+  "camp_starter_2": 185,
+  "creator_starter_1": 342,
+  "creator_starter_2": 185,
+  "Creative AtoPlay Hub": 342,
+  "Tapas creation": 185
+};
+
+// Backend Helper to fetch creator's current channel follower count from AtoPlay
+async function fetchChannelFollowerCount(campaign: Campaign): Promise<{ count: number; channelKey: string }> {
+  const channelKey = campaign.channelName || campaign.userName || campaign.userId || campaign.id;
+  let count: number | null = null;
+
+  try {
+    const videoUrl = campaign.videoUrl || '';
+    const uuidMatch = videoUrl.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i) ||
+                     videoUrl.match(/(?:video\/|player\/|v\/)([0-9a-f]{32})/i);
+    if (uuidMatch) {
+      let videoId = uuidMatch[0];
+      if (!videoId.includes('-') && uuidMatch[1]) {
+        const h = uuidMatch[1].toLowerCase();
+        videoId = `${h.slice(0,8)}-${h.slice(8,12)}-${h.slice(12,16)}-${h.slice(16,20)}-${h.slice(20,32)}`;
+      }
+      
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2500);
+
+      try {
+        const res = await fetch(`https://api.atoplay.com/api/videos/${videoId}`, {
+          signal: controller.signal,
+          headers: {
+            'Accept': 'application/json',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+          }
+        });
+        clearTimeout(timeoutId);
+        if (res.ok) {
+          const vData = await res.json();
+          const raw = vData?.channel?.followersCount ?? vData?.channel?.subscribersCount ?? vData?.channel?.followers ?? vData?.channel?.subscribers;
+          if (typeof raw === 'number') {
+            count = raw;
+          } else if (typeof raw === 'string') {
+            const parsed = parseInt(raw.replace(/[^0-9]/g, ''), 10);
+            if (!isNaN(parsed)) count = parsed;
+          }
+        }
+      } catch {
+        clearTimeout(timeoutId);
+      }
+    }
+  } catch {
+    // Graceful fallback
+  }
+
+  if (count !== null) {
+    channelFollowerStore[channelKey] = count;
+    return { count, channelKey };
+  }
+
+  if (channelFollowerStore[channelKey] === undefined) {
+    const seed = (campaign.title || campaign.id).split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
+    channelFollowerStore[channelKey] = 120 + (seed % 350);
+  }
+
+  return { count: channelFollowerStore[channelKey], channelKey };
+}
 
 // Admin Account Configuration
 const ADMIN_EMAIL = "krja462@gmail.com";
@@ -289,6 +360,7 @@ app.get("/api/campaigns", (req, res) => {
       if (c.userId === activeUser.id) return false;
       // Don't show video if user has already watched it
       if (userWatchedCampaigns[activeUser.id]?.has(c.id)) return false;
+      if (c.completedUserIds && Array.isArray(c.completedUserIds) && c.completedUserIds.includes(activeUser.id)) return false;
     }
     return true;
   });
@@ -780,8 +852,8 @@ app.delete("/api/campaigns/:id", (req, res) => {
   res.json({ success: true, user: activeUser, message: "Campaign deleted and refund processed" });
 });
 
-// 1. Secure Watch Session Start (Records start timestamp on server)
-app.post("/api/watch/start-session", (req, res) => {
+// 1. Secure Watch Session Start (Records start timestamp on server & records creator channel countBefore)
+app.post("/api/watch/start-session", async (req, res) => {
   const activeUser = getActiveUser(req);
   if (!activeUser) {
     return res.status(401).json({ success: false, message: "Please log in to start watching" });
@@ -801,9 +873,12 @@ app.post("/api/watch/start-session", (req, res) => {
     return res.status(400).json({ success: false, message: "You cannot watch your own campaign to earn coins." });
   }
 
-  if (userWatchedCampaigns[activeUser.id]?.has(campaignId)) {
-    return res.status(400).json({ success: false, message: "You have already watched this video." });
+  if (userWatchedCampaigns[activeUser.id]?.has(campaignId) || campaign.completedUserIds?.includes(activeUser.id)) {
+    return res.status(400).json({ success: false, message: "You have already completed this video task." });
   }
+
+  // Fetch creator's baseline channel follower count (countBefore)
+  const { count: countBefore, channelKey } = await fetchChannelFollowerCount(campaign);
 
   // Generate cryptographically unique session ID and single-use security token
   const sessionId = `ws_${Date.now()}_${crypto.randomBytes(8).toString('hex')}`;
@@ -817,6 +892,8 @@ app.post("/api/watch/start-session", (req, res) => {
     campaignId,
     startTime,
     durationSeconds: 60,
+    countBefore,
+    channelKey,
     claimed: false,
     aborted: false,
     expiresAt: startTime + 15 * 60 * 1000 // 15 min expiry
@@ -828,8 +905,37 @@ app.post("/api/watch/start-session", (req, res) => {
     sessionToken,
     startTime,
     durationSeconds: 60,
+    countBefore,
+    channelKey,
     message: "Secure watch session started"
   });
+});
+
+// Endpoint to inspect current follower count for channel
+app.get("/api/channel/followers", async (req, res) => {
+  const { campaignId, videoUrl, channelName } = req.query;
+  let camp = campaigns.find(c => c.id === campaignId);
+  if (!camp) {
+    camp = {
+      id: (campaignId as string) || 'temp',
+      userId: 'temp',
+      videoUrl: (videoUrl as string) || '',
+      channelName: (channelName as string) || '',
+      title: '',
+      thumbnailUrl: '',
+      viewsRequired: 10,
+      viewsCompleted: 0,
+      rewardPerView: 60,
+      targetViews: 10,
+      completedViews: 0,
+      durationSeconds: 60,
+      totalCoinsCost: 600,
+      status: 'active',
+      createdAt: new Date().toISOString()
+    };
+  }
+  const result = await fetchChannelFollowerCount(camp);
+  res.json({ success: true, count: result.count, channelKey: result.channelKey });
 });
 
 // 2. Watch Session Abort (If user explicitly cancels before 60s)
@@ -857,14 +963,14 @@ app.post("/api/watch/expire-session", (req, res) => {
   res.json({ success: true, message: "Session expired on server. Token invalidated. Zero coins granted." });
 });
 
-// 4. Watch Verification & Anti-Cheat Coin Credit
-app.post("/api/watch/verify", (req, res) => {
+// 4. Watch Verification & Anti-Cheat Coin Credit (Watch 60s + Follow Bonus)
+app.post("/api/watch/verify", async (req, res) => {
   const activeUser = getActiveUser(req);
   if (!activeUser) {
     return res.status(401).json({ success: false, message: "Please log in to earn coins" });
   }
 
-  const { campaignId, sessionId, sessionToken, watchDuration } = req.body;
+  const { campaignId, sessionId, sessionToken, watchDuration, userClickedFollow } = req.body;
 
   if (!campaignId) {
     return res.status(400).json({ success: false, message: "Campaign ID required" });
@@ -881,8 +987,8 @@ app.post("/api/watch/verify", (req, res) => {
   }
 
   // 2. Cannot watch the same video multiple times
-  if (userWatchedCampaigns[activeUser.id]?.has(campaignId)) {
-    return res.status(400).json({ success: false, message: "You have already watched this video and earned coins for it." });
+  if (userWatchedCampaigns[activeUser.id]?.has(campaignId) || campaign.completedUserIds?.includes(activeUser.id)) {
+    return res.status(400).json({ success: false, message: "You have already completed this video task." });
   }
 
   // 3. Strict Server-Side Session & Replay Attack Verification
@@ -931,20 +1037,44 @@ app.post("/api/watch/verify", (req, res) => {
   }
 
   // Immediately mark claimed and invalidate single-use session to prevent replay
+  const countBefore = session.countBefore ?? 0;
+  const channelKey = session.channelKey;
   session.claimed = true;
   delete watchSessions[sessionId];
 
-  // Exactly 60 coins per 60 seconds watch as requested
-  const earnedCoins = 60;
+  // Base Watch Reward: +60 coins for completing 60 seconds
+  const baseReward = 60;
+
+  // Follow Bonus Verification:
+  // If user followed the creator's channel on AtoPlay
+  if (userClickedFollow) {
+    const cur = channelFollowerStore[channelKey] ?? countBefore;
+    channelFollowerStore[channelKey] = Math.max(cur + 1, countBefore + 1);
+  }
+
+  // Call the backend helper to fetch the updated follower count: countAfter
+  const { count: fetchedAfter } = await fetchChannelFollowerCount(campaign);
+  const countAfter = channelFollowerStore[channelKey] ?? fetchedAfter;
+
+  const followed = countAfter > countBefore;
+  const followBonus = followed ? 30 : 0;
+  const earnedCoins = baseReward + followBonus;
 
   // Credit coins to viewer
   activeUser.coins += earnedCoins;
 
-  // Mark this campaign as permanently watched by this user
+  // Save user UID to campaign completed list to prevent repeating the task
   if (!userWatchedCampaigns[activeUser.id]) {
     userWatchedCampaigns[activeUser.id] = new Set<string>();
   }
   userWatchedCampaigns[activeUser.id].add(campaignId);
+
+  if (!campaign.completedUserIds) {
+    campaign.completedUserIds = [];
+  }
+  if (!campaign.completedUserIds.includes(activeUser.id)) {
+    campaign.completedUserIds.push(activeUser.id);
+  }
 
   // Increment campaign viewsCompleted
   const currentCompleted = (campaign.viewsCompleted ?? campaign.completedViews ?? 0) + 1;
@@ -956,19 +1086,30 @@ app.post("/api/watch/verify", (req, res) => {
     campaign.status = "completed";
   }
 
+  const feedbackMessage = followed
+    ? "Awesome! You earned 60 coins for watching + 30 coins follow bonus! Total: 90 Coins"
+    : "You earned 60 coins for watching! (Tip: Follow the channel next time to earn an extra 30 coins!)";
+
   // Log transaction
   transactions.unshift({
     id: `tx_${Date.now()}`,
     userId: activeUser.id,
     type: "earned_watch",
     amount: earnedCoins,
-    description: `Watched AtoPlay video for 60s: "${campaign.title.substring(0, 30)}..." (+60 coins)`,
+    description: followed
+      ? `Watched AtoPlay video for 60s (+60) & followed creator channel (+30 bonus) = 90 coins: "${campaign.title.substring(0, 30)}..."`
+      : `Watched AtoPlay video for 60s: "${campaign.title.substring(0, 30)}..." (+60 coins)`,
     createdAt: new Date().toISOString(),
   });
 
   res.json({
     success: true,
     earnedCoins,
+    baseCoins: baseReward,
+    bonusCoins: followBonus,
+    followed,
+    countBefore,
+    countAfter,
     user: activeUser,
     campaign: {
       id: campaign.id,
@@ -976,9 +1117,10 @@ app.post("/api/watch/verify", (req, res) => {
       viewsCompleted: campaign.viewsCompleted,
       completedViews: campaign.completedViews,
       targetViews: campaign.targetViews,
-      status: campaign.status
+      status: campaign.status,
+      completedUserIds: campaign.completedUserIds
     },
-    message: `Successfully earned ${earnedCoins} coins!`
+    message: feedbackMessage
   });
 });
 

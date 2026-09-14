@@ -34,6 +34,8 @@ export interface Campaign {
   countryFlag?: string;
   channelName?: string;
   durationText?: string;
+  completedUserIds?: string[];
+  channelFollowers?: number;
 }
 
 export interface Transaction {
@@ -51,6 +53,7 @@ export interface WatchSession {
   campaignId: string;
   startTime: number;
   durationSeconds: number;
+  countBefore?: number;
   claimed?: boolean;
   aborted?: boolean;
 }
@@ -62,6 +65,8 @@ export interface ActiveWatchState {
   startTime: number;
   durationSeconds: number;
   userId: string;
+  countBefore?: number;
+  userClickedFollow?: boolean;
 }
 
 export function format4CharId(rawId?: string, fallbackId?: string): string {

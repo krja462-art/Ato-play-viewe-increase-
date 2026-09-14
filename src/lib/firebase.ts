@@ -17,7 +17,8 @@ import {
   setDoc, 
   updateDoc,
   deleteDoc,
-  increment
+  increment,
+  arrayUnion
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 import { User, Campaign } from '../types';
@@ -194,28 +195,33 @@ export const saveCampaignToFirestore = async (campaign: Campaign): Promise<void>
 };
 
 /**
- * Update completed views for a campaign in Cloud Firestore
+ * Update completed views for a campaign in Cloud Firestore and save user UID to completed list
  */
 export const updateCampaignViewsInFirestore = async (
   campaignId: string, 
+  userId?: string,
   newViewsCompleted?: number, 
   isCompleted?: boolean
 ): Promise<void> => {
   if (!campaignId) return;
   try {
     const campRef = doc(db, 'campaigns', campaignId);
+    const updates: Record<string, any> = {};
+
     if (typeof newViewsCompleted === 'number') {
-      await updateDoc(campRef, { 
-        viewsCompleted: newViewsCompleted,
-        completedViews: newViewsCompleted,
-        status: isCompleted ? 'completed' : 'active'
-      });
+      updates.viewsCompleted = newViewsCompleted;
+      updates.completedViews = newViewsCompleted;
+      updates.status = isCompleted ? 'completed' : 'active';
     } else {
-      await updateDoc(campRef, { 
-        viewsCompleted: increment(1),
-        completedViews: increment(1)
-      });
+      updates.viewsCompleted = increment(1);
+      updates.completedViews = increment(1);
     }
+
+    if (userId) {
+      updates.completedUserIds = arrayUnion(userId);
+    }
+
+    await updateDoc(campRef, updates);
   } catch (err) {
     console.warn('Error updating campaign views in Firestore:', err);
   }

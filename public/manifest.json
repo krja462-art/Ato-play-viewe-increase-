@@ -1,9 +1,11 @@
 {
-  "id": "/",
-  "name": "AtoPlay (Ato Play) Booster & Views Increase",
+  "id": "https://ato-play-viewe-increase.vercel.app/",
+  "name": "AtoPlay Booster - Ato Play Views Increase",
   "short_name": "AtoPlay Booster",
-  "description": "AtoPlay & Ato Play Video Promotion and View Exchange App",
-  "start_url": "/",
+  "description": "AtoPlay Booster (Ato Play Booster) is India's #1 AtoPlay video view exchange and watch time booster platform. Increase real AtoPlay views, earn coins, and monetize your channel faster.",
+  "lang": "en",
+  "dir": "ltr",
+  "start_url": "/?source=pwa",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait",
@@ -39,6 +41,38 @@
       "sizes": "382x385",
       "type": "image/png",
       "purpose": "any"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Home Watch & Earn",
+      "short_name": "Home",
+      "description": "Watch AtoPlay videos and earn coins",
+      "url": "/?tab=home",
+      "icons": [{ "src": "/pwa-192x192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Create Campaign",
+      "short_name": "Campaign",
+      "description": "Promote your AtoPlay video",
+      "url": "/?tab=campaigns",
+      "icons": [{ "src": "/pwa-192x192.png", "sizes": "192x192" }]
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/pwa-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "AtoPlay Booster Mobile Screen"
+    },
+    {
+      "src": "/pwa-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "AtoPlay Booster Desktop Screen"
     }
   ]
 }
