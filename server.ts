@@ -1608,6 +1608,21 @@ app.get("/pwa-192x192.png", servePublicImage("pwa-192x192.png", "image/png"));
 app.get("/pwa-512x512.png", servePublicImage("pwa-512x512.png", "image/png"));
 app.get("/pwa-maskable-512x512.png", servePublicImage("pwa-maskable-512x512.png", "image/png"));
 
+// Digital Asset Links verification for Android TWA (Hides Chrome URL bar)
+app.get("/.well-known/assetlinks.json", (_req, res) => {
+  const publicPath = path.join(process.cwd(), "public", ".well-known", "assetlinks.json");
+  const distPath = path.join(process.cwd(), "dist", ".well-known", "assetlinks.json");
+  const targetFile = fs.existsSync(publicPath) ? publicPath : distPath;
+
+  if (fs.existsSync(targetFile)) {
+    res.setHeader("Content-Type", "application/json");
+    res.setHeader("Cache-Control", "public, max-age=0, must-revalidate");
+    res.sendFile(targetFile);
+  } else {
+    res.status(404).json({ error: "assetlinks.json not found" });
+  }
+});
+
 
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {
@@ -1623,7 +1638,7 @@ async function startServer() {
       ? path.join(process.cwd(), 'dist')
       : path.resolve(__dirname);
 
-    app.use(express.static(distPath));
+    app.use(express.static(distPath, { dotfiles: 'allow' }));
     app.get('*', (_req, res) => {
       const indexPath = path.join(distPath, 'index.html');
       if (fs.existsSync(indexPath)) {
