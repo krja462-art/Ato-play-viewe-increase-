@@ -439,12 +439,12 @@ export const SlideDrawer: React.FC<SlideDrawerProps> = ({
                     </div>
                     <div>
                       <div className="flex items-center space-x-1.5">
-                        <h4 className="font-bold text-sm text-zinc-900 group-hover:text-blue-600">Install App / APK Bundle</h4>
+                        <h4 className="font-bold text-sm text-zinc-900 group-hover:text-blue-600">Install App (WebAPK)</h4>
                         <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-blue-600 text-white font-black uppercase">
-                          Android / PWA
+                          Android
                         </span>
                       </div>
-                      <p className="text-[11px] text-zinc-500">Direct WebAPK &amp; APK Download</p>
+                      <p className="text-[11px] text-zinc-500">Direct 1-Click Install on Android</p>
                     </div>
                   </div>
                   <ChevronRight className="w-4 h-4 text-zinc-400 group-hover:text-blue-600 group-hover:translate-x-0.5 transition-all" />
@@ -1038,7 +1038,7 @@ export const SlideDrawer: React.FC<SlideDrawerProps> = ({
                 </div>
                 <div>
                   <h3 className="font-extrabold text-base text-zinc-900">AtoPlay Booster App</h3>
-                  <p className="text-[11px] text-zinc-500 font-medium">Android APK &amp; PWA Build Bundle</p>
+                  <p className="text-[11px] text-zinc-500 font-medium">Android 1-Click WebAPK Install</p>
                 </div>
               </div>
               <button
@@ -1049,10 +1049,10 @@ export const SlideDrawer: React.FC<SlideDrawerProps> = ({
               </button>
             </div>
 
-            {/* Option 1: Direct WebAPK Install */}
+            {/* Direct WebAPK Install */}
             <div className="p-4 rounded-2xl bg-blue-50/70 border border-blue-200/80 space-y-2.5">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-black uppercase text-blue-700 tracking-wider">Method 1: Instant Direct WebAPK</span>
+                <span className="text-xs font-black uppercase text-blue-700 tracking-wider">Direct 1-Click Install (WebAPK)</span>
                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-600 text-white font-bold">Recommended</span>
               </div>
               <p className="text-xs text-zinc-700 leading-relaxed">
@@ -1077,38 +1077,17 @@ export const SlideDrawer: React.FC<SlideDrawerProps> = ({
               )}
             </div>
 
-            {/* Option 2: Standalone APK via PWABuilder */}
-            <div className="p-4 rounded-2xl bg-indigo-50/70 border border-indigo-200/80 space-y-2.5">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-black uppercase text-indigo-700 tracking-wider">Method 2: Standalone APK / AAB Bundle</span>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-600 text-white font-bold">Google Play / APK</span>
-              </div>
-              <p className="text-xs text-zinc-700 leading-relaxed">
-                Download a standalone signed <strong>.apk</strong> or Google Play Store ready <strong>.aab</strong> bundle generated directly from our verified PWA manifest via Microsoft PWABuilder.
-              </p>
-
-              <a
-                href="https://www.pwabuilder.com/report?site=https%3A%2F%2Fato-play-viewe-increase.vercel.app"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-black text-xs flex items-center justify-center space-x-2 shadow-md shadow-indigo-600/20 transition-all active:scale-98 cursor-pointer"
-              >
-                <ExternalLink className="w-4 h-4" />
-                <span>Generate &amp; Download APK (PWABuilder)</span>
-              </a>
-            </div>
-
             {/* Steps & Guidelines */}
             <div className="space-y-2 pt-1 text-xs text-zinc-600">
               <h5 className="font-bold text-zinc-900 text-xs flex items-center space-x-1.5">
                 <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                <span>How to Install &amp; Sideload APK on Phone:</span>
+                <span>How to Install on Your Android Phone:</span>
               </h5>
               <ol className="list-decimal list-inside space-y-1 text-[11px] text-zinc-600 pl-1 leading-relaxed">
-                <li>Tap the button above or use Chrome menu to initiate download/install.</li>
-                <li>When prompted, allow <em>"Install unknown apps"</em> for your browser if downloading raw .apk.</li>
+                <li>Tap the button above or use Chrome menu (⋮) to install.</li>
+                <li>Tap <strong>"Install app"</strong> or <strong>"Add to Home screen"</strong> when prompted.</li>
                 <li>Tap the installed <strong>AtoPlay Booster</strong> icon on your home screen to launch.</li>
-                <li>Enjoy 0ms latency, persistent coin balance, and faster video boosting!</li>
+                <li>Enjoy full-screen experience, persistent coin balance, and faster video boosting!</li>
               </ol>
             </div>
 

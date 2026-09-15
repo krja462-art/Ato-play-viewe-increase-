@@ -263,6 +263,16 @@ export const getPublicCampaignsFromFirestore = async (currentUserId?: string): P
       const data = docSnap.data() as any;
       if (!data) return;
 
+      // Clean/purge any legacy starter demo campaigns from Firestore
+      if (
+        docSnap.id === 'camp_starter_1' || 
+        docSnap.id === 'camp_starter_2' || 
+        String(data.userId || '').startsWith('creator_starter')
+      ) {
+        deleteDoc(doc(db, 'campaigns', docSnap.id)).catch(() => {});
+        return;
+      }
+
       const reqViews = Number(data.viewsRequired ?? data.targetViews ?? 10);
       const compViews = Number(data.viewsCompleted ?? data.completedViews ?? 0);
       const status = data.status || 'active';
@@ -368,68 +378,25 @@ export const getMyCampaignsFromFirestore = async (userId: string): Promise<Campa
 };
 
 /**
- * Ensure starter public campaigns exist in Firestore so every user sees videos immediately
+ * Clean and remove all demo/starter campaigns from Firestore
  */
-export const seedStarterCampaignsToFirestore = async (): Promise<void> => {
+export const purgeStarterCampaignsFromFirestore = async (): Promise<void> => {
   try {
-    const starters: Campaign[] = [
-      {
-        id: "camp_starter_1",
-        userId: "creator_starter_1",
-        userName: "Creative AtoPlay Hub",
-        videoUrl: "https://atoplay.com/video/58d4d4aa-c235-48a1-8423-57fbeefa914e",
-        title: "1000 Views in 1 Day? AtoPlay Algorithm Secret!",
-        thumbnailUrl: "https://cdn.atoplay.in/atoplay-thumbnails/58d4d4aa-c235-48a1-8423-57fbeefa914e/thumbnails/61f8d5c2-3b2b-4789-8581-c6727ce0388a.webp",
-        viewsRequired: 50,
-        viewsCompleted: 6,
-        rewardPerView: 60,
-        targetViews: 50,
-        completedViews: 6,
-        durationSeconds: 60,
-        totalCoinsCost: 4000,
-        status: "active",
-        createdAt: new Date(Date.now() - 3600000).toISOString(),
-        displayId: "914E",
-        countryFlag: "🇮🇳",
-        channelName: "Creative AtoPlay Hub",
-        durationText: "1:00",
-        completedUserIds: []
-      },
-      {
-        id: "camp_starter_2",
-        userId: "creator_starter_2",
-        userName: "Tapas creation",
-        videoUrl: "https://atoplay.com/video/b079eff5-e942-4d88-813d-6bc5a40d08e9",
-        title: "Best Trending Video Setup 2025 (Earn Fast Coins)",
-        thumbnailUrl: "https://cdn.atoplay.in/atoplay-thumbnails/58d4d4aa-c235-48a1-8423-57fbeefa914e/thumbnails/b079eff5-e942-4d88-813d-6bc5a40d08e9.webp",
-        viewsRequired: 30,
-        viewsCompleted: 4,
-        rewardPerView: 60,
-        targetViews: 30,
-        completedViews: 4,
-        durationSeconds: 60,
-        totalCoinsCost: 2400,
-        status: "active",
-        createdAt: new Date(Date.now() - 7200000).toISOString(),
-        displayId: "08E9",
-        countryFlag: "🇮🇳",
-        channelName: "Tapas creation",
-        durationText: "1:00",
-        completedUserIds: []
-      }
-    ];
-
-    for (const starter of starters) {
-      const campRef = doc(db, 'campaigns', starter.id);
+    const starterIds = ["camp_starter_1", "camp_starter_2"];
+    for (const id of starterIds) {
+      const campRef = doc(db, 'campaigns', id);
       const snap = await getDoc(campRef);
-      if (!snap.exists()) {
-        await setDoc(campRef, starter);
+      if (snap.exists()) {
+        await deleteDoc(campRef);
       }
     }
   } catch (err) {
-    console.warn('Could not seed starter campaigns to Firestore:', err);
+    console.warn('Could not clean starter campaigns from Firestore:', err);
   }
 };
+
+// Keep backward-compatible alias so existing callers purge starters instead of creating them
+export const seedStarterCampaignsToFirestore = purgeStarterCampaignsFromFirestore;
 
 /**
  * Save user support message to Cloud Firestore destined for krja462@gmail.com

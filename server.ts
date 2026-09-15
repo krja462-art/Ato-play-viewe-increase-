@@ -18,46 +18,7 @@ app.get(["/api/health", "/healthz"], (_req, res) => {
 const users: Record<string, User> = {};
 let currentSessionUser: User | null = null;
 
-let campaigns: Campaign[] = [
-  {
-    id: "camp_starter_1",
-    userId: "creator_starter_1",
-    userName: "Creative AtoPlay Hub",
-    videoUrl: "https://atoplay.com/video/61f8d5c2-3b2b-4789-8581-c6727ce0388a",
-    title: "Jagannath cartoon animation video -14",
-    thumbnailUrl: "https://cdn.atoplay.in/atoplay-thumbnails/58d4d4aa-c235-48a1-8423-57fbeefa914e/thumbnails/61f8d5c2-3b2b-4789-8581-c6727ce0388a.webp",
-    viewsRequired: 20,
-    viewsCompleted: 6,
-    rewardPerView: 60,
-    targetViews: 20,
-    completedViews: 6,
-    durationSeconds: 60,
-    totalCoinsCost: 1600,
-    status: "active",
-    createdAt: new Date(Date.now() - 3600000).toISOString(),
-    displayId: "388A",
-    countryFlag: "🇮🇳"
-  },
-  {
-    id: "camp_starter_2",
-    userId: "creator_starter_2",
-    userName: "Tapas creation",
-    videoUrl: "https://atoplay.com/video/b079eff5-e942-4d88-813d-6bc5a40d08e9",
-    title: "Nilakantha verni Episode -35",
-    thumbnailUrl: "https://cdn.atoplay.in/atoplay-thumbnails/58d4d4aa-c235-48a1-8423-57fbeefa914e/thumbnails/b079eff5-e942-4d88-813d-6bc5a40d08e9.webp",
-    viewsRequired: 15,
-    viewsCompleted: 4,
-    rewardPerView: 60,
-    targetViews: 15,
-    completedViews: 4,
-    durationSeconds: 60,
-    totalCoinsCost: 1200,
-    status: "active",
-    createdAt: new Date(Date.now() - 7200000).toISOString(),
-    displayId: "08E9",
-    countryFlag: "🇮🇳"
-  }
-];
+let campaigns: Campaign[] = [];
 
 // Track which campaigns each user has watched so they are permanently removed from their feed
 const userWatchedCampaigns: Record<string, Set<string>> = {};
@@ -113,14 +74,7 @@ interface ServerWatchSession {
 const watchSessions: Record<string, ServerWatchSession> = {};
 
 // In-Memory Creator Channel Follower Registry
-const channelFollowerStore: Record<string, number> = {
-  "camp_starter_1": 342,
-  "camp_starter_2": 185,
-  "creator_starter_1": 342,
-  "creator_starter_2": 185,
-  "Creative AtoPlay Hub": 342,
-  "Tapas creation": 185
-};
+const channelFollowerStore: Record<string, number> = {};
 
 // Backend Helper to fetch creator's current channel follower count from AtoPlay
 async function fetchChannelFollowerCount(campaign: Campaign): Promise<{ count: number; channelKey: string }> {
@@ -397,6 +351,9 @@ app.post("/api/campaigns/sync", (req, res) => {
   if (Array.isArray(incoming)) {
     for (const inc of incoming) {
       if (!inc || !inc.id) continue;
+      if (inc.id === 'camp_starter_1' || inc.id === 'camp_starter_2' || String(inc.userId || '').startsWith('creator_starter')) {
+        continue;
+      }
       const existingIdx = campaigns.findIndex(c => c.id === inc.id);
       if (existingIdx !== -1) {
         const existing = campaigns[existingIdx];

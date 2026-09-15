@@ -9,7 +9,7 @@ import {
   updateCampaignViewsInFirestore, 
   saveUserCoinsToFirestore,
   getPublicCampaignsFromFirestore,
-  seedStarterCampaignsToFirestore
+  purgeStarterCampaignsFromFirestore
 } from '../lib/firebase';
 
 interface HomeWatchFeedProps {
@@ -80,8 +80,8 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
       const watchedLocal = getWatchedIds(user.id);
       const watchedArray = Array.from(watchedLocal);
 
-      // Ensure starters exist in Firestore
-      seedStarterCampaignsToFirestore().catch(() => {});
+      // Ensure dummy/starter campaigns are purged from Firestore
+      purgeStarterCampaignsFromFirestore().catch(() => {});
 
       // 1. Fetch from server API
       let serverCampaigns: Campaign[] = [];
@@ -141,6 +141,7 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
       // - active status & remaining views:
       //   c.status === 'active' && viewsCompleted < viewsRequired
       const publicFiltered = Array.from(map.values()).filter(c => {
+        if (c.id === 'camp_starter_1' || c.id === 'camp_starter_2' || String(c.userId || '').startsWith('creator_starter')) return false;
         const reqViews = Number(c.viewsRequired ?? c.targetViews ?? 10);
         const compViews = Number(c.viewsCompleted ?? c.completedViews ?? 0);
         if (c.status !== 'active' || compViews >= reqViews) return false;
