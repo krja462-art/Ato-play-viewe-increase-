@@ -35,16 +35,29 @@ export interface Campaign {
   channelName?: string;
   durationText?: string;
   completedUserIds?: string[];
+  followedUserIds?: string[];
   channelFollowers?: number;
+  channelId?: string;
 }
 
 export interface Transaction {
   id: string;
   userId: string;
-  type: 'earned_watch' | 'spent_campaign' | 'bonus_signup' | 'daily_checkin' | 'rewarded_ad' | 'iap_purchase' | 'refund_campaign' | 'referral_bonus' | 'referral_received';
+  type: 'earned_watch' | 'earned_follow' | 'spent_campaign' | 'bonus_signup' | 'daily_checkin' | 'rewarded_ad' | 'iap_purchase' | 'refund_campaign' | 'referral_bonus' | 'referral_received';
   amount: number;
   description: string;
   createdAt: string;
+}
+
+export interface FollowSessionState {
+  campaignId: string;
+  channelKey: string;
+  channelName: string;
+  channelId?: string;
+  channelUrl: string;
+  countBefore: number;
+  rewardCoins: number;
+  startTime: number;
 }
 
 export interface WatchSession {

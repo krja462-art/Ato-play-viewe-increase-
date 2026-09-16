@@ -41,6 +41,15 @@
           "type": "array", 
           "items": { "type": "string" }, 
           "description": "List of user UIDs who have completed this video task" 
+        },
+        "followedUserIds": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "List of user UIDs who have followed this creator channel for 30 coins"
+        },
+        "channelFollowers": {
+          "type": "number",
+          "description": "Latest follower count fetched from AtoPlay API"
         }
       },
       "required": ["id", "userId", "videoUrl", "targetViews", "completedViews", "status"]

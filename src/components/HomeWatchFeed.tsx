@@ -3,6 +3,7 @@ import { User, Campaign, format4CharId, ActiveWatchState } from '../types';
 import { Play, CheckCircle2, Clock, ArrowLeft, Video, ExternalLink, RefreshCw, Award, Coins, AlertCircle, ShieldCheck, Key, UserPlus, Sparkles } from 'lucide-react';
 import { RewardPopupModal } from './RewardPopupModal';
 import { SessionExpiredModal } from './SessionExpiredModal';
+import { FollowChannelModal } from './FollowChannelModal';
 import { AtoPlayBadge } from './AtoPlayBadge';
 import { apiFetch, getWatchedIds, addWatchedId } from '../lib/api';
 import { 
@@ -45,6 +46,10 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
   // Watch + Follow Unified Task Flow State
   const [userFollowedChannel, setUserFollowedChannel] = useState(false);
   const [channelCountBefore, setChannelCountBefore] = useState<number | undefined>(undefined);
+
+  // Dedicated Follow System Modal State
+  const [followModalCampaign, setFollowModalCampaign] = useState<Campaign | null>(null);
+  const [followedCampaignIds, setFollowedCampaignIds] = useState<Set<string>>(new Set());
 
   // Pop notification celebration modal state
   const [showRewardModal, setShowRewardModal] = useState(false);
@@ -171,9 +176,39 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
     }
   };
 
+  const fetchFollowedCampaigns = useCallback(async () => {
+    try {
+      const data = await apiFetch('/api/user/followed-campaigns', {
+        headers: { 'x-user-id': user.id }
+      });
+      if (data?.success && Array.isArray(data.followedCampaignIds)) {
+        setFollowedCampaignIds(new Set(data.followedCampaignIds));
+      }
+    } catch (e) {
+      console.warn('Error fetching followed campaigns:', e);
+    }
+  }, [user.id]);
+
   useEffect(() => {
     fetchCampaigns();
-  }, [user.id, refreshTrigger]);
+    fetchFollowedCampaigns();
+  }, [user.id, refreshTrigger, fetchFollowedCampaigns]);
+
+  const handleFollowSuccess = (campaignId: string, earnedCoins: number, updatedUser: User) => {
+    setFollowedCampaignIds(prev => new Set([...prev, campaignId]));
+    onCoinEarned(updatedUser);
+    saveUserCoinsToFirestore(user.id, updatedUser.coins, user.email).catch(() => {});
+    setCampaigns(prev => prev.map(c => {
+      if (c.id === campaignId) {
+        return {
+          ...c,
+          followedUserIds: [...(c.followedUserIds || []), user.id],
+          channelFollowers: (c.channelFollowers ?? 0) + 1
+        };
+      }
+      return c;
+    }));
+  };
 
   // Invalidate and expire session both locally and on backend when returned < 60s
   const handleExpireSession = useCallback(async (
@@ -939,6 +974,8 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
         <div className="space-y-3.5">
           {campaigns.map((camp) => {
             const shortId = format4CharId(camp.displayId, camp.id);
+            const isFollowed = followedCampaignIds.has(camp.id) || Boolean(camp.followedUserIds?.includes(user.id));
+
             return (
               <div
                 key={camp.id}
@@ -989,6 +1026,11 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
                       <span className="text-[11px] text-zinc-500 truncate max-w-[130px]">
                         • {camp.userName || 'Creator'}
                       </span>
+                      {typeof camp.channelFollowers === 'number' && (
+                        <span className="text-[10px] text-zinc-400">
+                          • {camp.channelFollowers} Followers
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -998,31 +1040,61 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
                   <div className="flex items-center space-x-1.5 text-xs text-amber-900 font-bold">
                     <Sparkles className="w-3.5 h-3.5 text-amber-600 shrink-0" />
                     <span className="text-[11px] sm:text-xs">
-                      Earn: <span className="font-extrabold text-zinc-900">60 Coins (Watch)</span> + <span className="font-extrabold text-emerald-700">30 Coins (Follow Bonus)</span> = <span className="font-black text-amber-700">90 Coins Total</span>
+                      Earn: <span className="font-extrabold text-zinc-900">60 Coins (Watch)</span> + <span className="font-extrabold text-emerald-700">30 Coins (Follow)</span> = <span className="font-black text-amber-700">90 Coins Total</span>
                     </span>
                   </div>
                 </div>
 
-                {/* Bottom Row: Verified Badge & Watch Action Button (2/100 Views removed as requested) */}
-                <div className="flex items-center justify-between pt-2.5 mt-2.5 border-t border-zinc-100">
-                  <div className="flex items-center space-x-1.5">
+                {/* Bottom Row: Verified Badge & Action Buttons */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-2.5 mt-2.5 border-t border-zinc-100">
+                  <div className="flex items-center space-x-2">
                     <span className="inline-flex items-center text-[11px] text-blue-700 font-bold bg-blue-50 px-2 py-0.5 rounded-lg border border-blue-200/60">
                       <ShieldCheck className="w-3.5 h-3.5 text-blue-600 mr-1" />
                       60s Verified
                     </span>
                   </div>
 
-                  <button 
-                    disabled={startingSession}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleSelectAndWatch(camp);
-                    }}
-                    className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-black text-xs sm:text-sm shadow-md shadow-blue-500/20 transition-all hover:scale-102 active:scale-95 cursor-pointer flex items-center space-x-1.5"
-                  >
-                    <Play className="w-3.5 h-3.5 fill-current shrink-0" />
-                    <span>Watch & Earn (90 Coins)</span>
-                  </button>
+                  <div className="flex items-center space-x-2">
+                    {/* Follow Channel & Earn 30 Coins Button (AtoPlay API verification) */}
+                    <button
+                      type="button"
+                      disabled={isFollowed}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setFollowModalCampaign(camp);
+                      }}
+                      className={`px-3 py-2 rounded-xl text-xs font-black flex items-center space-x-1.5 transition-all cursor-pointer ${
+                        isFollowed
+                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-300 opacity-90 cursor-default'
+                          : 'bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 shadow-2xs hover:scale-102 active:scale-95'
+                      }`}
+                    >
+                      {isFollowed ? (
+                        <>
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                          <span>Followed (+30 Claimed)</span>
+                        </>
+                      ) : (
+                        <>
+                          <UserPlus className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+                          <span>Follow (+30 Coins)</span>
+                        </>
+                      )}
+                    </button>
+
+                    {/* Watch Video Button */}
+                    <button 
+                      disabled={startingSession}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleSelectAndWatch(camp);
+                      }}
+                      className="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-black text-xs sm:text-sm shadow-md shadow-blue-500/20 transition-all hover:scale-102 active:scale-95 cursor-pointer flex items-center space-x-1.5 shrink-0"
+                    >
+                      <Play className="w-3.5 h-3.5 fill-current shrink-0" />
+                      <span>Watch (60s)</span>
+                    </button>
+                  </div>
                 </div>
               </div>
             );
@@ -1082,6 +1154,16 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
             handleSelectAndWatch(expiredCampaign);
           }
         }}
+      />
+
+      {/* Follow Channel Modal (+30 Coins via AtoPlay API Follow Verification) */}
+      <FollowChannelModal
+        isOpen={Boolean(followModalCampaign)}
+        onClose={() => setFollowModalCampaign(null)}
+        campaign={followModalCampaign}
+        user={user}
+        onFollowSuccess={handleFollowSuccess}
+        apiFetch={apiFetch}
       />
 
     </div>

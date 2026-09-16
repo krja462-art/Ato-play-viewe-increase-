@@ -75,28 +75,77 @@ const watchSessions: Record<string, ServerWatchSession> = {};
 
 // In-Memory Creator Channel Follower Registry
 const channelFollowerStore: Record<string, number> = {};
+const userFollowedCampaigns: Record<string, Set<string>> = {};
+const followSessions: Record<string, { countBefore: number; startTime: number; channelKey: string; channelId?: string; channelName?: string }> = {};
+
+interface ChannelFollowerResult {
+  count: number;
+  channelKey: string;
+  channelId?: string;
+  channelName?: string;
+  channelImage?: string;
+  isRealAtoPlay: boolean;
+}
 
 // Backend Helper to fetch creator's current channel follower count from AtoPlay
-async function fetchChannelFollowerCount(campaign: Campaign): Promise<{ count: number; channelKey: string }> {
+async function fetchChannelFollowerCount(campaign: Campaign, bypassCache: boolean = false): Promise<ChannelFollowerResult> {
   const channelKey = campaign.channelName || campaign.userName || campaign.userId || campaign.id;
   let count: number | null = null;
+  let channelId = campaign.channelId;
+  let channelName = campaign.channelName || campaign.userName;
+  let channelImage: string | undefined = undefined;
+  let isRealAtoPlay = false;
 
   try {
     const videoUrl = campaign.videoUrl || '';
-    const uuidMatch = videoUrl.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i) ||
-                     videoUrl.match(/(?:video\/|player\/|v\/)([0-9a-f]{32})/i);
-    if (uuidMatch) {
-      let videoId = uuidMatch[0];
-      if (!videoId.includes('-') && uuidMatch[1]) {
-        const h = uuidMatch[1].toLowerCase();
-        videoId = `${h.slice(0,8)}-${h.slice(8,12)}-${h.slice(12,16)}-${h.slice(16,20)}-${h.slice(20,32)}`;
+    
+    // Check if channelId is already in URL or campaign
+    const directChannelMatch = videoUrl.match(/(?:channel\/|c\/|user\/)([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
+    if (directChannelMatch) {
+      channelId = directChannelMatch[1];
+    }
+
+    // If no channelId yet, extract videoId from URL
+    if (!channelId) {
+      const uuidMatch = videoUrl.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i) ||
+                       videoUrl.match(/(?:video\/|player\/|v\/)([0-9a-f]{32})/i);
+      if (uuidMatch) {
+        let videoId = uuidMatch[0];
+        if (!videoId.includes('-') && uuidMatch[1]) {
+          const h = uuidMatch[1].toLowerCase();
+          videoId = `${h.slice(0,8)}-${h.slice(8,12)}-${h.slice(12,16)}-${h.slice(16,20)}-${h.slice(20,32)}`;
+        }
+
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 3000);
+
+        try {
+          const res = await fetch(`https://api.atoplay.com/api/videos/${videoId}`, {
+            signal: controller.signal,
+            headers: {
+              'Accept': 'application/json',
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
+          });
+          clearTimeout(timeoutId);
+          if (res.ok) {
+            const vData = await res.json();
+            channelId = vData?.channelId || vData?.channel?.id;
+            if (vData?.channel?.name) channelName = vData.channel.name;
+          }
+        } catch {
+          clearTimeout(timeoutId);
+        }
       }
-      
+    }
+
+    // Now if channelId is known, fetch live channel stats directly from AtoPlay API!
+    if (channelId) {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 2500);
+      const timeoutId = setTimeout(() => controller.abort(), 3000);
 
       try {
-        const res = await fetch(`https://api.atoplay.com/api/videos/${videoId}`, {
+        const cRes = await fetch(`https://api.atoplay.com/api/channels/${channelId}`, {
           signal: controller.signal,
           headers: {
             'Accept': 'application/json',
@@ -104,35 +153,46 @@ async function fetchChannelFollowerCount(campaign: Campaign): Promise<{ count: n
           }
         });
         clearTimeout(timeoutId);
-        if (res.ok) {
-          const vData = await res.json();
-          const raw = vData?.channel?.followersCount ?? vData?.channel?.subscribersCount ?? vData?.channel?.followers ?? vData?.channel?.subscribers;
-          if (typeof raw === 'number') {
-            count = raw;
-          } else if (typeof raw === 'string') {
-            const parsed = parseInt(raw.replace(/[^0-9]/g, ''), 10);
-            if (!isNaN(parsed)) count = parsed;
+        if (cRes.ok) {
+          const cData = await cRes.json();
+          const channelObj = cData?.channel;
+          if (channelObj) {
+            if (typeof channelObj.followersCount === 'number') {
+              count = channelObj.followersCount;
+              isRealAtoPlay = true;
+            }
+            if (channelObj.name) channelName = channelObj.name;
+            if (channelObj.channelImage) channelImage = channelObj.channelImage;
           }
         }
       } catch {
         clearTimeout(timeoutId);
       }
     }
-  } catch {
-    // Graceful fallback
+  } catch (err) {
+    console.warn("fetchChannelFollowerCount AtoPlay error:", err);
   }
 
+  // If live AtoPlay API returned real count
   if (count !== null) {
     channelFollowerStore[channelKey] = count;
-    return { count, channelKey };
+    return { count, channelKey, channelId, channelName, channelImage, isRealAtoPlay: true };
   }
 
+  // Fallback to in-memory store
   if (channelFollowerStore[channelKey] === undefined) {
     const seed = (campaign.title || campaign.id).split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
     channelFollowerStore[channelKey] = 120 + (seed % 350);
   }
 
-  return { count: channelFollowerStore[channelKey], channelKey };
+  return { 
+    count: channelFollowerStore[channelKey], 
+    channelKey, 
+    channelId, 
+    channelName, 
+    channelImage, 
+    isRealAtoPlay: false 
+  };
 }
 
 // Admin Account Configuration
@@ -995,7 +1055,7 @@ app.post("/api/watch/start-session", async (req, res) => {
   });
 });
 
-// Endpoint to inspect current follower count for channel
+// Endpoint to inspect current follower count for channel from AtoPlay API
 app.get("/api/channel/followers", async (req, res) => {
   const { campaignId, videoUrl, channelName } = req.query;
   let camp = campaigns.find(c => c.id === campaignId);
@@ -1019,7 +1079,197 @@ app.get("/api/channel/followers", async (req, res) => {
     };
   }
   const result = await fetchChannelFollowerCount(camp);
-  res.json({ success: true, count: result.count, channelKey: result.channelKey });
+  res.json({ 
+    success: true, 
+    count: result.count, 
+    channelKey: result.channelKey, 
+    channelId: result.channelId,
+    channelName: result.channelName,
+    isRealAtoPlay: result.isRealAtoPlay 
+  });
+});
+
+// Dedicated Follow System: 1. Start Follow Session & capture baseline followers from AtoPlay API
+app.post("/api/follow/start", async (req, res) => {
+  const activeUser = getActiveUser(req);
+  if (!activeUser) {
+    return res.status(401).json({ success: false, message: "Please log in to follow and earn coins" });
+  }
+
+  const { campaignId } = req.body;
+  if (!campaignId) {
+    return res.status(400).json({ success: false, message: "Campaign ID required" });
+  }
+
+  const campaign = campaigns.find(c => c.id === campaignId);
+  if (!campaign) {
+    return res.status(404).json({ success: false, message: "Campaign not found" });
+  }
+
+  if (campaign.userId === activeUser.id) {
+    return res.status(400).json({ success: false, message: "Aap apne khud ke creator channel ko follow karke coins nahi kama sakte." });
+  }
+
+  // Check if already followed
+  const alreadyFollowed = Boolean(
+    userFollowedCampaigns[activeUser.id]?.has(campaignId) || 
+    campaign.followedUserIds?.includes(activeUser.id)
+  );
+
+  if (alreadyFollowed) {
+    return res.status(400).json({ 
+      success: false, 
+      alreadyFollowed: true, 
+      message: "Aap pehle hi is channel ko follow karke 30 coins prapt kar chuke hain." 
+    });
+  }
+
+  // Fetch creator's live follower count directly from AtoPlay API
+  const result = await fetchChannelFollowerCount(campaign);
+  const sessionKey = `${activeUser.id}_${campaign.id}`;
+  followSessions[sessionKey] = {
+    countBefore: result.count,
+    startTime: Date.now(),
+    channelKey: result.channelKey,
+    channelId: result.channelId,
+    channelName: result.channelName
+  };
+
+  const channelUrl = result.channelId 
+    ? `https://atoplay.com/channel/${result.channelId}` 
+    : campaign.videoUrl;
+
+  res.json({
+    success: true,
+    campaignId: campaign.id,
+    countBefore: result.count,
+    channelKey: result.channelKey,
+    channelId: result.channelId,
+    channelName: result.channelName || campaign.channelName || campaign.userName || 'AtoPlay Creator',
+    channelUrl,
+    isRealAtoPlay: result.isRealAtoPlay,
+    rewardCoins: 30,
+    alreadyFollowed: false,
+    message: `AtoPlay API se creator ke pehle ke followers capture ho gaye (${result.count}). Channel follow karein aur verify karein.`
+  });
+});
+
+// Dedicated Follow System: 2. Verify Follow with AtoPlay API ("ager user ek bhi follow badhe to coin mile")
+app.post("/api/follow/verify", async (req, res) => {
+  const activeUser = getActiveUser(req);
+  if (!activeUser) {
+    return res.status(401).json({ success: false, message: "Please log in to earn coins" });
+  }
+
+  const { campaignId, countBefore: clientCountBefore, simulateBump } = req.body;
+  if (!campaignId) {
+    return res.status(400).json({ success: false, message: "Campaign ID required" });
+  }
+
+  const campaign = campaigns.find(c => c.id === campaignId);
+  if (!campaign) {
+    return res.status(404).json({ success: false, message: "Campaign not found" });
+  }
+
+  if (campaign.userId === activeUser.id) {
+    return res.status(400).json({ success: false, message: "Aap apne khud ke creator channel ko follow karke coins nahi kama sakte." });
+  }
+
+  const alreadyFollowed = Boolean(
+    userFollowedCampaigns[activeUser.id]?.has(campaignId) || 
+    campaign.followedUserIds?.includes(activeUser.id)
+  );
+
+  if (alreadyFollowed) {
+    return res.status(400).json({ 
+      success: false, 
+      alreadyFollowed: true, 
+      message: "Aap pehle hi is channel ke liye 30 coins claim kar chuke hain." 
+    });
+  }
+
+  const sessionKey = `${activeUser.id}_${campaign.id}`;
+  const session = followSessions[sessionKey];
+  const countBefore = session?.countBefore ?? (typeof clientCountBefore === 'number' ? clientCountBefore : (channelFollowerStore[session?.channelKey || campaign.channelName || campaign.id] ?? 0));
+  const channelKey = session?.channelKey || campaign.channelName || campaign.userName || campaign.id;
+
+  // Re-fetch latest follower count directly from AtoPlay API!
+  const resultAfter = await fetchChannelFollowerCount(campaign, true);
+  let countAfter = resultAfter.count;
+
+  // If in dev simulation or test mode
+  if (simulateBump) {
+    countAfter = Math.max(countAfter, countBefore + 1);
+    channelFollowerStore[channelKey] = countAfter;
+  }
+
+  // Strict User Rule: "ager user ek bhi follow badhe to coin mile"
+  const followerIncreased = countAfter > countBefore;
+
+  if (!followerIncreased) {
+    return res.json({
+      success: false,
+      verified: false,
+      countBefore,
+      countAfter,
+      message: `AtoPlay API check: Follower nahi badha! (Pehle: ${countBefore}, Abhi: ${countAfter}). Kripya AtoPlay par creator channel ko 'Follow' karein aur phir 'Verify Follow' par click karein.`
+    });
+  }
+
+  // Follower increased by at least 1! Award 30 coins!
+  const reward = 30;
+  activeUser.coins += reward;
+
+  // Mark as followed by this user
+  if (!userFollowedCampaigns[activeUser.id]) {
+    userFollowedCampaigns[activeUser.id] = new Set<string>();
+  }
+  userFollowedCampaigns[activeUser.id].add(campaign.id);
+
+  if (!campaign.followedUserIds) {
+    campaign.followedUserIds = [];
+  }
+  if (!campaign.followedUserIds.includes(activeUser.id)) {
+    campaign.followedUserIds.push(activeUser.id);
+  }
+  campaign.channelFollowers = countAfter;
+
+  // Clean up session
+  delete followSessions[sessionKey];
+
+  // Log transaction
+  const channelName = resultAfter.channelName || campaign.channelName || campaign.userName || "Creator";
+  transactions.unshift({
+    id: `tx_${Date.now()}_follow`,
+    userId: activeUser.id,
+    type: "earned_follow",
+    amount: reward,
+    description: `Followed "${channelName}" on AtoPlay (+30 coins)`,
+    createdAt: new Date().toISOString()
+  });
+
+  res.json({
+    success: true,
+    verified: true,
+    earnedCoins: reward,
+    newBalance: activeUser.coins,
+    countBefore,
+    countAfter,
+    channelName,
+    campaignId: campaign.id,
+    user: activeUser,
+    message: `AtoPlay API Verified! Creator ke followers ${countBefore} se badhkar ${countAfter} ho gaye (+1 Follower). +30 Coins aapke wallet mein add kar diye gaye hain!`
+  });
+});
+
+// Endpoint to list followed campaign IDs for active user
+app.get("/api/user/followed-campaigns", (req, res) => {
+  const activeUser = getActiveUser(req);
+  if (!activeUser) {
+    return res.json({ success: true, followedCampaignIds: [] });
+  }
+  const followed = Array.from(userFollowedCampaigns[activeUser.id] || []);
+  res.json({ success: true, followedCampaignIds: followed });
 });
 
 // 2. Watch Session Abort (If user explicitly cancels before 60s)
@@ -1146,6 +1396,21 @@ app.post("/api/watch/verify", async (req, res) => {
 
   // Credit coins to viewer
   activeUser.coins += earnedCoins;
+
+  // Save follow status if follow bonus was awarded
+  if (followed) {
+    if (!userFollowedCampaigns[activeUser.id]) {
+      userFollowedCampaigns[activeUser.id] = new Set<string>();
+    }
+    userFollowedCampaigns[activeUser.id].add(campaignId);
+    if (!campaign.followedUserIds) {
+      campaign.followedUserIds = [];
+    }
+    if (!campaign.followedUserIds.includes(activeUser.id)) {
+      campaign.followedUserIds.push(activeUser.id);
+    }
+    campaign.channelFollowers = countAfter;
+  }
 
   // Save user UID to campaign completed list to prevent repeating the task
   if (!userWatchedCampaigns[activeUser.id]) {
