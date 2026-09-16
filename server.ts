@@ -220,6 +220,27 @@ referralCodes["REF-KRJA"] = adminUid;
 function getActiveUser(req: express.Request): User | null {
   const uid = (req.headers['x-user-id'] as string) || (req.body && req.body.userId) || (req.query && (req.query.uid as string));
   let user = (uid && users[uid]) ? users[uid] : currentSessionUser;
+
+  // Auto-restore session user if uid was sent but memory was refreshed
+  if (!user && uid) {
+    const cleanUid = String(uid).trim();
+    const isAdmin = cleanUid.includes('krja462') || cleanUid === adminUid;
+    users[cleanUid] = {
+      id: cleanUid,
+      name: isAdmin ? "Admin (KRJA)" : "AtoPlay User",
+      email: isAdmin ? ADMIN_EMAIL : (cleanUid.includes('@') ? cleanUid : "user@atoplay.com"),
+      coins: isAdmin ? ADMIN_UNLIMITED_COINS : 100,
+      avatar: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80",
+      streak: 1,
+      lastCheckIn: new Date().toISOString().split('T')[0],
+      createdAt: new Date().toISOString(),
+      referralsCount: 0,
+      referralEarnings: 0,
+      referralCode: `REF-${cleanUid.slice(0, 6).toUpperCase()}`,
+      isAdmin
+    };
+    user = users[cleanUid];
+  }
   
   // Enforce Unlimited Coins for Admin account
   if (user && (user.email?.toLowerCase().trim() === ADMIN_EMAIL || user.id.includes('krja462') || user.isAdmin)) {
