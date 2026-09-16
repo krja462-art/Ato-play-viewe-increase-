@@ -23,7 +23,6 @@ import {
   Smartphone,
   Share,
   PlusSquare,
-  Globe,
   Info
 } from 'lucide-react';
 import { User } from '../types';
@@ -48,13 +47,6 @@ export const SlideDrawer: React.FC<SlideDrawerProps> = ({
 }) => {
   const [activeModal, setActiveModal] = useState<'privacy' | 'terms' | 'contact' | 'referral' | 'ios_install' | 'apk_bundle' | null>(null);
   const { isInstallable, isInstalled, isIOS, install } = usePWAInstall();
-  
-  // PWABuilder URL Bar Fix & AssetLinks State
-  const [apkModalTab, setApkModalTab] = useState<'webapk' | 'pwabuilder'>('webapk');
-  const [pwPackageName, setPwPackageName] = useState('app.vercel.ato_play_viewe_increase.twa');
-  const [pwSha256, setPwSha256] = useState('14:6D:E9:75:51:7A:B4:7A:C7:E3:A4:D7:9C:43:BF:84:89:12:F1:C0:8C:38:D7:35:E1:92:2C:9A:8A:2C:4D:23');
-  const [savingAssetLinks, setSavingAssetLinks] = useState(false);
-  const [assetLinksStatus, setAssetLinksStatus] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
 
   // Referral State
   const [copiedCode, setCopiedCode] = useState(false);
@@ -1038,7 +1030,7 @@ export const SlideDrawer: React.FC<SlideDrawerProps> = ({
       {/* Android APK & PWA Bundle Download Modal */}
       {activeModal === 'apk_bundle' && (
         <div className="fixed inset-0 z-60 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-7 space-y-4 shadow-2xl relative my-6 max-h-[92vh] overflow-y-auto animate-in fade-in zoom-in-95 duration-200">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 sm:p-7 space-y-5 shadow-2xl relative my-6 max-h-[92vh] overflow-y-auto animate-in fade-in zoom-in-95 duration-200">
             
             <div className="flex items-center justify-between pb-3 border-b border-zinc-100">
               <div className="flex items-center space-x-3">
@@ -1046,246 +1038,68 @@ export const SlideDrawer: React.FC<SlideDrawerProps> = ({
                   <Smartphone className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="font-extrabold text-base text-zinc-900">AtoPlay Booster Android App</h3>
-                  <p className="text-[11px] text-zinc-500 font-medium">Install without Chrome URL Bar</p>
+                  <h3 className="font-extrabold text-base text-zinc-900">AtoPlay Booster App</h3>
+                  <p className="text-[11px] text-zinc-500 font-medium">Install on Android • Full Screen</p>
                 </div>
               </div>
               <button
-                onClick={() => {
-                  setActiveModal(null);
-                  setAssetLinksStatus(null);
-                }}
+                onClick={() => setActiveModal(null)}
                 className="p-1.5 rounded-full hover:bg-zinc-100 text-zinc-400 hover:text-zinc-600 cursor-pointer transition-colors"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {/* Navigation Tabs */}
-            <div className="flex rounded-2xl bg-zinc-100 p-1 space-x-1 text-xs font-bold">
-              <button
-                type="button"
-                onClick={() => setApkModalTab('webapk')}
-                className={`flex-1 py-2.5 px-3 rounded-xl transition-all cursor-pointer flex items-center justify-center space-x-1.5 ${
-                  apkModalTab === 'webapk'
-                    ? 'bg-white text-blue-700 shadow-xs font-black'
-                    : 'text-zinc-600 hover:text-zinc-900'
-                }`}
-              >
-                <Smartphone className="w-3.5 h-3.5" />
-                <span>1-Click WebAPK</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setApkModalTab('pwabuilder')}
-                className={`flex-1 py-2.5 px-3 rounded-xl transition-all cursor-pointer flex items-center justify-center space-x-1.5 ${
-                  apkModalTab === 'pwabuilder'
-                    ? 'bg-white text-indigo-700 shadow-xs font-black'
-                    : 'text-zinc-600 hover:text-zinc-900'
-                }`}
-              >
-                <Globe className="w-3.5 h-3.5" />
-                <span>PWABuilder URL Bar Fix</span>
-              </button>
+            {/* Direct 1-Click Install Card */}
+            <div className="p-4 rounded-2xl bg-blue-50/80 border border-blue-200/80 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-black uppercase text-blue-700 tracking-wider">Direct 1-Click Install</span>
+                <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-blue-600 text-white font-bold">Recommended</span>
+              </div>
+              <p className="text-xs text-zinc-700 leading-relaxed">
+                App ko seedhe apne phone par install karein. Yeh bina kisi browser URL bar ke 100% full screen chalega!
+              </p>
+              
+              {isInstallable ? (
+                <button
+                  onClick={async () => {
+                    await install();
+                    setActiveModal(null);
+                  }}
+                  className="w-full py-3.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-black text-xs sm:text-sm flex items-center justify-center space-x-2 shadow-md shadow-blue-600/20 transition-all active:scale-98 cursor-pointer"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>1-Click Install Android App</span>
+                </button>
+              ) : (
+                <div className="p-3 rounded-xl bg-white border border-blue-200 text-xs text-blue-950 font-medium space-y-1">
+                  <div className="font-bold flex items-center space-x-1.5 text-blue-800">
+                    <Info className="w-4 h-4 text-blue-600 shrink-0" />
+                    <span>Chrome se Install karne ka Tarika:</span>
+                  </div>
+                  <p className="text-zinc-600 pl-5 leading-relaxed text-[11px]">
+                    Chrome browser me upar daayein kone me <strong>Three Dots (⋮)</strong> dabayein aur <strong>"Install app"</strong> ya <strong>"Add to Home screen"</strong> par click karein.
+                  </p>
+                </div>
+              )}
             </div>
 
-            {/* Tab 1: Direct WebAPK Install */}
-            {apkModalTab === 'webapk' && (
-              <div className="space-y-4">
-                <div className="p-4 rounded-2xl bg-blue-50/80 border border-blue-200/80 space-y-2.5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-black uppercase text-blue-700 tracking-wider">Direct Install (Zero URL Bar)</span>
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-600 text-white font-bold">Best & Easiest</span>
-                  </div>
-                  <p className="text-xs text-zinc-700 leading-relaxed">
-                    Agar aap Chrome browser se <strong>Install App</strong> karte hain, toh Android automatically <strong>WebAPK generate karta hai jisme kabhi bhi koi URL bar nahi dikhta</strong>. Yeh bilkul Play Store app jaisa full screen chalta hai.
-                  </p>
-                  
-                  {isInstallable ? (
-                    <button
-                      onClick={async () => {
-                        await install();
-                        setActiveModal(null);
-                      }}
-                      className="w-full py-3.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-black text-xs sm:text-sm flex items-center justify-center space-x-2 shadow-md shadow-blue-600/20 transition-all active:scale-98 cursor-pointer"
-                    >
-                      <Download className="w-4 h-4" />
-                      <span>1-Click Install Android App (Full Screen)</span>
-                    </button>
-                  ) : (
-                    <div className="p-3 rounded-xl bg-white border border-blue-200 text-xs text-blue-950 font-medium space-y-1">
-                      <div className="font-bold flex items-center space-x-1.5 text-blue-800">
-                        <Info className="w-4 h-4 text-blue-600 shrink-0" />
-                        <span>Chrome se Direct Install karne ka Tarika:</span>
-                      </div>
-                      <p className="text-zinc-600 pl-5 leading-relaxed text-[11px]">
-                        Phone ke Chrome browser me top-right <strong>Three Dots (⋮)</strong> dabayein &gt; <strong>"Install app"</strong> ya <strong>"Add to Home screen"</strong> par click karein.
-                      </p>
-                    </div>
-                  )}
-                </div>
-
-                {/* Benefits */}
-                <div className="p-3.5 rounded-2xl bg-emerald-50/70 border border-emerald-200 text-xs text-emerald-950 space-y-2">
-                  <div className="flex items-center space-x-2 font-bold text-emerald-800">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                    <span>WebAPK Features:</span>
-                  </div>
-                  <ul className="text-[11px] text-emerald-800 space-y-1 pl-6 list-disc">
-                    <li>100% Full Screen native app feel (No Chrome URL bar).</li>
-                    <li>Fast launching &amp; persistent coin balance.</li>
-                    <li>App drawer and home screen icon support.</li>
-                  </ul>
-                </div>
+            {/* Features List */}
+            <div className="p-4 rounded-2xl bg-emerald-50/60 border border-emerald-200/80 space-y-2">
+              <div className="flex items-center space-x-2 font-bold text-emerald-800 text-xs">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>App Features:</span>
               </div>
-            )}
-
-            {/* Tab 2: PWABuilder APK URL Bar Fixer */}
-            {apkModalTab === 'pwabuilder' && (
-              <div className="space-y-3.5">
-                {/* Reason Explanation */}
-                <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-200 space-y-1.5 text-xs">
-                  <div className="flex items-center space-x-1.5 font-bold text-amber-900">
-                    <Info className="w-4 h-4 text-amber-700 shrink-0" />
-                    <span>PWABuilder APK me URL Bar kyu dikhta hai?</span>
-                  </div>
-                  <p className="text-[11px] text-amber-800 leading-relaxed">
-                    PWABuilder Android TWA (Trusted Web Activity) banata hai. Agar website par <code>/.well-known/assetlinks.json</code> me APK ka <strong>Package Name</strong> aur <strong>SHA-256 Fingerprint</strong> match nahi hota, toh Google Chrome security ke liye URL bar dikhata hai.
-                  </p>
-                </div>
-
-                {/* What we already fixed */}
-                <div className="p-3 rounded-2xl bg-zinc-50 border border-zinc-200 text-[11px] text-zinc-700 space-y-1">
-                  <div className="font-bold text-zinc-900 flex items-center space-x-1">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>Manifest Fix Applied:</span>
-                  </div>
-                  <p className="text-zinc-600">
-                    <code>start_url: "/"</code>, <code>id: "/"</code>, aur <code>display_override: ["standalone", "fullscreen"]</code> website par fix kar diya gaya hai.
-                  </p>
-                </div>
-
-                {/* Custom AssetLinks Form */}
-                <form 
-                  onSubmit={async (e) => {
-                    e.preventDefault();
-                    if (!pwPackageName.trim() || !pwSha256.trim()) return;
-                    setSavingAssetLinks(true);
-                    setAssetLinksStatus(null);
-                    try {
-                      const res = await apiFetch<any>('/api/assetlinks', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                          packageName: pwPackageName.trim(),
-                          sha256Fingerprint: pwSha256.trim()
-                        })
-                      });
-                      setAssetLinksStatus({
-                        type: 'success',
-                        msg: res?.message || 'AssetLinks updated! Ab phone me APK ko recent apps se hata kar dobara kholein, URL bar gayab ho jayega!'
-                      });
-                    } catch (err: any) {
-                      setAssetLinksStatus({
-                        type: 'error',
-                        msg: err?.message || 'Error updating assetlinks. Kripya punah prayas karein.'
-                      });
-                    } finally {
-                      setSavingAssetLinks(false);
-                    }
-                  }}
-                  className="space-y-3 bg-white p-3.5 rounded-2xl border border-indigo-100 shadow-xs"
-                >
-                  <div className="space-y-1">
-                    <label className="text-[11px] font-bold text-zinc-700 uppercase tracking-wider block">
-                      APK Package Name (applicationId)
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={pwPackageName}
-                      onChange={(e) => setPwPackageName(e.target.value)}
-                      placeholder="e.g. app.vercel.ato_play_viewe_increase.twa"
-                      className="w-full px-3 py-2 text-xs font-mono rounded-xl bg-zinc-50 border border-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    />
-                    <p className="text-[10px] text-zinc-400">
-                      PWABuilder se downloaded zip ke andar <code>build.gradle</code> ya <code>assetlinks.json</code> me dekhein.
-                    </p>
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="text-[11px] font-bold text-zinc-700 uppercase tracking-wider block">
-                      SHA-256 Certificate Fingerprint
-                    </label>
-                    <textarea
-                      rows={2}
-                      required
-                      value={pwSha256}
-                      onChange={(e) => setPwSha256(e.target.value)}
-                      placeholder="e.g. 14:6D:E9:75:51:7A:B4:7A:C7:E3:A4:D7:9C:43:BF:84:89:12:F1:C0:8C:38:D7:35:E1:92:2C:9A:8A:2C:4D:23"
-                      className="w-full px-3 py-2 text-xs font-mono rounded-xl bg-zinc-50 border border-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
-                    />
-                    <p className="text-[10px] text-zinc-400">
-                      PWABuilder ke downloaded zip folder me <code>assetlinks.json</code> file se SHA256 copy karein.
-                    </p>
-                  </div>
-
-                  {assetLinksStatus && (
-                    <div className={`p-3 rounded-xl text-xs flex items-start space-x-2 ${
-                      assetLinksStatus.type === 'success' 
-                        ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' 
-                        : 'bg-red-50 text-red-800 border border-red-200'
-                    }`}>
-                      {assetLinksStatus.type === 'success' ? (
-                        <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                      ) : (
-                        <Info className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
-                      )}
-                      <span>{assetLinksStatus.msg}</span>
-                    </div>
-                  )}
-
-                  <div className="flex items-center space-x-2 pt-1">
-                    <button
-                      type="submit"
-                      disabled={savingAssetLinks}
-                      className="flex-1 py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs shadow-xs flex items-center justify-center space-x-1.5 cursor-pointer disabled:opacity-50"
-                    >
-                      <Check className="w-3.5 h-3.5" />
-                      <span>{savingAssetLinks ? 'Saving...' : 'Save & Hide URL Bar'}</span>
-                    </button>
-
-                    <a
-                      href="/.well-known/assetlinks.json"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="py-2.5 px-3 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-bold text-xs flex items-center space-x-1"
-                      title="View Live assetlinks.json"
-                    >
-                      <ExternalLink className="w-3.5 h-3.5" />
-                      <span>Check JSON</span>
-                    </a>
-                  </div>
-                </form>
-
-                {/* Quick 3-Step Verification Checklist */}
-                <div className="p-3 rounded-2xl bg-zinc-50 border border-zinc-200 text-[11px] text-zinc-600 space-y-1">
-                  <span className="font-bold text-zinc-900 block">Phone pe URL bar hatane ke 3 aasan steps:</span>
-                  <ol className="list-decimal list-inside space-y-0.5 pl-1">
-                    <li>Upar diye gaye form me apna package name aur SHA256 save karein.</li>
-                    <li>Phone me <strong>Settings &gt; Apps &gt; Chrome &gt; Storage &gt; Clear Cache</strong> karein (taki purani verification reset ho jaye).</li>
-                    <li>Apne APK ko reopen karein — URL bar hat jayega aur app full-screen chalega!</li>
-                  </ol>
-                </div>
-              </div>
-            )}
+              <ul className="text-[11px] text-emerald-900 space-y-1.5 pl-5 list-disc leading-relaxed">
+                <li><strong>No Browser URL Bar:</strong> 100% Full Screen native app interface.</li>
+                <li><strong>Fast Performance:</strong> Home screen aur app drawer se instant open.</li>
+                <li><strong>Real-time Coin Sync:</strong> Watch, earn aur boost seamlessly.</li>
+              </ul>
+            </div>
 
             <div className="pt-2 border-t border-zinc-100">
               <button
-                onClick={() => {
-                  setActiveModal(null);
-                  setAssetLinksStatus(null);
-                }}
+                onClick={() => setActiveModal(null)}
                 className="w-full py-2.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-bold text-xs transition-colors cursor-pointer"
               >
                 Close
