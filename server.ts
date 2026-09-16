@@ -1894,18 +1894,100 @@ app.get("/pwa-192x192.png", servePublicImage("pwa-192x192.png", "image/png"));
 app.get("/pwa-512x512.png", servePublicImage("pwa-512x512.png", "image/png"));
 app.get("/pwa-maskable-512x512.png", servePublicImage("pwa-maskable-512x512.png", "image/png"));
 
-// Digital Asset Links verification for Android TWA (Hides Chrome URL bar)
-app.get("/.well-known/assetlinks.json", (_req, res) => {
+// Digital Asset Links in-memory registry for PWABuilder TWA APKs (Hides Chrome URL bar)
+interface AssetLinkTarget {
+  namespace: string;
+  package_name: string;
+  sha256_cert_fingerprints: string[];
+}
+interface AssetLinkEntry {
+  relation: string[];
+  target: AssetLinkTarget;
+}
+
+let customAssetLinks: AssetLinkEntry[] = [];
+
+function loadAssetLinks(): AssetLinkEntry[] {
   const publicPath = path.join(process.cwd(), "public", ".well-known", "assetlinks.json");
   const distPath = path.join(process.cwd(), "dist", ".well-known", "assetlinks.json");
   const targetFile = fs.existsSync(publicPath) ? publicPath : distPath;
 
-  if (fs.existsSync(targetFile)) {
-    res.setHeader("Content-Type", "application/json");
-    res.setHeader("Cache-Control", "public, max-age=0, must-revalidate");
-    res.sendFile(targetFile);
-  } else {
-    res.status(404).json({ error: "assetlinks.json not found" });
+  let baseEntries: AssetLinkEntry[] = [];
+  try {
+    if (fs.existsSync(targetFile)) {
+      const content = fs.readFileSync(targetFile, 'utf-8');
+      baseEntries = JSON.parse(content);
+    }
+  } catch (e) {
+    console.warn("Failed reading assetlinks.json:", e);
+  }
+
+  // Merge base entries and customAssetLinks without duplicates
+  const map = new Map<string, AssetLinkEntry>();
+  for (const item of [...baseEntries, ...customAssetLinks]) {
+    const key = `${item.target.package_name}_${item.target.sha256_cert_fingerprints.join('_')}`;
+    map.set(key, item);
+  }
+  return Array.from(map.values());
+}
+
+// Digital Asset Links verification for Android TWA (Hides Chrome URL bar)
+app.get(["/.well-known/assetlinks.json", "/assetlinks.json"], (_req, res) => {
+  const entries = loadAssetLinks();
+  res.setHeader("Content-Type", "application/json; charset=utf-8");
+  res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.json(entries);
+});
+
+// API to inspect and add custom package name & SHA256 fingerprints from PWABuilder
+app.get("/api/assetlinks", (_req, res) => {
+  const entries = loadAssetLinks();
+  res.json({ success: true, entries });
+});
+
+app.post("/api/assetlinks", (req, res) => {
+  try {
+    const { packageName, sha256Fingerprint } = req.body;
+    if (!packageName || !sha256Fingerprint) {
+      return res.status(400).json({ success: false, message: "packageName and sha256Fingerprint are required." });
+    }
+
+    const cleanPkg = String(packageName).trim();
+    // Normalize fingerprint: uppercase, ensure colons or space-delimited
+    const cleanFp = String(sha256Fingerprint).trim().toUpperCase();
+
+    const newEntry: AssetLinkEntry = {
+      relation: ["delegate_permission/common.handle_all_urls"],
+      target: {
+        namespace: "android_app",
+        package_name: cleanPkg,
+        sha256_cert_fingerprints: [cleanFp]
+      }
+    };
+
+    customAssetLinks.push(newEntry);
+
+    // Also persist to public/.well-known/assetlinks.json so it survives
+    const all = loadAssetLinks();
+    const publicDir = path.join(process.cwd(), "public", ".well-known");
+    if (!fs.existsSync(publicDir)) {
+      fs.mkdirSync(publicDir, { recursive: true });
+    }
+    fs.writeFileSync(path.join(publicDir, "assetlinks.json"), JSON.stringify(all, null, 2), 'utf-8');
+
+    const distDir = path.join(process.cwd(), "dist", ".well-known");
+    if (fs.existsSync(distDir)) {
+      fs.writeFileSync(path.join(distDir, "assetlinks.json"), JSON.stringify(all, null, 2), 'utf-8');
+    }
+
+    res.json({
+      success: true,
+      message: `AssetLinks successfully updated with package '${cleanPkg}' and fingerprint '${cleanFp}'. URL bar will be hidden on your next APK launch!`,
+      entries: all
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message || "Failed saving assetlinks" });
   }
 });
 

@@ -635,6 +635,24 @@ async function handleClientFallback<T>(endpoint: string, options?: RequestInit, 
     } as any;
   }
 
+  // 16. AssetLinks API (Fallback)
+  if (endpoint.startsWith('/api/assetlinks')) {
+    return {
+      success: true,
+      message: 'Assetlinks updated successfully',
+      entries: [
+        {
+          relation: ["delegate_permission/common.handle_all_urls"],
+          target: {
+            namespace: "android_app",
+            package_name: parsedBody?.packageName || "app.vercel.ato_play_viewe_increase.twa",
+            sha256_cert_fingerprints: [parsedBody?.sha256Fingerprint || "14:6D:E9:75:51:7A:B4:7A:C7:E3:A4:D7:9C:43:BF:84:89:12:F1:C0:8C:38:D7:35:E1:92:2C:9A:8A:2C:4D:23"]
+          }
+        }
+      ]
+    } as any;
+  }
+
   // Default fallback response
   return { success: true, message: 'Action completed' } as any;
 }
