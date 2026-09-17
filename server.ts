@@ -1885,6 +1885,8 @@ const servePublicImage = (filename: string, contentType: string = "image/png") =
 app.get("/favicon.ico", servePublicImage("favicon.ico", "image/x-icon"));
 app.get("/icon.png", servePublicImage("icon.png", "image/png"));
 app.get("/Icon.png", servePublicImage("Icon.png", "image/png"));
+app.get("/apkicon.png", servePublicImage("apkicon.png", "image/png"));
+app.get("/screenshot.png", servePublicImage("screenshot.png", "image/png"));
 app.get("/favicon.png", servePublicImage("favicon.png", "image/png"));
 app.get("/favicon-48x48.png", servePublicImage("favicon-48x48.png", "image/png"));
 app.get("/favicon-64x64.png", servePublicImage("favicon-64x64.png", "image/png"));
