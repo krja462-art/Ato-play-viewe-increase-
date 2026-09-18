@@ -23,13 +23,10 @@ import {
   Smartphone,
   Share,
   PlusSquare,
-  Info,
-  Sun,
-  Moon
+  Info
 } from 'lucide-react';
 import { User } from '../types';
 import { usePWAInstall } from '../hooks/usePWAInstall';
-import { useTheme } from '../hooks/useTheme';
 import { apiFetch } from '../lib/api';
 import { saveSupportMessageToFirestore } from '../lib/firebase';
 
@@ -50,7 +47,6 @@ export const SlideDrawer: React.FC<SlideDrawerProps> = ({
 }) => {
   const [activeModal, setActiveModal] = useState<'privacy' | 'terms' | 'contact' | 'referral' | 'ios_install' | 'apk_bundle' | null>(null);
   const { isInstallable, isInstalled, isIOS, install } = usePWAInstall();
-  const { isDark, toggleTheme } = useTheme();
 
   // Referral State
   const [copiedCode, setCopiedCode] = useState(false);
@@ -416,43 +412,6 @@ export const SlideDrawer: React.FC<SlideDrawerProps> = ({
                 </div>
                 <ChevronRight className="w-4 h-4 text-zinc-400 group-hover:text-emerald-600 group-hover:translate-x-0.5 transition-all" />
               </button>
-
-              {/* Appearance / Theme Toggle */}
-              <div className="w-full p-3 rounded-2xl bg-zinc-100/80 dark:bg-zinc-800/80 border border-zinc-200/80 dark:border-zinc-700/80 flex items-center justify-between text-left transition-colors">
-                <div className="flex items-center space-x-3">
-                  <div className="w-10 h-10 rounded-xl bg-amber-100 dark:bg-indigo-950 text-amber-600 dark:text-indigo-400 flex items-center justify-center">
-                    {isDark ? <Moon className="w-5 h-5 text-indigo-400" /> : <Sun className="w-5 h-5 text-amber-500" />}
-                  </div>
-                  <div>
-                    <h4 className="font-bold text-sm text-zinc-900 dark:text-zinc-100">
-                      {isDark ? 'Dark Mode' : 'Light Mode'}
-                    </h4>
-                    <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
-                      {isDark ? 'Low-light viewing active' : 'Default bright theme active'}
-                    </p>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={toggleTheme}
-                  aria-label="Toggle dark mode theme"
-                  className={`w-12 h-6.5 rounded-full transition-colors relative flex items-center px-0.5 cursor-pointer ${
-                    isDark ? 'bg-indigo-600' : 'bg-zinc-300'
-                  }`}
-                >
-                  <div
-                    className={`w-5.5 h-5.5 rounded-full bg-white shadow-md transform transition-transform ${
-                      isDark ? 'translate-x-5.5' : 'translate-x-0'
-                    } flex items-center justify-center`}
-                  >
-                    {isDark ? (
-                      <Moon className="w-3 h-3 text-indigo-600" />
-                    ) : (
-                      <Sun className="w-3 h-3 text-amber-500" />
-                    )}
-                  </div>
-                </button>
-              </div>
 
               {/* Install PWA App Option: Completely removed once downloaded/installed */}
               {!isInstalled && (

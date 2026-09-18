@@ -578,6 +578,12 @@ app.post("/api/campaigns/sync", (req, res) => {
   res.json({ success: true, totalCampaigns: campaigns.length });
 });
 
+// Clear all campaigns from server in-memory queue
+app.post("/api/campaigns/clear-all", (req, res) => {
+  campaigns = [];
+  res.json({ success: true, message: "All campaigns cleared from server" });
+});
+
 // Support Contact Endpoint: Dispatches message to krja462@gmail.com
 app.post("/api/support/message", async (req, res) => {
   try {

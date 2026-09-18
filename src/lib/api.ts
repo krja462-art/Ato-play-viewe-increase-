@@ -54,6 +54,12 @@ function setStoredCampaigns(campaigns: Campaign[]): void {
   localStorage.setItem(STORAGE_KEYS.CAMPAIGNS, JSON.stringify(campaigns));
 }
 
+export function clearStoredCampaigns(): void {
+  try {
+    localStorage.removeItem(STORAGE_KEYS.CAMPAIGNS);
+  } catch {}
+}
+
 function getStoredTransactions(): Transaction[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEYS.TRANSACTIONS);

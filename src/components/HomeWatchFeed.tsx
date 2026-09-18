@@ -11,7 +11,8 @@ import {
   updateCampaignViewsInFirestore, 
   saveUserCoinsToFirestore,
   getPublicCampaignsFromFirestore,
-  purgeStarterCampaignsFromFirestore
+  purgeStarterCampaignsFromFirestore,
+  clearAllCampaignsFromFirestore
 } from '../lib/firebase';
 
 interface HomeWatchFeedProps {
@@ -33,6 +34,7 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
 }) => {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [selectedCampaign, setSelectedCampaign] = useState<Campaign | null>(null);
+  const [videoStarted, setVideoStarted] = useState(false);
   const [timeLeft, setTimeLeft] = useState<number>(60);
   const [startTime, setStartTime] = useState<number | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -90,8 +92,20 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
       const watchedLocal = getWatchedIds(user.id);
       const watchedArray = Array.from(watchedLocal);
 
-      // Ensure dummy/starter campaigns are purged from Firestore
+      // User requested: "Home page per jitne campaign dikha rha usn sabko htao firebase se bhi htao"
+      const wipedKey = 'atoplay_home_campaigns_wiped_v3';
+      if (!localStorage.getItem(wipedKey)) {
+        await clearAllCampaignsFromFirestore().catch(() => {});
+        await apiFetch('/api/campaigns/clear-all', { method: 'POST' }).catch(() => {});
+        localStorage.removeItem('atoviewer_campaigns');
+        localStorage.setItem(wipedKey, 'true');
+      }
+
+      // Ensure dummy/starter campaigns are purged from Firestore & local storage
       purgeStarterCampaignsFromFirestore().catch(() => {});
+      try {
+        localStorage.removeItem('atoviewer_campaigns');
+      } catch {}
 
       // 1. Fetch from server API
       let serverCampaigns: Campaign[] = [];
@@ -460,6 +474,7 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
               setSessionId(parsed.sessionId);
               setSessionToken(parsed.sessionToken);
               setStartTime(parsed.startTime);
+              setVideoStarted(true);
               setTimeLeft(0);
               setIsPlaying(false);
               verifyWatchSession(parsed.campaign.id, parsed.sessionId, parsed.sessionToken, parsed.campaign);
@@ -556,8 +571,29 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
     };
   }, [isPlaying, startTime, isCompleted, sessionId, sessionToken, selectedCampaign, verifyWatchSession, handleExpireSession]);
 
-  // Start secure watch session
-  const handleSelectAndWatch = async (camp: Campaign) => {
+  // Select a campaign to view its details/watch screen without starting timer yet
+  const handleSelectCampaign = (camp: Campaign) => {
+    setSelectedCampaign(camp);
+    setVideoStarted(false);
+    setIsPlaying(false);
+    setTimeLeft(60);
+    setStartTime(null);
+    setSessionId(null);
+    setSessionToken(null);
+    setErrorStatus(null);
+    setUserFollowedChannel(false);
+    setIsCheckingFollow(false);
+    setFollowAutoCredited(false);
+    setFollowCheckMessage(null);
+    if (followPollingRef.current) {
+      clearInterval(followPollingRef.current);
+      followPollingRef.current = null;
+    }
+  };
+
+  // Start video playback: ONLY when user starts video does the 60s countdown begin!
+  const startVideoPlaybackAndTimer = async () => {
+    if (!selectedCampaign) return;
     try {
       setStartingSession(true);
       setErrorStatus(null);
@@ -577,7 +613,7 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
           'Content-Type': 'application/json',
           'x-user-id': user.id
         },
-        body: JSON.stringify({ campaignId: camp.id })
+        body: JSON.stringify({ campaignId: selectedCampaign.id })
       });
 
       if (!data?.success) {
@@ -592,7 +628,7 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
       const newSession: ActiveWatchState = {
         sessionId: data.sessionId,
         sessionToken: data.sessionToken,
-        campaign: camp,
+        campaign: selectedCampaign,
         startTime: now,
         durationSeconds: 60,
         userId: user.id,
@@ -605,16 +641,16 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
 
       setSessionId(data.sessionId);
       setSessionToken(data.sessionToken);
-      setSelectedCampaign(camp);
       setTimeLeft(60);
       setStartTime(now);
+      setVideoStarted(true);
       setIsPlaying(true);
       setIsCompleted(false);
       hasLeftAppRef.current = false;
 
       // Step 3: Open AtoPlay video in external browser / custom tab
       try {
-        window.open(camp.videoUrl, '_blank', 'noopener,noreferrer');
+        window.open(selectedCampaign.videoUrl, '_blank', 'noopener,noreferrer');
       } catch (e) {
         console.error('Popup open error:', e);
       }
@@ -628,6 +664,11 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
 
   // User explicitly cancels or leaves watch screen
   const handleAbortAndLeave = async () => {
+    if (!videoStarted) {
+      setSelectedCampaign(null);
+      return;
+    }
+
     if (timeLeft > 0 && !isCompleted) {
       const confirmLeave = confirm(
         `Watch session is active (${timeLeft}s remaining)! If you leave now, the session will expire with ZERO coins. Leave now?`
@@ -653,6 +694,7 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
 
     localStorage.removeItem(STORAGE_KEY);
     setSelectedCampaign(null);
+    setVideoStarted(false);
     setIsPlaying(false);
     setIsCompleted(false);
     setStartTime(null);
@@ -708,7 +750,7 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
     if (remaining.length > 0) {
       const nextCamp = remaining[0];
       setTimeout(() => {
-        handleSelectAndWatch(nextCamp);
+        handleSelectCampaign(nextCamp);
       }, 300);
     } else {
       fetchCampaigns();
@@ -744,30 +786,58 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
 
         <div className="bg-white rounded-3xl overflow-hidden border border-zinc-200 shadow-xl space-y-6 p-4 sm:p-7">
           
-          {/* External Browser Background Watch Banner */}
-          <div className="p-4 rounded-2xl bg-blue-50 border border-blue-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-            <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-sm">
-                <ExternalLink className="w-5 h-5" />
+          {/* Video Banner (Waiting vs Active) */}
+          {!videoStarted ? (
+            <div className="p-4 rounded-2xl bg-zinc-50 border border-zinc-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              <div className="flex items-center space-x-3">
+                <div className="w-10 h-10 rounded-xl bg-red-600 text-white flex items-center justify-center shrink-0 shadow-sm">
+                  <Play className="w-5 h-5 fill-current ml-0.5" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-extrabold text-zinc-900">
+                    Ready to Watch & Earn 60 Coins
+                  </h4>
+                  <p className="text-xs text-zinc-600">
+                    Neeche diye gaye Play button par click karein. Video start hone par hi countdown shuru hoga.
+                  </p>
+                </div>
               </div>
-              <div>
-                <h4 className="text-sm font-extrabold text-blue-900">
-                  Video & Creator Channel Opened in External Tab
-                </h4>
-                <p className="text-xs text-blue-700">
-                  Poore 60s video dekhein aur AtoPlay par creator channel ko Follow karein taaki total 90 coins credit ho.
-                </p>
-              </div>
-            </div>
 
-            <button
-              onClick={handleOpenBrowserAgain}
-              className="px-4 py-2 rounded-xl bg-white hover:bg-blue-100 text-blue-700 border border-blue-300 font-bold text-xs flex items-center space-x-1.5 shadow-xs transition-colors shrink-0 cursor-pointer"
-            >
-              <span>Re-open Video / Channel</span>
-              <ExternalLink className="w-3.5 h-3.5" />
-            </button>
-          </div>
+              <button
+                onClick={startVideoPlaybackAndTimer}
+                disabled={startingSession}
+                className="px-5 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-black text-xs flex items-center space-x-2 shadow-md shadow-red-600/20 transition-all shrink-0 cursor-pointer active:scale-95"
+              >
+                <Play className="w-4 h-4 fill-current" />
+                <span>{startingSession ? 'Starting Video...' : 'Start Video & Timer'}</span>
+              </button>
+            </div>
+          ) : (
+            /* External Browser Background Watch Banner */
+            <div className="p-4 rounded-2xl bg-blue-50 border border-blue-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              <div className="flex items-center space-x-3">
+                <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-sm">
+                  <ExternalLink className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-extrabold text-blue-900">
+                    Video & Creator Channel Opened in External Tab
+                  </h4>
+                  <p className="text-xs text-blue-700">
+                    Poore 60s video dekhein aur AtoPlay par creator channel ko Follow karein taaki total 90 coins credit ho.
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={handleOpenBrowserAgain}
+                className="px-4 py-2 rounded-xl bg-white hover:bg-blue-100 text-blue-700 border border-blue-300 font-bold text-xs flex items-center space-x-1.5 shadow-xs transition-colors shrink-0 cursor-pointer"
+              >
+                <span>Re-open Video / Channel</span>
+                <ExternalLink className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
 
           {/* Unified Reward Task Breakdown Card */}
           <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-50 via-yellow-50 to-amber-50 border border-amber-200 shadow-2xs space-y-3">
@@ -788,19 +858,23 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
               <div className={`p-3 rounded-xl border flex items-center justify-between ${
                 timeLeft === 0 
                   ? 'bg-emerald-50 border-emerald-300 text-emerald-900' 
-                  : 'bg-white border-zinc-200 text-zinc-800'
+                  : videoStarted
+                    ? 'bg-white border-zinc-200 text-zinc-800'
+                    : 'bg-zinc-50 border-zinc-200 text-zinc-600'
               }`}>
                 <div className="space-y-0.5">
                   <div className="font-bold flex items-center space-x-1.5">
                     {timeLeft === 0 ? (
                       <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                    ) : (
+                    ) : videoStarted ? (
                       <Clock className="w-4 h-4 text-blue-600 animate-spin" />
+                    ) : (
+                      <Clock className="w-4 h-4 text-zinc-400" />
                     )}
                     <span>1. Watch 60s Video</span>
                   </div>
                   <div className="text-[11px] text-zinc-500">
-                    {timeLeft === 0 ? '60s Time Met!' : `${timeLeft}s remaining`}
+                    {timeLeft === 0 ? '60s Time Met!' : videoStarted ? `${timeLeft}s remaining` : 'Waiting for video play (60s timer)'}
                   </div>
                 </div>
                 <span className="font-black text-emerald-600 text-xs">+60 Coins</span>
@@ -913,11 +987,38 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
               }}
               className="w-full h-full object-cover"
             />
+
+            {!videoStarted && (
+              <div
+                onClick={startVideoPlaybackAndTimer}
+                className="absolute inset-0 bg-black/40 hover:bg-black/30 transition-all flex flex-col items-center justify-center cursor-pointer group z-10"
+              >
+                <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-blue-600 group-hover:bg-blue-500 group-hover:scale-110 text-white flex items-center justify-center shadow-2xl transition-all">
+                  {startingSession ? (
+                    <div className="w-8 h-8 border-3 border-white border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <Play className="w-8 h-8 sm:w-10 sm:h-10 fill-current ml-1" />
+                  )}
+                </div>
+                <span className="mt-3 px-3.5 py-1.5 rounded-xl bg-black/80 text-white font-extrabold text-xs sm:text-sm tracking-wide shadow-md border border-white/20">
+                  {startingSession ? 'Starting Session...' : '▶ Click to Start Video & 60s Countdown'}
+                </span>
+              </div>
+            )}
             
-            <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/30 to-transparent flex flex-col justify-end p-4 sm:p-6 text-white">
+            <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/30 to-transparent flex flex-col justify-end p-4 sm:p-6 text-white pointer-events-none">
               <div className="inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-full bg-blue-600 text-white text-[11px] font-bold uppercase tracking-wider w-max mb-2 shadow-sm">
-                <Play className="w-3 h-3 fill-current" />
-                <span>External 60s Session Active</span>
+                {videoStarted ? (
+                  <>
+                    <Play className="w-3 h-3 fill-current" />
+                    <span>External 60s Session Active ({timeLeft}s)</span>
+                  </>
+                ) : (
+                  <>
+                    <Clock className="w-3 h-3 text-white" />
+                    <span>Ready • Countdown Starts on Video Play</span>
+                  </>
+                )}
               </div>
               <h2 className="font-extrabold text-base sm:text-xl line-clamp-2 text-white drop-shadow-sm">
                 {selectedCampaign.title}
@@ -932,17 +1033,19 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
           <div className="space-y-3 p-5 rounded-2xl bg-zinc-50 border border-zinc-200">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2.5">
-                <Clock className={`w-5 h-5 ${timeLeft === 0 ? 'text-emerald-600' : 'text-blue-600 animate-spin'}`} />
+                <Clock className={`w-5 h-5 ${timeLeft === 0 ? 'text-emerald-600' : videoStarted ? 'text-blue-600 animate-spin' : 'text-zinc-400'}`} />
                 <div>
                   <div className="flex items-center space-x-2">
                     <p className="text-xs text-zinc-500 font-bold uppercase tracking-wider">60s Watch Timer</p>
                     <span className="inline-flex items-center text-[10px] px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-bold">
                       <ShieldCheck className="w-3 h-3 mr-1" />
-                      Token Validated
+                      {videoStarted ? 'Token Validated' : 'Ready to Start'}
                     </span>
                   </div>
                   <p className="text-sm sm:text-base font-extrabold text-zinc-900 pt-0.5">
-                    {timeLeft > 0 ? (
+                    {!videoStarted ? (
+                      <span className="text-zinc-600 font-medium text-xs sm:text-sm">Paused (Click &apos;Start Video&apos; to begin 60s countdown)</span>
+                    ) : timeLeft > 0 ? (
                       <span>{timeLeft}s Remaining in Background <span className="text-xs text-zinc-500 font-normal">({progressPercent}%)</span></span>
                     ) : verifying ? (
                       <span className="text-blue-600 flex items-center space-x-1.5">
@@ -979,7 +1082,7 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
                 className={`h-full rounded-full transition-all duration-500 ${
                   timeLeft === 0 ? 'bg-emerald-500' : 'bg-blue-600'
                 }`}
-                style={{ width: `${progressPercent}%` }}
+                style={{ width: `${videoStarted ? progressPercent : 0}%` }}
               />
             </div>
 
@@ -987,7 +1090,7 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
             <div className="p-3 bg-white rounded-xl border border-zinc-200 flex items-center justify-between text-xs font-mono text-zinc-600">
               <div className="flex items-center space-x-1.5">
                 <Key className="w-3.5 h-3.5 text-blue-600" />
-                <span>Token: <span className="text-zinc-900 font-semibold">{tokenPreview}</span></span>
+                <span>Token: <span className="text-zinc-900 font-semibold">{videoStarted ? tokenPreview : 'Issued on playback start'}</span></span>
               </div>
               <span className="text-[10px] text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full font-sans font-bold">
                 Anti-Cheat Protected
@@ -1015,27 +1118,47 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
 
           {/* Action Buttons */}
           <div className="pt-2 flex flex-col items-center space-y-3">
-            <button
-              onClick={handleManualCheckReward}
-              disabled={verifying}
-              className={`w-full py-4 px-8 rounded-2xl font-extrabold text-sm sm:text-base shadow-lg transition-all ${
-                timeLeft === 0
-                  ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-500/30 ring-4 ring-emerald-100 hover:scale-102 cursor-pointer'
-                  : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-500/30 hover:scale-102 cursor-pointer'
-              }`}
-            >
-              {timeLeft === 0 
-                ? (userFollowedChannel ? 'Claim 90 Coins (Watch + Follow Complete! 🎉)' : 'Claim 60 Coins (Watch Complete! 🎉)') 
-                : verifying 
-                  ? 'Verifying Token & Follow Status...' 
-                  : `Check & Claim Reward (${timeLeft}s remaining)`}
-            </button>
+            {!videoStarted ? (
+              <button
+                onClick={startVideoPlaybackAndTimer}
+                disabled={startingSession}
+                className="w-full py-4 px-8 rounded-2xl font-extrabold text-sm sm:text-base shadow-lg bg-blue-600 hover:bg-blue-700 text-white shadow-blue-500/30 hover:scale-102 transition-all cursor-pointer flex items-center justify-center space-x-2"
+              >
+                {startingSession ? (
+                  <>
+                    <RefreshCw className="w-5 h-5 animate-spin" />
+                    <span>Starting Video &amp; 60s Countdown...</span>
+                  </>
+                ) : (
+                  <>
+                    <Play className="w-5 h-5 fill-current" />
+                    <span>Start Video &amp; 60s Countdown</span>
+                  </>
+                )}
+              </button>
+            ) : (
+              <button
+                onClick={handleManualCheckReward}
+                disabled={verifying}
+                className={`w-full py-4 px-8 rounded-2xl font-extrabold text-sm sm:text-base shadow-lg transition-all ${
+                  timeLeft === 0
+                    ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-500/30 ring-4 ring-emerald-100 hover:scale-102 cursor-pointer'
+                    : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-500/30 hover:scale-102 cursor-pointer'
+                }`}
+              >
+                {timeLeft === 0 
+                  ? (userFollowedChannel ? 'Claim 90 Coins (Watch + Follow Complete! 🎉)' : 'Claim 60 Coins (Watch Complete! 🎉)') 
+                  : verifying 
+                    ? 'Verifying Token & Follow Status...' 
+                    : `Check & Claim Reward (${timeLeft}s remaining)`}
+              </button>
+            )}
 
             <button
               onClick={handleAbortAndLeave}
               className="text-xs text-red-500 hover:text-red-700 hover:underline transition-colors cursor-pointer font-semibold"
             >
-              Cancel session (expire token now)
+              {videoStarted ? 'Cancel session (expire token now)' : 'Back to video list'}
             </button>
           </div>
 
@@ -1090,7 +1213,7 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
           onRetry={() => {
             setShowExpiredModal(false);
             if (expiredCampaign) {
-              handleSelectAndWatch(expiredCampaign);
+              handleSelectCampaign(expiredCampaign);
             }
           }}
         />
@@ -1155,7 +1278,7 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
             return (
               <div
                 key={camp.id}
-                onClick={() => !startingSession && handleSelectAndWatch(camp)}
+                onClick={() => !startingSession && handleSelectCampaign(camp)}
                 className="bg-white rounded-2xl border border-zinc-200/90 shadow-xs hover:shadow-md transition-all p-3 sm:p-4 cursor-pointer group"
               >
                 {/* Top Row: Thumbnail + Info */}
@@ -1238,7 +1361,7 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
                     disabled={startingSession}
                     onClick={(e) => {
                       e.stopPropagation();
-                      handleSelectAndWatch(camp);
+                      handleSelectCampaign(camp);
                     }}
                     className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-black text-xs sm:text-sm shadow-md shadow-blue-500/20 transition-all hover:scale-102 active:scale-95 cursor-pointer flex items-center space-x-1.5 shrink-0"
                   >
@@ -1301,7 +1424,7 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
         onRetry={() => {
           setShowExpiredModal(false);
           if (expiredCampaign) {
-            handleSelectAndWatch(expiredCampaign);
+            handleSelectCampaign(expiredCampaign);
           }
         }}
       />

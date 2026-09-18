@@ -136,7 +136,7 @@ export const WatchEarn: React.FC<WatchEarnProps> = ({ user, onCoinEarned }) => {
     return (
       <div className="max-w-4xl mx-auto px-4 py-20 text-center">
         <div className="w-12 h-12 border-4 border-red-600 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-        <p className="text-zinc-600 dark:text-zinc-400 font-medium">Loading AtoPlay video queue...</p>
+        <p className="text-zinc-600 font-medium">Loading AtoPlay video queue...</p>
       </div>
     );
   }
@@ -144,12 +144,12 @@ export const WatchEarn: React.FC<WatchEarnProps> = ({ user, onCoinEarned }) => {
   if (campaigns.length === 0) {
     return (
       <div className="max-w-3xl mx-auto px-4 py-16 text-center space-y-6">
-        <div className="w-20 h-20 rounded-3xl bg-red-100 dark:bg-red-950/50 text-red-600 flex items-center justify-center mx-auto shadow-inner">
+        <div className="w-20 h-20 rounded-3xl bg-red-100 text-red-600 flex items-center justify-center mx-auto shadow-inner">
           <Play className="w-10 h-10 fill-current" />
         </div>
         <div className="space-y-2">
-          <h2 className="text-2xl font-bold text-zinc-900 dark:text-white">No Videos Available in Queue</h2>
-          <p className="text-zinc-600 dark:text-zinc-400 max-w-md mx-auto">
+          <h2 className="text-2xl font-bold text-zinc-900">No Videos Available in Queue</h2>
+          <p className="text-zinc-600 max-w-md mx-auto">
             All available campaign videos have been watched or none are active right now. Check back soon or create your own campaign!
           </p>
         </div>
@@ -173,15 +173,15 @@ export const WatchEarn: React.FC<WatchEarnProps> = ({ user, onCoinEarned }) => {
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <div className="flex items-center space-x-2">
-            <span className="px-2.5 py-0.5 rounded-full bg-red-100 dark:bg-red-950/60 text-red-600 dark:text-red-400 text-xs font-bold uppercase tracking-wider">
+            <span className="px-2.5 py-0.5 rounded-full bg-red-100 text-red-600 text-xs font-bold uppercase tracking-wider">
               Watch & Earn Queue
             </span>
-            <span className="text-xs text-zinc-500 dark:text-zinc-400">Video {currentIndex + 1} of {campaigns.length}</span>
+            <span className="text-xs text-zinc-500">Video {currentIndex + 1} of {campaigns.length}</span>
           </div>
-          <h1 className="text-2xl font-extrabold text-zinc-900 dark:text-white mt-1">AtoPlay View Exchange Player</h1>
+          <h1 className="text-2xl font-extrabold text-zinc-900 mt-1">AtoPlay View Exchange Player</h1>
         </div>
 
-        <div className="flex items-center space-x-2 bg-yellow-50 dark:bg-yellow-950/40 border border-yellow-200 dark:border-yellow-900 px-4 py-2 rounded-2xl text-yellow-800 dark:text-yellow-300 font-bold text-sm">
+        <div className="flex items-center space-x-2 bg-yellow-50 border border-yellow-200 px-4 py-2 rounded-2xl text-yellow-800 font-bold text-sm">
           <Coins className="w-4 h-4 text-yellow-600" />
           <span>Earn ~{Math.floor((currentCampaign?.durationSeconds || 45) * 0.5)} Coins</span>
         </div>
@@ -189,14 +189,14 @@ export const WatchEarn: React.FC<WatchEarnProps> = ({ user, onCoinEarned }) => {
 
       {/* Warning Alert if Anti-Cheat triggered */}
       {warningMessage && (
-        <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-900 text-amber-800 dark:text-amber-300 flex items-center space-x-3 shadow-md animate-bounce">
+        <div className="p-4 rounded-2xl bg-amber-50 border border-amber-300 text-amber-800 flex items-center space-x-3 shadow-md animate-bounce">
           <ShieldAlert className="w-6 h-6 flex-shrink-0 text-amber-600" />
           <div className="text-sm font-medium">{warningMessage}</div>
         </div>
       )}
 
       {/* Video Player & Timer Card */}
-      <div className="bg-white dark:bg-zinc-900 rounded-3xl overflow-hidden border border-zinc-200 dark:border-zinc-800 shadow-xl">
+      <div className="bg-white rounded-3xl overflow-hidden border border-zinc-200 shadow-xl">
         
         {/* Simulated AtoPlay Video Stage */}
         <div className="relative aspect-video bg-zinc-950 flex flex-col items-center justify-center overflow-hidden group">
@@ -294,40 +294,40 @@ export const WatchEarn: React.FC<WatchEarnProps> = ({ user, onCoinEarned }) => {
         {/* Video Details & Anti-fraud Info */}
         <div className="p-6 sm:p-8 space-y-6">
           <div className="space-y-2">
-            <h2 className="text-xl font-bold text-zinc-900 dark:text-white">{currentCampaign.title}</h2>
-            <p className="text-sm text-zinc-500 dark:text-zinc-400">
+            <h2 className="text-xl font-bold text-zinc-900">{currentCampaign.title}</h2>
+            <p className="text-sm text-zinc-500">
               Video ID: {currentCampaign.id} • Required Watch Duration: {currentCampaign.durationSeconds}s
             </p>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-4 border-t border-zinc-100 dark:border-zinc-800">
-            <div className="flex items-center space-x-3 p-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800/50">
-              <div className="w-10 h-10 rounded-xl bg-red-100 dark:bg-red-950/50 text-red-600 flex items-center justify-center">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-4 border-t border-zinc-100">
+            <div className="flex items-center space-x-3 p-3 rounded-2xl bg-zinc-50">
+              <div className="w-10 h-10 rounded-xl bg-red-100 text-red-600 flex items-center justify-center">
                 <Clock className="w-5 h-5" />
               </div>
               <div>
-                <p className="text-xs text-zinc-500 dark:text-zinc-400">Duration</p>
-                <p className="font-bold text-sm text-zinc-900 dark:text-white">{currentCampaign.durationSeconds} Seconds</p>
+                <p className="text-xs text-zinc-500">Duration</p>
+                <p className="font-bold text-sm text-zinc-900">{currentCampaign.durationSeconds} Seconds</p>
               </div>
             </div>
 
-            <div className="flex items-center space-x-3 p-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800/50">
-              <div className="w-10 h-10 rounded-xl bg-yellow-100 dark:bg-yellow-950/50 text-yellow-600 flex items-center justify-center">
+            <div className="flex items-center space-x-3 p-3 rounded-2xl bg-zinc-50">
+              <div className="w-10 h-10 rounded-xl bg-yellow-100 text-yellow-600 flex items-center justify-center">
                 <Coins className="w-5 h-5" />
               </div>
               <div>
-                <p className="text-xs text-zinc-500 dark:text-zinc-400">Reward</p>
-                <p className="font-bold text-sm text-zinc-900 dark:text-white">~{Math.floor(currentCampaign.durationSeconds * 0.5)} Coins</p>
+                <p className="text-xs text-zinc-500">Reward</p>
+                <p className="font-bold text-sm text-zinc-900">~{Math.floor(currentCampaign.durationSeconds * 0.5)} Coins</p>
               </div>
             </div>
 
-            <div className="flex items-center space-x-3 p-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800/50">
-              <div className="w-10 h-10 rounded-xl bg-emerald-100 dark:bg-emerald-950/50 text-emerald-600 flex items-center justify-center">
+            <div className="flex items-center space-x-3 p-3 rounded-2xl bg-zinc-50">
+              <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center">
                 <ShieldAlert className="w-5 h-5" />
               </div>
               <div>
-                <p className="text-xs text-zinc-500 dark:text-zinc-400">Anti-Cheat</p>
-                <p className="font-bold text-sm text-emerald-600 dark:text-emerald-400">Server Verified</p>
+                <p className="text-xs text-zinc-500">Anti-Cheat</p>
+                <p className="font-bold text-sm text-emerald-600">Server Verified</p>
               </div>
             </div>
           </div>

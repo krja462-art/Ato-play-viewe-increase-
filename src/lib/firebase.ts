@@ -451,6 +451,21 @@ export const getMyCampaignsFromFirestore = async (userId: string): Promise<Campa
 };
 
 /**
+ * Completely remove and delete ALL campaigns from Cloud Firestore
+ */
+export const clearAllCampaignsFromFirestore = async (): Promise<void> => {
+  try {
+    const colRef = collection(db, 'campaigns');
+    const snapshot = await getDocs(colRef);
+    const deletePromises = snapshot.docs.map(d => deleteDoc(doc(db, 'campaigns', d.id)));
+    await Promise.all(deletePromises);
+    console.log(`Cleared ${snapshot.docs.length} campaigns from Cloud Firestore.`);
+  } catch (err) {
+    console.warn('Could not clear all campaigns from Firestore:', err);
+  }
+};
+
+/**
  * Clean and remove all demo/starter campaigns from Firestore
  */
 export const purgeStarterCampaignsFromFirestore = async (): Promise<void> => {
