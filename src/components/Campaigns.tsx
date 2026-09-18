@@ -527,42 +527,74 @@ export const Campaigns: React.FC<CampaignsProps> = ({
                   </div>
                 </div>
 
-                {/* Action buttons: Direct Delete Button + 3-dot Menu */}
-                <div className="flex items-center space-x-1.5 shrink-0">
-                  <button
-                    onClick={() => handleDeleteCampaign(camp.id)}
-                    className="flex items-center space-x-1 px-2.5 sm:px-3 py-1.5 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 text-xs font-bold transition-all shadow-xs cursor-pointer active:scale-95"
-                    title="Delete Campaign & Refund Remaining Coins"
+                {/* 3-dot Menu on right with Delete and Options */}
+                <div className="relative shrink-0">
+                  <button 
+                    onClick={() => setActiveMenuId(activeMenuId === camp.id ? null : camp.id)}
+                    className="p-2 sm:p-2.5 rounded-xl text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 transition-colors cursor-pointer"
+                    title="Campaign Options"
+                    aria-label="Campaign Options"
                   >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    <span>Delete</span>
+                    <MoreVertical className="w-5 h-5" />
                   </button>
 
-                  {/* 3-dot Menu on right */}
-                  <div className="relative">
-                    <button 
-                      onClick={() => setActiveMenuId(activeMenuId === camp.id ? null : camp.id)}
-                      className="p-2 rounded-xl text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 transition-colors cursor-pointer"
-                      title="More Options"
-                    >
-                      <MoreVertical className="w-5 h-5" />
-                    </button>
+                  {activeMenuId === camp.id && (
+                    <>
+                      {/* Click outside backdrop */}
+                      <div 
+                        className="fixed inset-0 z-20" 
+                        onClick={() => setActiveMenuId(null)} 
+                      />
 
-                    {activeMenuId === camp.id && (
-                      <div className="absolute right-0 top-10 w-44 bg-white rounded-2xl shadow-xl border border-zinc-200 py-1.5 z-30">
-                        <button
-                          onClick={() => {
-                            setActiveMenuId(null);
-                            handleDeleteCampaign(camp.id);
-                          }}
-                          className="w-full px-4 py-2.5 text-left text-xs text-red-600 hover:bg-red-50 flex items-center space-x-2 font-semibold cursor-pointer"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                          <span>Delete Campaign</span>
-                        </button>
+                      <div className="absolute right-0 top-11 w-48 bg-white rounded-2xl shadow-xl border border-zinc-200 py-1.5 z-30 divide-y divide-zinc-100 animate-in fade-in zoom-in-95 duration-150">
+                        <div className="px-3.5 py-1 text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
+                          Options
+                        </div>
+
+                        <div className="py-1">
+                          {camp.videoUrl && (
+                            <button
+                              onClick={() => {
+                                setActiveMenuId(null);
+                                window.open(camp.videoUrl, '_blank', 'noopener,noreferrer');
+                              }}
+                              className="w-full px-3.5 py-2 text-left text-xs text-zinc-700 hover:bg-zinc-50 flex items-center space-x-2 font-medium cursor-pointer transition-colors"
+                            >
+                              <ExternalLink className="w-4 h-4 text-blue-600 shrink-0" />
+                              <span>Open Video</span>
+                            </button>
+                          )}
+                          <button
+                            onClick={() => {
+                              setActiveMenuId(null);
+                              if (camp.videoUrl) {
+                                navigator.clipboard.writeText(camp.videoUrl);
+                                setSuccessMsg('Video link copied to clipboard!');
+                                setTimeout(() => setSuccessMsg(null), 3000);
+                              }
+                            }}
+                            className="w-full px-3.5 py-2 text-left text-xs text-zinc-700 hover:bg-zinc-50 flex items-center space-x-2 font-medium cursor-pointer transition-colors"
+                          >
+                            <Clipboard className="w-4 h-4 text-zinc-500 shrink-0" />
+                            <span>Copy Link</span>
+                          </button>
+                        </div>
+
+                        <div className="pt-1">
+                          <button
+                            onClick={() => {
+                              setActiveMenuId(null);
+                              handleDeleteCampaign(camp.id);
+                            }}
+                            className="w-full px-3.5 py-2 text-left text-xs text-red-600 hover:bg-red-50 flex items-center space-x-2 font-bold cursor-pointer transition-colors"
+                          >
+                            <Trash2 className="w-4 h-4 text-red-500 shrink-0" />
+                            <span>Delete Campaign</span>
+                          </button>
+                        </div>
                       </div>
-                    )}
-                  </div>
+                    </>
+                  )}
                 </div>
 
               </div>

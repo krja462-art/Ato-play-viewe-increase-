@@ -7,6 +7,7 @@ import { SplashScreen } from './components/SplashScreen';
 import { PWAInstallBanner } from './components/PWAInstallBanner';
 import { OfflineBanner } from './components/OfflineBanner';
 import { useOnlineStatus } from './hooks/useOnlineStatus';
+import { useTheme } from './hooks/useTheme';
 import { 
   auth, 
   logOut, 
@@ -26,6 +27,7 @@ export default function App() {
   const [refreshTrigger, setRefreshTrigger] = useState(0);
 
   const { isOnline, isReconnected } = useOnlineStatus();
+  useTheme(); // Initialize and apply documentElement dark class
 
   // Check redirect login & cached session on initial load
   useEffect(() => {
@@ -281,7 +283,7 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-white text-zinc-900 flex flex-col font-sans antialiased selection:bg-blue-600 selection:text-white">
+    <div className="min-h-screen bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 flex flex-col font-sans antialiased selection:bg-blue-600 selection:text-white transition-colors duration-200">
       
       {/* Offline Status & Reconnection Banner */}
       <OfflineBanner

@@ -7,7 +7,23 @@ export interface BeforeInstallPromptEvent extends Event {
 
 export function usePWAInstall() {
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
-  const [isInstalled, setIsInstalled] = useState(false);
+  const [isInstalled, setIsInstalled] = useState<boolean>(() => {
+    try {
+      if (typeof window === 'undefined') return false;
+      const isStandalone =
+        window.matchMedia('(display-mode: standalone)').matches ||
+        window.matchMedia('(display-mode: fullscreen)').matches ||
+        window.matchMedia('(display-mode: minimal-ui)').matches ||
+        (window.navigator as unknown as { standalone?: boolean }).standalone === true ||
+        document.referrer.includes('android-app://') ||
+        window.location.search.includes('source=pwa') ||
+        window.location.search.includes('utm_source=homescreen') ||
+        localStorage.getItem('pwa_installed') === 'true';
+      return isStandalone;
+    } catch {
+      return false;
+    }
+  });
   const [isIOS, setIsIOS] = useState(false);
   const [isDismissed, setIsDismissed] = useState(() => {
     try {
@@ -18,13 +34,24 @@ export function usePWAInstall() {
   });
 
   useEffect(() => {
-    // 1. Check if app is already running in standalone mode (installed PWA)
-    const isStandalone =
-      window.matchMedia('(display-mode: standalone)').matches ||
-      (window.navigator as unknown as { standalone?: boolean }).standalone === true ||
-      document.referrer.includes('android-app://');
+    // 1. Check if app is running in standalone mode (installed PWA / WebAPK)
+    const checkStandalone = () => {
+      const isStandalone =
+        window.matchMedia('(display-mode: standalone)').matches ||
+        window.matchMedia('(display-mode: fullscreen)').matches ||
+        window.matchMedia('(display-mode: minimal-ui)').matches ||
+        (window.navigator as unknown as { standalone?: boolean }).standalone === true ||
+        document.referrer.includes('android-app://') ||
+        window.location.search.includes('source=pwa') ||
+        window.location.search.includes('utm_source=homescreen') ||
+        localStorage.getItem('pwa_installed') === 'true';
 
-    setIsInstalled(isStandalone);
+      if (isStandalone) {
+        setIsInstalled(true);
+      }
+    };
+
+    checkStandalone();
 
     // 2. Detect iOS device
     const userAgent = window.navigator.userAgent.toLowerCase();
@@ -41,6 +68,7 @@ export function usePWAInstall() {
       setIsInstalled(true);
       setDeferredPrompt(null);
       try {
+        localStorage.setItem('pwa_installed', 'true');
         localStorage.removeItem('pwa_install_dismissed');
       } catch {}
     };
@@ -62,6 +90,9 @@ export function usePWAInstall() {
       if (choiceResult.outcome === 'accepted') {
         setIsInstalled(true);
         setDeferredPrompt(null);
+        try {
+          localStorage.setItem('pwa_installed', 'true');
+        } catch {}
         return true;
       }
     } catch (err) {

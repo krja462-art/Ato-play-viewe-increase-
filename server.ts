@@ -87,6 +87,16 @@ interface ChannelFollowerResult {
   isRealAtoPlay: boolean;
 }
 
+function parseFollowersCount(val: any): number | undefined {
+  if (typeof val === 'number') return val;
+  if (!val || typeof val !== 'string') return undefined;
+  const s = val.trim().toUpperCase();
+  if (s.endsWith('M')) return Math.round(parseFloat(s) * 1000000);
+  if (s.endsWith('K')) return Math.round(parseFloat(s) * 1000);
+  const n = parseInt(s.replace(/,/g, ''), 10);
+  return isNaN(n) ? undefined : n;
+}
+
 // Backend Helper to fetch creator's current channel follower count from AtoPlay
 async function fetchChannelFollowerCount(campaign: Campaign, bypassCache: boolean = false): Promise<ChannelFollowerResult> {
   const channelKey = campaign.channelName || campaign.userName || campaign.userId || campaign.id;
@@ -132,6 +142,11 @@ async function fetchChannelFollowerCount(campaign: Campaign, bypassCache: boolea
             const vData = await res.json();
             channelId = vData?.channelId || vData?.channel?.id;
             if (vData?.channel?.name) channelName = vData.channel.name;
+            const liveF = parseFollowersCount(vData?.channel?.followersCount ?? vData?.channel?.followers);
+            if (liveF !== undefined) {
+              count = liveF;
+              isRealAtoPlay = true;
+            }
           }
         } catch {
           clearTimeout(timeoutId);
@@ -140,7 +155,7 @@ async function fetchChannelFollowerCount(campaign: Campaign, bypassCache: boolea
     }
 
     // Now if channelId is known, fetch live channel stats directly from AtoPlay API!
-    if (channelId) {
+    if (channelId && count === null) {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 3000);
 
@@ -169,8 +184,61 @@ async function fetchChannelFollowerCount(campaign: Campaign, bypassCache: boolea
         clearTimeout(timeoutId);
       }
     }
+
+    // Fallback: Scrape video/channel page HTML if count is still null
+    if (count === null && videoUrl && (videoUrl.includes('atoplay.com') || videoUrl.includes('atoplay.in'))) {
+      try {
+        const scrapeController = new AbortController();
+        const scrapeTimeout = setTimeout(() => scrapeController.abort(), 4000);
+        const sRes = await fetch(videoUrl, {
+          signal: scrapeController.signal,
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+          }
+        });
+        clearTimeout(scrapeTimeout);
+        if (sRes.ok) {
+          const html = await sRes.text();
+          const nextMatch = html.match(/<script[^>]*id=["']__NEXT_DATA__["'][^>]*>([\s\S]*?)<\/script>/i);
+          if (nextMatch && nextMatch[1]) {
+            try {
+              const nJson = JSON.parse(nextMatch[1]);
+              const vObj = nJson?.props?.pageProps?.video || nJson?.props?.pageProps?.videoData;
+              const cObj = vObj?.channel || nJson?.props?.pageProps?.channel;
+              if (cObj?.followersCount !== undefined || cObj?.followers !== undefined) {
+                const parsedF = parseFollowersCount(cObj.followersCount ?? cObj.followers);
+                if (parsedF !== undefined) {
+                  count = parsedF;
+                  isRealAtoPlay = true;
+                }
+              }
+              if (cObj?.name) channelName = cObj.name;
+              if (cObj?.id) channelId = cObj.id;
+            } catch {}
+          }
+          if (count === null) {
+            const followMatch = html.match(/(?:([0-9.,]+[KkMmBb]?)\s*(?:Followers|followers|subscribers|Subscribers))/i) ||
+                                html.match(/"(?:followersCount|subscribersCount|followers)"\s*:\s*([0-9]+)/i);
+            if (followMatch && followMatch[1]) {
+              const parsed = parseFollowersCount(followMatch[1]);
+              if (parsed !== undefined) {
+                count = parsed;
+                isRealAtoPlay = true;
+              }
+            }
+          }
+        }
+      } catch {}
+    }
   } catch (err) {
     console.warn("fetchChannelFollowerCount AtoPlay error:", err);
+  }
+
+  // If campaign already had real followers saved from creation
+  if (count === null && typeof campaign.channelFollowers === 'number' && campaign.channelFollowers > 0) {
+    count = campaign.channelFollowers;
+    isRealAtoPlay = true;
   }
 
   // If live AtoPlay API returned real count
@@ -567,6 +635,8 @@ async function extractVideoMetadata(videoUrl: string) {
   let title = "AtoPlay Video Promotion";
   let thumbnailUrl = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=600&q=80";
   let channelName = "AtoPlay Creator";
+  let channelId: string | undefined = undefined;
+  let channelFollowers: number | undefined = undefined;
   let durationSeconds = 60;
   let durationText = "1:00";
   let isRealVideo = false;
@@ -642,6 +712,30 @@ async function extractVideoMetadata(videoUrl: string) {
             if (vData?.channel?.name || vData?.channelName) {
               channelName = vData.channel?.name || vData.channelName;
             }
+            channelId = vData?.channelId || vData?.channel?.id;
+            channelFollowers = parseFollowersCount(vData?.channel?.followersCount ?? vData?.channel?.followers ?? vData?.followersCount);
+            
+            // If channelId is present, try to fetch the live channel directly for exact real followers:
+            if (channelId && (channelFollowers === undefined || channelFollowers === null)) {
+              try {
+                const cRes = await fetch(`https://api.atoplay.com/api/channels/${channelId}`, {
+                  headers: {
+                    'Accept': 'application/json',
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                  }
+                });
+                if (cRes.ok) {
+                  const cData = await cRes.json();
+                  if (cData?.channel?.followersCount !== undefined) {
+                    channelFollowers = Number(cData.channel.followersCount);
+                  }
+                  if (cData?.channel?.name) {
+                    channelName = cData.channel.name;
+                  }
+                }
+              } catch {}
+            }
+
             if (vData?.durationSeconds || vData?.duration) {
               durationSeconds = Number(vData.durationSeconds || vData.duration) || 60;
               const mins = Math.floor(durationSeconds / 60);
@@ -649,7 +743,7 @@ async function extractVideoMetadata(videoUrl: string) {
               durationText = `${mins}:${secs.toString().padStart(2, '0')}`;
             }
             isRealVideo = true;
-            return { displayId, title, thumbnailUrl, channelName, durationSeconds, durationText, isRealVideo };
+            return { displayId, title, thumbnailUrl, channelName, channelId, channelFollowers, durationSeconds, durationText, isRealVideo };
           }
         } catch (atoErr) {
           console.warn('AtoPlay direct API error:', atoErr);
@@ -688,8 +782,10 @@ async function extractVideoMetadata(videoUrl: string) {
               if (bestMatch?.channel?.name || bestMatch?.channelName) {
                 channelName = bestMatch.channel?.name || bestMatch.channelName;
               }
+              channelId = bestMatch?.channelId || bestMatch?.channel?.id;
+              channelFollowers = parseFollowersCount(bestMatch?.channel?.followersCount ?? bestMatch?.channel?.followers);
               isRealVideo = true;
-              return { displayId, title, thumbnailUrl, channelName, durationSeconds, durationText, isRealVideo };
+              return { displayId, title, thumbnailUrl, channelName, channelId, channelFollowers, durationSeconds, durationText, isRealVideo };
             }
           }
         } catch {
@@ -732,7 +828,7 @@ async function extractVideoMetadata(videoUrl: string) {
           title = `YouTube Video (${videoId})`;
         }
         isRealVideo = true;
-        return { displayId, title, thumbnailUrl, channelName, durationSeconds, durationText, isRealVideo };
+        return { displayId, title, thumbnailUrl, channelName, channelId, channelFollowers, durationSeconds, durationText, isRealVideo };
       }
     }
 
@@ -768,7 +864,37 @@ async function extractVideoMetadata(videoUrl: string) {
         if (res.ok) {
           const html = await res.text();
 
-          // 1. Scrape Title
+          // 1. Check __NEXT_DATA__ JSON
+          const nextDataMatch = html.match(/<script[^>]*id=["']__NEXT_DATA__["'][^>]*>([\s\S]*?)<\/script>/i);
+          if (nextDataMatch && nextDataMatch[1]) {
+            try {
+              const nextJson = JSON.parse(nextDataMatch[1]);
+              const vObj = nextJson?.props?.pageProps?.video || nextJson?.props?.pageProps?.videoData;
+              const cObj = vObj?.channel || nextJson?.props?.pageProps?.channel;
+              if (vObj?.title && (title === "AtoPlay Video Promotion" || !title)) {
+                title = decodeHtmlEntities(vObj.title);
+                isRealVideo = true;
+              }
+              if (vObj?.thumbnailUrl) {
+                thumbnailUrl = vObj.thumbnailUrl;
+                if (!thumbnailUrl.startsWith('http')) {
+                  thumbnailUrl = `https://cdn.atoplay.in/${thumbnailUrl.replace(/^\//, '')}`;
+                }
+                isRealVideo = true;
+              }
+              if (cObj?.name) {
+                channelName = cObj.name;
+              }
+              if (cObj?.id) {
+                channelId = cObj.id;
+              }
+              if (cObj?.followersCount !== undefined || cObj?.followers !== undefined) {
+                channelFollowers = parseFollowersCount(cObj.followersCount ?? cObj.followers);
+              }
+            } catch {}
+          }
+
+          // 2. Scrape Title
           const ogTitleMatch = html.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)["']/i) ||
                                html.match(/<meta[^>]*content=["']([^"']+)["'][^>]*property=["']og:title["']/i) ||
                                html.match(/<meta[^>]*name=["']twitter:title["'][^>]*content=["']([^"']+)["']/i) ||
@@ -792,7 +918,22 @@ async function extractVideoMetadata(videoUrl: string) {
             .replace(/\s*-\s*YouTube.*$/i, '')
             .trim();
 
-          // 2. Scrape Thumbnail
+          // 3. Scrape Channel Name & Followers from HTML
+          if (channelFollowers === undefined) {
+            const followMatch = html.match(/(?:([0-9.,]+[KkMmBb]?)\s*(?:Followers|followers|subscribers|Subscribers))/i) ||
+                                html.match(/"(?:followersCount|subscribersCount|followers)"\s*:\s*([0-9]+)/i);
+            if (followMatch && followMatch[1]) {
+              channelFollowers = parseFollowersCount(followMatch[1]);
+            }
+          }
+
+          const authorMatch = html.match(/<meta[^>]*name=["']author["'][^>]*content=["']([^"']+)["']/i) ||
+                              html.match(/<meta[^>]*property=["']og:video:actor["'][^>]*content=["']([^"']+)["']/i);
+          if (authorMatch && authorMatch[1]) {
+            channelName = decodeHtmlEntities(authorMatch[1]);
+          }
+
+          // 4. Scrape Thumbnail
           const ogImageMatch = html.match(/<meta[^>]*property=["']og:image(?::secure_url)?["'][^>]*content=["']([^"']+)["']/i) ||
                                html.match(/<meta[^>]*content=["']([^"']+)["'][^>]*property=["']og:image(?::secure_url)?["']/i) ||
                                html.match(/<meta[^>]*name=["']twitter:image(?::src)?["'][^>]*content=["']([^"']+)["']/i) ||
@@ -865,7 +1006,7 @@ async function extractVideoMetadata(videoUrl: string) {
     title = `AtoPlay Video #${displayId}`;
   }
 
-  return { displayId, title, thumbnailUrl, channelName, durationSeconds, durationText, isRealVideo };
+  return { displayId, title, thumbnailUrl, channelName, channelId, channelFollowers, durationSeconds, durationText, isRealVideo };
 }
 
 // Route to live-extract metadata for preview in frontend (supports both paths and GET/POST)
@@ -952,6 +1093,8 @@ app.post("/api/campaigns", async (req, res) => {
     displayId: generate4CharId(metadata.displayId),
     countryFlag: "🇮🇳",
     channelName: metadata.channelName || activeUser.name,
+    channelId: (metadata as any).channelId,
+    channelFollowers: (metadata as any).channelFollowers,
     durationText: metadata.durationText || "1:00"
   };
 

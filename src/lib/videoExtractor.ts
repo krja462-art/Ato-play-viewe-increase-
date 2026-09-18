@@ -8,10 +8,22 @@ export interface VideoMetadata {
   title: string;
   thumbnailUrl: string;
   channelName: string;
+  channelId?: string;
+  channelFollowers?: number;
   durationSeconds: number;
   durationText: string;
   isRealVideo: boolean;
   platform?: 'atoplay' | 'youtube' | 'generic';
+}
+
+function parseFollowersNumber(val: any): number | undefined {
+  if (typeof val === 'number') return val;
+  if (!val || typeof val !== 'string') return undefined;
+  const s = val.trim().toUpperCase();
+  if (s.endsWith('M')) return Math.round(parseFloat(s) * 1000000);
+  if (s.endsWith('K')) return Math.round(parseFloat(s) * 1000);
+  const n = parseInt(s.replace(/,/g, ''), 10);
+  return isNaN(n) ? undefined : n;
 }
 
 function decodeHtmlEntities(str: string): string {
