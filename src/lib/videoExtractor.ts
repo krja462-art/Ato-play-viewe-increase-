@@ -122,13 +122,38 @@ export async function extractVideoMetadata(rawUrl: string): Promise<VideoMetadat
             if (!thumbnailUrl.startsWith('http')) {
               thumbnailUrl = `https://cdn.atoplay.in/${thumbnailUrl.replace(/^\//, '')}`;
             }
-            const channelName = vData.channel?.name || vData.channelName || 'AtoPlay Creator';
+            const channelObj = vData.channel || vData.data?.channel || {};
+            const channelName = channelObj.name || vData.channelName || 'AtoPlay Creator';
+            const channelId = channelObj.id || vData.channelId || (vData.ownerId ? String(vData.ownerId) : '');
+            let channelFollowers = parseFollowersNumber(
+              channelObj.followersCount ?? 
+              channelObj.followers ?? 
+              channelObj.subscribersCount ??
+              vData.followersCount ??
+              vData.data?.followersCount
+            );
+
+            if (!channelFollowers && channelId) {
+              try {
+                const cRes = await fetch(`https://api.atoplay.com/api/channels/${channelId}`, {
+                  headers: { 'Accept': 'application/json' }
+                });
+                if (cRes.ok) {
+                  const cData = await cRes.json();
+                  const cObj = cData.channel || cData.data?.channel || cData;
+                  channelFollowers = parseFollowersNumber(cObj.followersCount ?? cObj.followers ?? cObj.subscribersCount);
+                }
+              } catch {}
+            }
+
             const durationSeconds = Number(vData.durationSeconds || vData.duration) || 60;
             return {
               displayId,
               title,
               thumbnailUrl,
               channelName,
+              channelId,
+              channelFollowers: channelFollowers || 140,
               durationSeconds,
               durationText: formatDuration(durationSeconds),
               isRealVideo: true,
@@ -153,13 +178,24 @@ export async function extractVideoMetadata(rawUrl: string): Promise<VideoMetadat
             if (!thumbnailUrl.startsWith('http')) {
               thumbnailUrl = `https://cdn.atoplay.in/${thumbnailUrl.replace(/^\//, '')}`;
             }
-            const channelName = vData.channel?.name || vData.channelName || 'AtoPlay Creator';
+            const channelObj = vData.channel || vData.data?.channel || {};
+            const channelName = channelObj.name || vData.channelName || 'AtoPlay Creator';
+            const channelId = channelObj.id || vData.channelId || (vData.ownerId ? String(vData.ownerId) : '');
+            const channelFollowers = parseFollowersNumber(
+              channelObj.followersCount ?? 
+              channelObj.followers ?? 
+              channelObj.subscribersCount ??
+              vData.followersCount
+            ) || 140;
+
             const durationSeconds = Number(vData.durationSeconds || vData.duration) || 60;
             return {
               displayId,
               title,
               thumbnailUrl,
               channelName,
+              channelId,
+              channelFollowers,
               durationSeconds,
               durationText: formatDuration(durationSeconds),
               isRealVideo: true,

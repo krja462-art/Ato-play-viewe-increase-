@@ -127,22 +127,39 @@ async function fetchChannelFollowerCount(campaign: Campaign, bypassCache: boolea
         }
 
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 3000);
+        const timeoutId = setTimeout(() => controller.abort(), 7000);
+
+        const ATOPLAY_REQ_HEADERS = {
+          'Accept': 'application/json, text/plain, */*',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+          'Referer': 'https://atoplay.com/',
+          'Origin': 'https://atoplay.com'
+        };
 
         try {
-          const res = await fetch(`https://api.atoplay.com/api/videos/${videoId}`, {
+          let res = await fetch(`https://api.atoplay.com/api/videos/${videoId}`, {
             signal: controller.signal,
-            headers: {
-              'Accept': 'application/json',
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-            }
+            headers: ATOPLAY_REQ_HEADERS
           });
+          if (!res.ok) {
+            res = await fetch(`https://atoplay.com/api/videos/${videoId}`, {
+              signal: controller.signal,
+              headers: ATOPLAY_REQ_HEADERS
+            });
+          }
           clearTimeout(timeoutId);
           if (res.ok) {
             const vData = await res.json();
-            channelId = vData?.channelId || vData?.channel?.id;
-            if (vData?.channel?.name) channelName = vData.channel.name;
-            const liveF = parseFollowersCount(vData?.channel?.followersCount ?? vData?.channel?.followers);
+            const channelObj = vData?.channel || vData?.data?.channel || {};
+            channelId = channelObj?.id || vData?.channelId || vData?.ownerId;
+            if (channelObj?.name) channelName = channelObj.name;
+            const liveF = parseFollowersCount(
+              channelObj?.followersCount ?? 
+              channelObj?.followers ?? 
+              channelObj?.subscribersCount ??
+              vData?.followersCount ??
+              vData?.data?.followersCount
+            );
             if (liveF !== undefined) {
               count = liveF;
               isRealAtoPlay = true;
@@ -157,23 +174,38 @@ async function fetchChannelFollowerCount(campaign: Campaign, bypassCache: boolea
     // Now if channelId is known, fetch live channel stats directly from AtoPlay API!
     if (channelId && count === null) {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 3000);
+      const timeoutId = setTimeout(() => controller.abort(), 7000);
+
+      const ATOPLAY_REQ_HEADERS = {
+        'Accept': 'application/json, text/plain, */*',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Referer': 'https://atoplay.com/',
+        'Origin': 'https://atoplay.com'
+      };
 
       try {
-        const cRes = await fetch(`https://api.atoplay.com/api/channels/${channelId}`, {
+        let cRes = await fetch(`https://api.atoplay.com/api/channels/${channelId}`, {
           signal: controller.signal,
-          headers: {
-            'Accept': 'application/json',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-          }
+          headers: ATOPLAY_REQ_HEADERS
         });
+        if (!cRes.ok) {
+          cRes = await fetch(`https://atoplay.com/api/channels/${channelId}`, {
+            signal: controller.signal,
+            headers: ATOPLAY_REQ_HEADERS
+          });
+        }
         clearTimeout(timeoutId);
         if (cRes.ok) {
           const cData = await cRes.json();
-          const channelObj = cData?.channel;
+          const channelObj = cData?.channel || cData?.data?.channel || cData;
           if (channelObj) {
-            if (typeof channelObj.followersCount === 'number') {
-              count = channelObj.followersCount;
+            const parsedCount = parseFollowersCount(
+              channelObj.followersCount ?? 
+              channelObj.followers ?? 
+              channelObj.subscribersCount
+            );
+            if (parsedCount !== undefined) {
+              count = parsedCount;
               isRealAtoPlay = true;
             }
             if (channelObj.name) channelName = channelObj.name;
@@ -289,6 +321,8 @@ function getActiveUser(req: express.Request): User | null {
   const uid = (req.headers['x-user-id'] as string) || (req.body && req.body.userId) || (req.query && (req.query.uid as string));
   let user = (uid && users[uid]) ? users[uid] : currentSessionUser;
 
+  const clientCoinsHeader = req.headers['x-user-coins'] ? parseInt(req.headers['x-user-coins'] as string, 10) : undefined;
+
   // Auto-restore session user if uid was sent but memory was refreshed
   if (!user && uid) {
     const cleanUid = String(uid).trim();
@@ -297,7 +331,7 @@ function getActiveUser(req: express.Request): User | null {
       id: cleanUid,
       name: isAdmin ? "Admin (KRJA)" : "AtoPlay User",
       email: isAdmin ? ADMIN_EMAIL : (cleanUid.includes('@') ? cleanUid : "user@atoplay.com"),
-      coins: isAdmin ? ADMIN_UNLIMITED_COINS : 100,
+      coins: isAdmin ? ADMIN_UNLIMITED_COINS : (typeof clientCoinsHeader === 'number' && !isNaN(clientCoinsHeader) ? clientCoinsHeader : 100),
       avatar: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80",
       streak: 1,
       lastCheckIn: new Date().toISOString().split('T')[0],
@@ -314,6 +348,11 @@ function getActiveUser(req: express.Request): User | null {
   if (user && (user.email?.toLowerCase().trim() === ADMIN_EMAIL || user.id.includes('krja462') || user.isAdmin)) {
     user.isAdmin = true;
     user.coins = ADMIN_UNLIMITED_COINS;
+  } else if (user && typeof clientCoinsHeader === 'number' && !isNaN(clientCoinsHeader)) {
+    // Preserve client's earned coins across server cache refreshes
+    if (clientCoinsHeader > user.coins) {
+      user.coins = clientCoinsHeader;
+    }
   }
   return user;
 }
@@ -326,6 +365,19 @@ app.get("/api/user", (req, res) => {
   }
   if (!user.referralCode) {
     user.referralCode = generateUserReferralCode(user);
+  }
+  res.json({ success: true, user });
+});
+
+// Sync client wallet balance directly with server cache
+app.post("/api/user/sync-wallet", (req, res) => {
+  const user = getActiveUser(req);
+  if (!user) {
+    return res.status(401).json({ success: false, message: "User not authenticated" });
+  }
+  const { coins } = req.body;
+  if (typeof coins === 'number' && !user.isAdmin) {
+    user.coins = Math.max(user.coins, coins);
   }
   res.json({ success: true, user });
 });

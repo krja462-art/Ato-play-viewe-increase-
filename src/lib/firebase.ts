@@ -22,7 +22,8 @@ import {
   collection,
   getDocs,
   query,
-  limit
+  limit,
+  onSnapshot
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 import { User, Campaign } from '../types';
@@ -34,13 +35,14 @@ export const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 
 // Suppress benign connection retry / offline warnings in sandbox environment
-setLogLevel('error');
+setLogLevel('silent');
 
-// Initialize Firestore with forced HTTP long-polling to prevent WebSocket timeouts in iframe/proxy environments
+// Initialize Firestore with auto-detect long-polling to prevent WebSocket timeouts in iframe/proxy environments
 export const db = initializeFirestore(
   app,
   {
-    experimentalForceLongPolling: true,
+    experimentalAutoDetectLongPolling: true,
+    ignoreUndefinedProperties: true,
   },
   firebaseConfig.firestoreDatabaseId || undefined
 );
@@ -104,13 +106,30 @@ export const syncFirebaseUserWithFirestore = async (fbUser: FirebaseUser): Promi
   try {
     const docSnap = await getDoc(userRef);
     
+    // Check if client had higher local coins before refresh
+    let localSavedCoins: number | null = null;
+    try {
+      const raw = localStorage.getItem('atoviewer_user');
+      if (raw) {
+        const p = JSON.parse(raw);
+        if (p && p.id === fbUser.uid && typeof p.coins === 'number') {
+          localSavedCoins = p.coins;
+        }
+      }
+    } catch {}
+
     if (docSnap.exists()) {
       const data = docSnap.data();
+      const firestoreCoins = typeof data.coins === 'number' ? data.coins : 100;
+      const finalCoins = isAdmin 
+        ? ADMIN_UNLIMITED_COINS 
+        : Math.max(firestoreCoins, localSavedCoins ?? 100);
+
       const existingUser: User = {
         id: fbUser.uid,
         name: data.name || fbUser.displayName || (isAdmin ? 'Admin (KRJA)' : 'AtoPlay Creator'),
         email: fbUser.email || data.email || cleanEmail,
-        coins: isAdmin ? ADMIN_UNLIMITED_COINS : (typeof data.coins === 'number' ? data.coins : 100),
+        coins: finalCoins,
         avatar: fbUser.photoURL || data.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80',
         streak: typeof data.streak === 'number' ? data.streak : 1,
         lastCheckIn: data.lastCheckIn || today,
@@ -122,13 +141,13 @@ export const syncFirebaseUserWithFirestore = async (fbUser: FirebaseUser): Promi
         isAdmin: isAdmin ? true : Boolean(data.isAdmin)
       };
 
-      // Keep avatar, name, and admin unlimited coins updated in Firestore
-      updateDoc(userRef, {
+      // Keep avatar, name, and persisted coins updated in Firestore safely with merge
+      setDoc(userRef, {
         name: existingUser.name,
         avatar: existingUser.avatar,
-        coins: isAdmin ? ADMIN_UNLIMITED_COINS : existingUser.coins,
+        coins: finalCoins,
         isAdmin: isAdmin ? true : Boolean(data.isAdmin)
-      }).catch(() => {});
+      }, { merge: true }).catch(() => {});
 
       return existingUser;
     }
@@ -137,11 +156,22 @@ export const syncFirebaseUserWithFirestore = async (fbUser: FirebaseUser): Promi
   }
 
   // Create new user profile with unlimited coins if admin or 100 Welcome Bonus Coins
+  let localInitialCoins = 100;
+  try {
+    const raw = localStorage.getItem('atoviewer_user');
+    if (raw) {
+      const p = JSON.parse(raw);
+      if (p && p.id === fbUser.uid && typeof p.coins === 'number') {
+        localInitialCoins = Math.max(100, p.coins);
+      }
+    }
+  } catch {}
+
   const newUser: User = {
     id: fbUser.uid,
     name: fbUser.displayName || (isAdmin ? 'Admin (KRJA)' : (cleanEmail ? cleanEmail.split('@')[0] : 'AtoPlay Creator')),
     email: cleanEmail,
-    coins: isAdmin ? ADMIN_UNLIMITED_COINS : 100, // Unlimited coins for Admin, 100 Welcome Bonus Coins for new user
+    coins: isAdmin ? ADMIN_UNLIMITED_COINS : localInitialCoins, // Unlimited coins for Admin, 100+ Welcome Bonus Coins for new user
     avatar: fbUser.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80',
     streak: 1,
     lastCheckIn: today,
@@ -153,7 +183,7 @@ export const syncFirebaseUserWithFirestore = async (fbUser: FirebaseUser): Promi
   };
 
   try {
-    await setDoc(userRef, newUser);
+    await setDoc(userRef, newUser, { merge: true });
   } catch (writeErr) {
     console.warn('Could not persist new user doc to Firestore:', writeErr);
   }
@@ -162,7 +192,7 @@ export const syncFirebaseUserWithFirestore = async (fbUser: FirebaseUser): Promi
 };
 
 /**
- * Update user coins in Cloud Firestore
+ * Update user coins in Cloud Firestore (persists safely across refresh and devices)
  */
 export const saveUserCoinsToFirestore = async (userId: string, newCoins: number, email?: string): Promise<void> => {
   if (!userId || userId.startsWith('guest_')) return;
@@ -171,12 +201,55 @@ export const saveUserCoinsToFirestore = async (userId: string, newCoins: number,
 
   try {
     const userRef = doc(db, 'users', userId);
-    await updateDoc(userRef, { 
+    await setDoc(userRef, { 
       coins: coinsToPersist,
+      updatedAt: new Date().toISOString(),
       ...(isAdmin ? { isAdmin: true } : {})
-    });
+    }, { merge: true });
   } catch (err) {
     console.warn('Error updating coins in Firestore:', err);
+  }
+};
+
+/**
+ * Fetch latest user coin balance from Cloud Firestore
+ */
+export const getUserCoinsFromFirestore = async (userId: string): Promise<number | null> => {
+  if (!userId || userId.startsWith('guest_')) return null;
+  try {
+    const userRef = doc(db, 'users', userId);
+    const snap = await getDoc(userRef);
+    if (snap.exists()) {
+      const data = snap.data();
+      if (typeof data.coins === 'number') {
+        return data.coins;
+      }
+    }
+  } catch (err) {
+    console.warn('Error fetching user coins from Firestore:', err);
+  }
+  return null;
+};
+
+/**
+ * Real-time listener for user wallet balance in Firestore
+ */
+export const subscribeToUserCoins = (userId: string, onUpdate: (coins: number) => void): (() => void) => {
+  if (!userId || userId.startsWith('guest_')) return () => {};
+  try {
+    const userRef = doc(db, 'users', userId);
+    return onSnapshot(userRef, (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        if (typeof data.coins === 'number') {
+          onUpdate(data.coins);
+        }
+      }
+    }, (err) => {
+      console.warn('subscribeToUserCoins note:', err);
+    });
+  } catch {
+    return () => {};
   }
 };
 

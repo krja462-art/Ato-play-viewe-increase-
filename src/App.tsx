@@ -14,7 +14,9 @@ import {
   onAuthStateChanged, 
   checkRedirectResult, 
   syncFirebaseUserWithFirestore, 
-  saveUserCoinsToFirestore 
+  saveUserCoinsToFirestore,
+  getUserCoinsFromFirestore,
+  subscribeToUserCoins
 } from './lib/firebase';
 import { apiFetch } from './lib/api';
 
@@ -59,14 +61,33 @@ export default function App() {
         try {
           const parsed: User = JSON.parse(savedUserStr);
           if (parsed && parsed.id) {
-            if (parsed.email?.toLowerCase().trim() === ADMIN_EMAIL || parsed.id.includes('krja462') || parsed.isAdmin) {
+            const isAdmin = parsed.email?.toLowerCase().trim() === ADMIN_EMAIL || parsed.id.includes('krja462') || parsed.isAdmin;
+            if (isAdmin) {
               parsed.coins = ADMIN_UNLIMITED_COINS;
               parsed.isAdmin = true;
             }
             setUser(parsed);
-            // Verify & sync latest stats
+
+            // Fetch true persistent coin balance directly from Cloud Firestore
+            if (!isAdmin && !parsed.id.startsWith('guest_')) {
+              getUserCoinsFromFirestore(parsed.id).then((fsCoins) => {
+                if (typeof fsCoins === 'number') {
+                  const finalCoins = Math.max(parsed.coins || 100, fsCoins);
+                  if (finalCoins !== parsed.coins) {
+                    parsed.coins = finalCoins;
+                    setUser({ ...parsed, coins: finalCoins });
+                    localStorage.setItem('atoviewer_user', JSON.stringify({ ...parsed, coins: finalCoins }));
+                  }
+                }
+              }).catch(() => {});
+            }
+
+            // Verify & sync latest stats with server cache (without overwriting higher coins)
             apiFetch('/api/user', {
-              headers: { 'x-user-id': parsed.id }
+              headers: { 
+                'x-user-id': parsed.id,
+                'x-user-coins': String(parsed.coins || 100)
+              }
             })
               .then((data) => {
                 if (data?.success && data?.user) {
@@ -74,9 +95,13 @@ export default function App() {
                   if (updatedUser.email?.toLowerCase().trim() === ADMIN_EMAIL || updatedUser.isAdmin) {
                     updatedUser.coins = ADMIN_UNLIMITED_COINS;
                     updatedUser.isAdmin = true;
+                  } else {
+                    // CRITICAL: Preserve client's earned coins across server refresh
+                    updatedUser.coins = Math.max(parsed.coins || 100, updatedUser.coins || 100);
                   }
                   setUser(updatedUser);
                   localStorage.setItem('atoviewer_user', JSON.stringify(updatedUser));
+                  saveUserCoinsToFirestore(updatedUser.id, updatedUser.coins, updatedUser.email);
                 }
               })
               .catch(() => {});
@@ -129,6 +154,23 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
+  // Real-time Firestore wallet subscription to keep coins in sync across tabs and refreshes
+  useEffect(() => {
+    if (!user?.id || user.id.startsWith('guest_') || user.isAdmin) return;
+    const unsub = subscribeToUserCoins(user.id, (realtimeCoins) => {
+      setUser(prev => {
+        if (!prev) return null;
+        if (prev.coins !== realtimeCoins && !prev.isAdmin) {
+          const finalVal = Math.max(prev.coins, realtimeCoins);
+          localStorage.setItem('atoviewer_user', JSON.stringify({ ...prev, coins: finalVal }));
+          return { ...prev, coins: finalVal };
+        }
+        return prev;
+      });
+    });
+    return () => unsub();
+  }, [user?.id]);
+
   const handleUpdateUser = (updatedUser: User) => {
     if (updatedUser.email?.toLowerCase().trim() === 'krja462@gmail.com' || updatedUser.isAdmin || updatedUser.id.includes('krja462')) {
       updatedUser.coins = 999999999;
@@ -139,6 +181,12 @@ export default function App() {
     // Persist coins directly to Firestore
     if (updatedUser.id && !updatedUser.id.startsWith('guest_')) {
       saveUserCoinsToFirestore(updatedUser.id, updatedUser.coins, updatedUser.email);
+      // Also sync wallet balance with backend session cache
+      apiFetch('/api/user/sync-wallet', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ coins: updatedUser.coins })
+      }).catch(() => {});
     }
   };
 

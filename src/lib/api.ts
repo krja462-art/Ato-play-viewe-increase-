@@ -109,6 +109,9 @@ export async function apiFetch<T = any>(endpoint: string, options?: RequestInit)
   if (user?.id && !headers.has('x-user-id')) {
     headers.set('x-user-id', user.id);
   }
+  if (user?.coins !== undefined && !headers.has('x-user-coins')) {
+    headers.set('x-user-coins', String(user.coins));
+  }
 
   try {
     const res = await fetch(endpoint, {
@@ -222,12 +225,28 @@ async function handleClientFallback<T>(endpoint: string, options?: RequestInit, 
     return { success: true, message: 'Logged out successfully' } as any;
   }
 
+  // 2b. Sync Wallet Coins
+  if (endpoint.startsWith('/api/user/sync-wallet')) {
+    const current = getStoredUser();
+    const effective = activeUser || current;
+    if (effective && parsedBody?.coins !== undefined) {
+      const isAdm = effective.isAdmin || effective.email?.toLowerCase().trim() === 'krja462@gmail.com';
+      if (!isAdm) {
+        effective.coins = Math.max(effective.coins || 0, Number(parsedBody.coins) || 0);
+      }
+      setStoredUser(effective);
+    }
+    return { success: true, user: effective } as any;
+  }
+
   // 3. Current User
   if (endpoint.startsWith('/api/user')) {
-    if (!activeUser) {
+    const current = getStoredUser();
+    const effective = activeUser || current;
+    if (!effective) {
       return { success: false, user: null, message: 'User not authenticated' } as any;
     }
-    return { success: true, user: activeUser } as any;
+    return { success: true, user: effective } as any;
   }
 
   // 4. Campaigns List

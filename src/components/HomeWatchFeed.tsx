@@ -5,6 +5,7 @@ import { RewardPopupModal } from './RewardPopupModal';
 import { SessionExpiredModal } from './SessionExpiredModal';
 import { FollowChannelModal } from './FollowChannelModal';
 import { AtoPlayBadge } from './AtoPlayBadge';
+import { playCoinCelebrationSound } from '../utils/audio';
 import { apiFetch, getWatchedIds, addWatchedId } from '../lib/api';
 import { 
   updateCampaignViewsInFirestore, 
@@ -46,6 +47,10 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
   // Watch + Follow Unified Task Flow State
   const [userFollowedChannel, setUserFollowedChannel] = useState(false);
   const [channelCountBefore, setChannelCountBefore] = useState<number | undefined>(undefined);
+  const [isCheckingFollow, setIsCheckingFollow] = useState(false);
+  const [followAutoCredited, setFollowAutoCredited] = useState(false);
+  const [followCheckMessage, setFollowCheckMessage] = useState<string | null>(null);
+  const followPollingRef = useRef<NodeJS.Timeout | null>(null);
 
   // Dedicated Follow System Modal State
   const [followModalCampaign, setFollowModalCampaign] = useState<Campaign | null>(null);
@@ -249,6 +254,103 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
     setShowExpiredModal(true);
   }, []);
 
+  // Background Follower Check Function (Auto-credits 30 coins if AtoPlay follower count increased)
+  const triggerBackgroundFollowCheck = useCallback(async (camp: Campaign, beforeCount?: number) => {
+    if (!camp || followAutoCredited) return;
+    try {
+      setIsCheckingFollow(true);
+      setFollowCheckMessage('AtoPlay API se creator ke real follower count check ho rahe hain...');
+
+      const res = await apiFetch('/api/follow/verify', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': user.id
+        },
+        body: JSON.stringify({
+          campaignId: camp.id,
+          countBefore: beforeCount ?? channelCountBefore
+        })
+      });
+
+      if (res?.success && res.verified) {
+        // Follower increased on AtoPlay! Auto credit 30 coins!
+        setFollowAutoCredited(true);
+        setUserFollowedChannel(true);
+        setIsCheckingFollow(false);
+        setFollowCheckMessage(`🎉 AtoPlay API Verified! Followers ${res.countBefore} se badhkar ${res.countAfter} ho gaye (+1)! +30 Coins aapke wallet me auto-credit ho gaye!`);
+        
+        try {
+          playCoinCelebrationSound();
+        } catch {}
+
+        if (res.user) {
+          saveUserCoinsToFirestore(res.user.id, res.user.coins, res.user.email).catch(() => {});
+          onCoinEarned(res.user);
+        } else {
+          const updated = { ...user, coins: user.coins + 30 };
+          saveUserCoinsToFirestore(updated.id, updated.coins, updated.email).catch(() => {});
+          onCoinEarned(updated);
+        }
+
+        setFollowedCampaignIds(prev => new Set([...prev, camp.id]));
+
+        if (followPollingRef.current) {
+          clearInterval(followPollingRef.current);
+          followPollingRef.current = null;
+        }
+      } else if (res?.alreadyFollowed) {
+        setFollowAutoCredited(true);
+        setUserFollowedChannel(true);
+        setIsCheckingFollow(false);
+        setFollowCheckMessage('Aap pehle hi is creator channel ke liye 30 coins claim kar chuke hain.');
+      } else {
+        setFollowCheckMessage(`AtoPlay check: Follower count abhi nahi badha (${res?.countBefore ?? channelCountBefore ?? '?'} -> ${res?.countAfter ?? '?'}). Kripya AtoPlay par creator channel ko 'Follow' karein!`);
+        setIsCheckingFollow(false);
+      }
+    } catch (err) {
+      console.warn('Background follow check error:', err);
+      setIsCheckingFollow(false);
+    }
+  }, [user, channelCountBefore, followAutoCredited, onCoinEarned]);
+
+  const handleFollowFromWatchScreen = () => {
+    if (!selectedCampaign || followAutoCredited) return;
+
+    // 1. Open AtoPlay channel or video page in external tab
+    const followUrl = selectedCampaign.channelId 
+      ? `https://atoplay.com/channels/${selectedCampaign.channelId}`
+      : selectedCampaign.videoUrl;
+    try {
+      window.open(followUrl, '_blank', 'noopener,noreferrer');
+    } catch (e) {
+      console.error('Failed to open external follow link:', e);
+    }
+
+    // 2. Mark intention to follow and initiate background check
+    setUserFollowedChannel(true);
+    setIsCheckingFollow(true);
+    setFollowCheckMessage('AtoPlay par Follow karne ke baad background me follower count verify hoga...');
+
+    // 3. Clear any existing polling
+    if (followPollingRef.current) {
+      clearInterval(followPollingRef.current);
+    }
+
+    // 4. Poll every 4.5 seconds for up to 5 attempts (background verification)
+    let attempts = 0;
+    followPollingRef.current = setInterval(() => {
+      attempts++;
+      triggerBackgroundFollowCheck(selectedCampaign);
+      if (attempts >= 5) {
+        if (followPollingRef.current) {
+          clearInterval(followPollingRef.current);
+          followPollingRef.current = null;
+        }
+      }
+    }, 4500);
+  };
+
   // Direct backend verification method (verifies token, 60s elapsed, & follow bonus on server)
   const verifyWatchSession = useCallback(async (
     cId: string,
@@ -262,7 +364,8 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
       setVerifying(true);
       setErrorStatus(null);
 
-      const isFollowClaimed = didFollow !== undefined ? didFollow : userFollowedChannelRef.current;
+      // If user already received follow coins automatically in background, don't double-claim on watch verify
+      const isFollowClaimed = followAutoCredited ? false : (didFollow !== undefined ? didFollow : userFollowedChannelRef.current);
 
       const data = await apiFetch('/api/watch/verify', {
         method: 'POST',
@@ -400,6 +503,11 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
       if (document.visibilityState === 'visible' && !isVerifyingRef.current) {
         const elapsed = (Date.now() - startTime) / 1000;
 
+        // If user returned after tapping follow on AtoPlay, trigger background check right away
+        if (userFollowedChannel && !followAutoCredited && selectedCampaign) {
+          triggerBackgroundFollowCheck(selectedCampaign);
+        }
+
         // If user returned after switching to external browser (or after at least 3 seconds)
         if (hasLeftAppRef.current || (Date.now() - startTime) > 3000) {
           if (elapsed >= 60) {
@@ -454,6 +562,13 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
       setStartingSession(true);
       setErrorStatus(null);
       setUserFollowedChannel(false);
+      setIsCheckingFollow(false);
+      setFollowAutoCredited(false);
+      setFollowCheckMessage(null);
+      if (followPollingRef.current) {
+        clearInterval(followPollingRef.current);
+        followPollingRef.current = null;
+      }
 
       // Step 1: Start secure session on server with crypto token, timestamp & countBefore
       const data = await apiFetch('/api/watch/start-session', {
@@ -528,6 +643,14 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
       }
     }
 
+    if (followPollingRef.current) {
+      clearInterval(followPollingRef.current);
+      followPollingRef.current = null;
+    }
+    setIsCheckingFollow(false);
+    setFollowAutoCredited(false);
+    setFollowCheckMessage(null);
+
     localStorage.removeItem(STORAGE_KEY);
     setSelectedCampaign(null);
     setIsPlaying(false);
@@ -564,6 +687,13 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
   const handleWatchNextVideo = () => {
     setShowRewardModal(false);
     const finishedId = rewardData?.campaign?.id;
+    if (followPollingRef.current) {
+      clearInterval(followPollingRef.current);
+      followPollingRef.current = null;
+    }
+    setIsCheckingFollow(false);
+    setFollowAutoCredited(false);
+    setFollowCheckMessage(null);
     setSelectedCampaign(null);
     setIsPlaying(false);
     setIsCompleted(false);
@@ -676,38 +806,84 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
                 <span className="font-black text-emerald-600 text-xs">+60 Coins</span>
               </div>
 
-              {/* Task 2: Follow Creator Channel */}
+              {/* Task 2: Follow Creator Channel on AtoPlay (With live background follower verification & auto coin crediting) */}
               <div 
-                onClick={() => setUserFollowedChannel(prev => !prev)}
-                className={`p-3 rounded-xl border flex items-center justify-between cursor-pointer transition-all ${
-                  userFollowedChannel 
+                className={`p-3 rounded-xl border flex flex-col justify-between gap-2.5 transition-all ${
+                  followAutoCredited 
                     ? 'bg-emerald-50 border-emerald-300 ring-2 ring-emerald-200' 
-                    : 'bg-white border-amber-300 hover:border-amber-400'
+                    : isCheckingFollow 
+                      ? 'bg-blue-50/80 border-blue-300' 
+                      : userFollowedChannel 
+                        ? 'bg-amber-50 border-amber-300' 
+                        : 'bg-white border-amber-300 hover:border-amber-400'
                 }`}
               >
-                <div className="space-y-0.5">
-                  <div className="font-bold flex items-center space-x-1.5 text-zinc-900">
-                    <UserPlus className={`w-4 h-4 ${userFollowedChannel ? 'text-emerald-600' : 'text-amber-600'}`} />
-                    <span>2. Follow Creator Channel</span>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="space-y-0.5">
+                    <div className="font-bold flex items-center space-x-1.5 text-zinc-900">
+                      <UserPlus className={`w-4 h-4 ${followAutoCredited ? 'text-emerald-600' : 'text-amber-600'}`} />
+                      <span>2. Follow on AtoPlay</span>
+                    </div>
+                    <div className="text-[11px] text-zinc-500">
+                      {followAutoCredited 
+                        ? 'Follower Verified (+1)! +30 Coins Credited' 
+                        : isCheckingFollow 
+                          ? 'Checking follower count in background...' 
+                          : userFollowedChannel 
+                            ? 'AtoPlay Follow tapped • Auto-verifying' 
+                            : 'Follow on AtoPlay to earn +30 bonus coins'}
+                    </div>
                   </div>
-                  <div className="text-[11px] text-zinc-500">
-                    {userFollowedChannel ? '✅ Follow clicked on AtoPlay' : 'Tap to confirm you followed'}
-                  </div>
+
+                  {followAutoCredited ? (
+                    <span className="px-2.5 py-1 rounded-lg text-[11px] font-black bg-emerald-600 text-white flex items-center space-x-1 shadow-2xs">
+                      <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                      <span>+30 Credited ✓</span>
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={isCheckingFollow}
+                      onClick={handleFollowFromWatchScreen}
+                      className="px-3 py-1.5 rounded-lg text-[11px] font-extrabold bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white shadow-2xs transition-all flex items-center space-x-1 cursor-pointer active:scale-95 shrink-0"
+                    >
+                      {isCheckingFollow ? (
+                        <>
+                          <RefreshCw className="w-3 h-3 animate-spin shrink-0" />
+                          <span>Checking...</span>
+                        </>
+                      ) : (
+                        <>
+                          <span>Follow (+30)</span>
+                          <ExternalLink className="w-3 h-3 shrink-0" />
+                        </>
+                      )}
+                    </button>
+                  )}
                 </div>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setUserFollowedChannel(prev => !prev);
-                  }}
-                  className={`px-2.5 py-1 rounded-lg text-[11px] font-extrabold transition-colors cursor-pointer ${
-                    userFollowedChannel 
-                      ? 'bg-emerald-600 text-white' 
-                      : 'bg-amber-100 text-amber-800 border border-amber-300'
-                  }`}
-                >
-                  {userFollowedChannel ? 'Followed ✓' : '+30 Bonus'}
-                </button>
+
+                {/* Follower check feedback banner */}
+                {followCheckMessage && (
+                  <div className={`text-[11px] p-2 rounded-lg font-medium flex items-center justify-between gap-2 ${
+                    followAutoCredited 
+                      ? 'bg-emerald-100/90 text-emerald-900 border border-emerald-300' 
+                      : isCheckingFollow 
+                        ? 'bg-blue-100 text-blue-900 border border-blue-200 animate-pulse' 
+                        : 'bg-amber-100/90 text-amber-900 border border-amber-200'
+                  }`}>
+                    <span className="line-clamp-2">{followCheckMessage}</span>
+                    {!followAutoCredited && (
+                      <button
+                        type="button"
+                        disabled={isCheckingFollow}
+                        onClick={() => triggerBackgroundFollowCheck(selectedCampaign)}
+                        className="px-2 py-0.5 rounded bg-white text-zinc-800 border border-zinc-300 font-bold text-[10px] shrink-0 hover:bg-zinc-50 cursor-pointer"
+                      >
+                        Re-check
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -1045,56 +1221,30 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
                   </div>
                 </div>
 
-                {/* Bottom Row: Verified Badge & Action Buttons */}
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-2.5 mt-2.5 border-t border-zinc-100">
+                {/* Bottom Row: Verified Badge & Watch Button */}
+                <div className="flex items-center justify-between gap-2 pt-2.5 mt-2.5 border-t border-zinc-100">
                   <div className="flex items-center space-x-2">
                     <span className="inline-flex items-center text-[11px] text-blue-700 font-bold bg-blue-50 px-2 py-0.5 rounded-lg border border-blue-200/60">
                       <ShieldCheck className="w-3.5 h-3.5 text-blue-600 mr-1" />
                       60s Verified
                     </span>
+                    <span className="text-[11px] text-zinc-500 font-medium">
+                      +{camp.coinsReward || 60} Coins
+                    </span>
                   </div>
 
-                  <div className="flex items-center space-x-2">
-                    {/* Follow Channel & Earn 30 Coins Button (AtoPlay API verification) */}
-                    <button
-                      type="button"
-                      disabled={isFollowed}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setFollowModalCampaign(camp);
-                      }}
-                      className={`px-3 py-2 rounded-xl text-xs font-black flex items-center space-x-1.5 transition-all cursor-pointer ${
-                        isFollowed
-                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-300 opacity-90 cursor-default'
-                          : 'bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 shadow-2xs hover:scale-102 active:scale-95'
-                      }`}
-                    >
-                      {isFollowed ? (
-                        <>
-                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                          <span>Followed (+30 Claimed)</span>
-                        </>
-                      ) : (
-                        <>
-                          <UserPlus className="w-3.5 h-3.5 text-amber-700 shrink-0" />
-                          <span>Follow (+30 Coins)</span>
-                        </>
-                      )}
-                    </button>
-
-                    {/* Watch Video Button */}
-                    <button 
-                      disabled={startingSession}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleSelectAndWatch(camp);
-                      }}
-                      className="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-black text-xs sm:text-sm shadow-md shadow-blue-500/20 transition-all hover:scale-102 active:scale-95 cursor-pointer flex items-center space-x-1.5 shrink-0"
-                    >
-                      <Play className="w-3.5 h-3.5 fill-current shrink-0" />
-                      <span>Watch (60s)</span>
-                    </button>
-                  </div>
+                  {/* Watch Video Button */}
+                  <button 
+                    disabled={startingSession}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleSelectAndWatch(camp);
+                    }}
+                    className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-black text-xs sm:text-sm shadow-md shadow-blue-500/20 transition-all hover:scale-102 active:scale-95 cursor-pointer flex items-center space-x-1.5 shrink-0"
+                  >
+                    <Play className="w-3.5 h-3.5 fill-current shrink-0" />
+                    <span>Watch (60s)</span>
+                  </button>
                 </div>
               </div>
             );
