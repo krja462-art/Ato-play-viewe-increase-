@@ -5,6 +5,7 @@ import { HomeWatchFeed } from './components/HomeWatchFeed';
 import { Campaigns } from './components/Campaigns';
 import { AdminUsers } from './components/AdminUsers';
 import { SplashScreen } from './components/SplashScreen';
+import { PreLoginInstallScreen } from './components/PreLoginInstallScreen';
 import { PWAInstallBanner } from './components/PWAInstallBanner';
 import { OfflineBanner } from './components/OfflineBanner';
 import { useOnlineStatus } from './hooks/useOnlineStatus';
@@ -28,6 +29,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const [showInstallScreen, setShowInstallScreen] = useState(true);
 
   const { isOnline, isReconnected } = useOnlineStatus();
   useTheme(); // Initialize and apply documentElement dark class
@@ -330,6 +332,11 @@ export default function App() {
 
   // Mandatory Google Login Guard: User cannot open or enter the app without logging in
   if (!user) {
+    if (showInstallScreen) {
+      return (
+        <PreLoginInstallScreen onSkip={() => setShowInstallScreen(false)} />
+      );
+    }
     return (
       <>
         <OfflineBanner
