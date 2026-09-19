@@ -85,6 +85,20 @@ export const Navbar: React.FC<NavbarProps> = ({
               <ShieldCheck className="w-4 h-4" />
               <span>My Campaigns</span>
             </button>
+
+            {Boolean(user?.isAdmin || user?.email?.toLowerCase().trim() === 'krja462@gmail.com') && (
+              <button
+                onClick={() => setActiveTab('users')}
+                className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-sm font-semibold transition-colors cursor-pointer ${
+                  activeTab === 'users'
+                    ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20'
+                    : 'text-zinc-600 hover:bg-zinc-100 bg-blue-50/60 text-blue-800'
+                }`}
+              >
+                <ShieldCheck className="w-4 h-4 text-blue-600" />
+                <span>Google Users</span>
+              </button>
+            )}
           </nav>
 
           {/* Right Header Actions: Coin Balance & Three Dots Menu */}

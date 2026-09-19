@@ -3,6 +3,7 @@ import { User } from './types';
 import { Navbar } from './components/Navbar';
 import { HomeWatchFeed } from './components/HomeWatchFeed';
 import { Campaigns } from './components/Campaigns';
+import { AdminUsers } from './components/AdminUsers';
 import { SplashScreen } from './components/SplashScreen';
 import { PWAInstallBanner } from './components/PWAInstallBanner';
 import { OfflineBanner } from './components/OfflineBanner';
@@ -30,6 +31,19 @@ export default function App() {
 
   const { isOnline, isReconnected } = useOnlineStatus();
   useTheme(); // Initialize and apply documentElement dark class
+
+  // Capture referral code from URL search params on initial load
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const ref = params.get('ref') || params.get('referral');
+      if (ref) {
+        localStorage.setItem('pending_referral_code', ref.trim().toUpperCase());
+        const newUrl = window.location.pathname;
+        window.history.replaceState({}, document.title, newUrl);
+      }
+    }
+  }, []);
 
   // Check redirect login & cached session on initial load
   useEffect(() => {
@@ -377,6 +391,13 @@ export default function App() {
             isCreateModalOpen={isCreateModalOpen}
             onCloseCreateModal={() => setIsCreateModalOpen(false)}
             onOpenCreateModal={() => setIsCreateModalOpen(true)}
+          />
+        )}
+
+        {activeTab === 'users' && (
+          <AdminUsers
+            user={user}
+            setActiveTab={setActiveTab}
           />
         )}
       </main>

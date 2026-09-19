@@ -96,7 +96,7 @@ export const ADMIN_UNLIMITED_COINS = 999999999;
  * Loads saved coins and state if existing user, or awards 100 Welcome Bonus Coins if new user.
  * Grants Unlimited Coins (999,999,999) to Admin Account (krja462@gmail.com).
  */
-export const syncFirebaseUserWithFirestore = async (fbUser: FirebaseUser): Promise<User> => {
+export const syncFirebaseUserWithFirestore = async (fbUser: FirebaseUser, pendingReferralCode?: string): Promise<User> => {
   const userRef = doc(db, 'users', fbUser.uid);
   const now = new Date().toISOString();
   const today = now.split('T')[0];
@@ -141,7 +141,6 @@ export const syncFirebaseUserWithFirestore = async (fbUser: FirebaseUser): Promi
         isAdmin: isAdmin ? true : Boolean(data.isAdmin)
       };
 
-      // Keep avatar, name, and persisted coins updated in Firestore safely with merge
       setDoc(userRef, {
         name: existingUser.name,
         avatar: existingUser.avatar,
@@ -155,14 +154,13 @@ export const syncFirebaseUserWithFirestore = async (fbUser: FirebaseUser): Promi
     console.warn('Could not read user doc from Firestore, checking fallback:', readErr);
   }
 
-  // Create new user profile with unlimited coins if admin or 100 Welcome Bonus Coins
-  let localInitialCoins = 100;
+  let localInitialCoins = pendingReferralCode ? 350 : 100;
   try {
     const raw = localStorage.getItem('atoviewer_user');
     if (raw) {
       const p = JSON.parse(raw);
       if (p && p.id === fbUser.uid && typeof p.coins === 'number') {
-        localInitialCoins = Math.max(100, p.coins);
+        localInitialCoins = Math.max(localInitialCoins, p.coins);
       }
     }
   } catch {}
@@ -171,7 +169,7 @@ export const syncFirebaseUserWithFirestore = async (fbUser: FirebaseUser): Promi
     id: fbUser.uid,
     name: fbUser.displayName || (isAdmin ? 'Admin (KRJA)' : (cleanEmail ? cleanEmail.split('@')[0] : 'AtoPlay Creator')),
     email: cleanEmail,
-    coins: isAdmin ? ADMIN_UNLIMITED_COINS : localInitialCoins, // Unlimited coins for Admin, 100+ Welcome Bonus Coins for new user
+    coins: isAdmin ? ADMIN_UNLIMITED_COINS : localInitialCoins,
     avatar: fbUser.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80',
     streak: 1,
     lastCheckIn: today,
@@ -179,6 +177,7 @@ export const syncFirebaseUserWithFirestore = async (fbUser: FirebaseUser): Promi
     referralCode: isAdmin ? 'REF-KRJA' : `REF-${fbUser.uid.slice(-4).toUpperCase()}`,
     referralsCount: 0,
     referralEarnings: 0,
+    referredBy: pendingReferralCode || undefined,
     isAdmin: isAdmin ? true : undefined
   };
 
@@ -515,6 +514,50 @@ export const saveSupportMessageToFirestore = async (messageData: {
   } catch (err) {
     console.warn('Could not save support message to Firestore:', err);
     return '';
+  }
+};
+
+/**
+ * Get all registered users from Cloud Firestore
+ */
+export const getAllFirestoreUsers = async (): Promise<User[]> => {
+  try {
+    const q = query(collection(db, 'users'));
+    const snapshot = await getDocs(q);
+    const list: User[] = [];
+    snapshot.forEach(docSnap => {
+      const data = docSnap.data();
+      list.push({
+        id: docSnap.id,
+        name: data.name || 'Creator',
+        email: data.email || '',
+        coins: typeof data.coins === 'number' ? data.coins : 100,
+        avatar: data.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80',
+        streak: data.streak || 1,
+        createdAt: data.createdAt || new Date().toISOString(),
+        referralCode: data.referralCode || '',
+        referralsCount: data.referralsCount || 0,
+        referralEarnings: data.referralEarnings || 0,
+        referredBy: data.referredBy,
+        isAdmin: data.isAdmin
+      });
+    });
+    return list;
+  } catch (err) {
+    console.warn('Error fetching users from Firestore:', err);
+    return [];
+  }
+};
+
+/**
+ * Update user coins in Cloud Firestore
+ */
+export const updateFirestoreUserCoins = async (userId: string, newCoins: number): Promise<void> => {
+  try {
+    const userRef = doc(db, 'users', userId);
+    await setDoc(userRef, { coins: newCoins, updatedAt: new Date().toISOString() }, { merge: true });
+  } catch (err) {
+    console.warn('Error updating user coins in Firestore:', err);
   }
 };
 

@@ -475,6 +475,39 @@ app.post("/api/auth/firebase-login", (req, res) => {
   });
 });
 
+// Admin API: Get all registered Google users
+app.get("/api/admin/users", (req, res) => {
+  const user = getActiveUser(req);
+  if (!user || (!user.isAdmin && user.email?.toLowerCase().trim() !== ADMIN_EMAIL)) {
+    return res.status(403).json({ success: false, message: "Unauthorized. Admin access required." });
+  }
+  return res.json({ success: true, users: Object.values(users) });
+});
+
+// Admin API: Edit user coins (add, subtract, set)
+app.post("/api/admin/users/coins", (req, res) => {
+  const adminUser = getActiveUser(req);
+  if (!adminUser || (!adminUser.isAdmin && adminUser.email?.toLowerCase().trim() !== ADMIN_EMAIL)) {
+    return res.status(403).json({ success: false, message: "Unauthorized. Admin access required." });
+  }
+  const { userId, amount, action } = req.body; // action: 'add' | 'subtract' | 'set'
+  const targetUser = users[userId];
+  if (!targetUser) {
+    return res.status(404).json({ success: false, message: "User not found" });
+  }
+  const numAmount = Number(amount) || 0;
+  if (action === 'add') {
+    targetUser.coins = (targetUser.coins || 0) + numAmount;
+  } else if (action === 'subtract') {
+    targetUser.coins = Math.max(0, (targetUser.coins || 0) - numAmount);
+  } else if (action === 'set') {
+    targetUser.coins = Math.max(0, numAmount);
+  } else {
+    targetUser.coins = (targetUser.coins || 0) + numAmount;
+  }
+  return res.json({ success: true, user: targetUser });
+});
+
 app.post("/api/auth/logout", (req, res) => {
   currentSessionUser = null;
   res.json({ success: true, message: "Logged out successfully" });

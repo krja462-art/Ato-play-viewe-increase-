@@ -41,6 +41,8 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onLoginSuccess }) =>
     const effectiveAvatar = photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80';
     const deterministicUid = `g_${cleanEmail.replace(/[^a-zA-Z0-9]/g, '_')}`;
 
+    const pendingRef = localStorage.getItem('pending_referral_code') || undefined;
+
     try {
       // 1. Sync through API/local storage engine
       const res = await apiFetch('/api/auth/firebase-login', {
@@ -53,7 +55,8 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onLoginSuccess }) =>
           uid: deterministicUid,
           email: cleanEmail,
           name: effectiveName,
-          avatar: effectiveAvatar
+          avatar: effectiveAvatar,
+          referralCode: pendingRef
         })
       });
 
@@ -62,6 +65,7 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onLoginSuccess }) =>
           res.user.coins = 999999999;
           res.user.isAdmin = true;
         }
+        localStorage.removeItem('pending_referral_code');
         localStorage.setItem('atoviewer_user', JSON.stringify(res.user));
         onLoginSuccess(res.user);
         return;
@@ -75,7 +79,7 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onLoginSuccess }) =>
       id: deterministicUid,
       name: effectiveName,
       email: cleanEmail,
-      coins: isAdmin ? 999999999 : 100,
+      coins: isAdmin ? 999999999 : (pendingRef ? 350 : 100),
       avatar: effectiveAvatar,
       streak: 1,
       lastCheckIn: new Date().toISOString().split('T')[0],
@@ -83,9 +87,11 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onLoginSuccess }) =>
       referralsCount: 0,
       referralEarnings: 0,
       referralCode: isAdmin ? 'REF-KRJA' : `REF-${deterministicUid.slice(-4).toUpperCase()}`,
+      referredBy: pendingRef ? pendingRef : undefined,
       isAdmin: isAdmin ? true : undefined
     };
 
+    localStorage.removeItem('pending_referral_code');
     localStorage.setItem('atoviewer_user', JSON.stringify(directUser));
     onLoginSuccess(directUser);
     setGoogleLoading(false);
@@ -101,8 +107,8 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onLoginSuccess }) =>
       const fbUser = await signInWithGoogle();
       
       if (fbUser && fbUser.email) {
-        // Sync Firestore
-        const firestoreUser = await syncFirebaseUserWithFirestore(fbUser);
+        const pendingRef = localStorage.getItem('pending_referral_code') || undefined;
+        const firestoreUser = await syncFirebaseUserWithFirestore(fbUser, pendingRef);
         
         await apiFetch('/api/auth/firebase-login', {
           method: 'POST',
@@ -114,10 +120,12 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onLoginSuccess }) =>
             uid: fbUser.uid,
             email: fbUser.email,
             name: fbUser.displayName || firestoreUser.name,
-            avatar: fbUser.photoURL || firestoreUser.avatar
+            avatar: fbUser.photoURL || firestoreUser.avatar,
+            referralCode: pendingRef
           })
         }).catch(() => {});
 
+        localStorage.removeItem('pending_referral_code');
         localStorage.setItem('atoviewer_user', JSON.stringify(firestoreUser));
         onLoginSuccess(firestoreUser);
         return;
