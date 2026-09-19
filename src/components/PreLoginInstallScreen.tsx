@@ -25,7 +25,15 @@ export const PreLoginInstallScreen: React.FC<PreLoginInstallScreenProps> = ({ on
         setIsInstalling(false);
       }
     } else {
-      window.alert('To install app / create shortcut, please tap your browser menu (3 dots) and select "Add to Home Screen" or "Install App".');
+      // Direct prompt fallback & browser instructions
+      const userAgent = navigator.userAgent || navigator.vendor || (window as any).opera;
+      if (/android/i.test(userAgent)) {
+        window.alert('To install AtoPlay Booster instantly:\n1. Tap the Chrome 3-dots menu (top right)\n2. Select "Add to Home screen" or "Install app"');
+      } else if (/iphone|ipad|ipod/i.test(userAgent)) {
+        setShowIOSModal(true);
+      } else {
+        window.alert('To install AtoPlay Booster, tap your browser menu and select "Install AtoPlay Booster" or "Add to Home Screen".');
+      }
     }
   };
 
