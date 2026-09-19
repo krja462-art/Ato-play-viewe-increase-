@@ -508,6 +508,38 @@ app.post("/api/admin/users/coins", (req, res) => {
   return res.json({ success: true, user: targetUser });
 });
 
+// Admin API: Delete user account permanently
+app.post("/api/admin/users/delete", (req, res) => {
+  const adminUser = getActiveUser(req);
+  if (!adminUser || (!adminUser.isAdmin && adminUser.email?.toLowerCase().trim() !== ADMIN_EMAIL)) {
+    return res.status(403).json({ success: false, message: "Unauthorized. Admin access required." });
+  }
+  const { userId } = req.body;
+  if (userId === adminUid || users[userId]?.email?.toLowerCase().trim() === ADMIN_EMAIL) {
+    return res.status(400).json({ success: false, message: "Cannot delete official Admin account." });
+  }
+  delete users[userId];
+  return res.json({ success: true, message: "User deleted successfully" });
+});
+
+// Admin API: Block or unblock user account
+app.post("/api/admin/users/block", (req, res) => {
+  const adminUser = getActiveUser(req);
+  if (!adminUser || (!adminUser.isAdmin && adminUser.email?.toLowerCase().trim() !== ADMIN_EMAIL)) {
+    return res.status(403).json({ success: false, message: "Unauthorized. Admin access required." });
+  }
+  const { userId, isBlocked } = req.body;
+  if (userId === adminUid || users[userId]?.email?.toLowerCase().trim() === ADMIN_EMAIL) {
+    return res.status(400).json({ success: false, message: "Cannot block official Admin account." });
+  }
+  const targetUser = users[userId];
+  if (!targetUser) {
+    return res.status(404).json({ success: false, message: "User not found" });
+  }
+  targetUser.isBlocked = Boolean(isBlocked);
+  return res.json({ success: true, user: targetUser });
+});
+
 app.post("/api/auth/logout", (req, res) => {
   currentSessionUser = null;
   res.json({ success: true, message: "Logged out successfully" });

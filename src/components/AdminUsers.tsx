@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { User } from '../types';
 import { Coins, Search, ArrowLeft, Shield, UserCheck, PlusCircle, MinusCircle, Edit3, Check, RefreshCw } from 'lucide-react';
 import { apiFetch } from '../lib/api';
-import { getAllFirestoreUsers, updateFirestoreUserCoins } from '../lib/firebase';
+import { getAllFirestoreUsers, updateFirestoreUserCoins, deleteFirestoreUser, blockFirestoreUser } from '../lib/firebase';
 
 interface AdminUsersProps {
   user: User;
@@ -281,17 +281,80 @@ export const AdminUsers: React.FC<AdminUsersProps> = ({ user, setActiveTab }) =>
                       <p className="text-[11px] text-zinc-500 font-medium">+{u.referralEarnings || 0} coins earned</p>
                     </td>
                     <td className="py-4 px-6 text-right">
-                      <button
-                        onClick={() => {
-                          setSelectedUser(u);
-                          setCoinAmount('100');
-                          setCoinAction('add');
-                        }}
-                        className="inline-flex items-center space-x-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-extrabold rounded-xl shadow-xs transition-all cursor-pointer"
-                      >
-                        <Edit3 className="w-3.5 h-3.5" />
-                        <span>Edit Coins</span>
-                      </button>
+                      <div className="flex items-center justify-end space-x-2">
+                        <button
+                          onClick={() => {
+                            setSelectedUser(u);
+                            setCoinAmount('100');
+                            setCoinAction('add');
+                          }}
+                          className="inline-flex items-center space-x-1 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-extrabold rounded-xl shadow-xs transition-all cursor-pointer"
+                          title="Edit Coins"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                          <span>Edit</span>
+                        </button>
+
+                        {!u.isAdmin && u.email?.toLowerCase().trim() !== 'krja462@gmail.com' && (
+                          <>
+                            <button
+                              onClick={async () => {
+                                const newBlockedStatus = !u.isBlocked;
+                                const confirmMsg = newBlockedStatus 
+                                  ? `Are you sure you want to block ${u.name || u.email}? They will not be able to log in.`
+                                  : `Unblock ${u.name || u.email}?`;
+                                if (window.confirm(confirmMsg)) {
+                                  try {
+                                    await apiFetch('/api/admin/users/block', {
+                                      method: 'POST',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({ userId: u.id, isBlocked: newBlockedStatus })
+                                    });
+                                    await blockFirestoreUser(u.id, newBlockedStatus);
+                                    setUsersList(prev => prev.map(item => item.id === u.id ? { ...item, isBlocked: newBlockedStatus } : item));
+                                    setSuccessMsg(`User ${newBlockedStatus ? 'blocked' : 'unblocked'} successfully.`);
+                                    setTimeout(() => setSuccessMsg(null), 3000);
+                                  } catch (err) {
+                                    setErrorMsg('Failed to update user status.');
+                                  }
+                                }
+                              }}
+                              className={`px-3 py-2 text-xs font-extrabold rounded-xl shadow-xs transition-all cursor-pointer ${
+                                u.isBlocked 
+                                  ? 'bg-emerald-600 hover:bg-emerald-700 text-white' 
+                                  : 'bg-amber-500 hover:bg-amber-600 text-white'
+                              }`}
+                              title={u.isBlocked ? "Unblock user" : "Block user"}
+                            >
+                              <span>{u.isBlocked ? 'Unblock' : 'Block'}</span>
+                            </button>
+
+                            <button
+                              onClick={async () => {
+                                if (window.confirm(`⚠️ PERMANENT DELETE: Are you sure you want to permanently delete account ${u.name || u.email}? This action cannot be undone.`)) {
+                                  try {
+                                    await apiFetch('/api/admin/users/delete', {
+                                      method: 'POST',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({ userId: u.id })
+                                    });
+                                    await deleteFirestoreUser(u.id);
+                                    setUsersList(prev => prev.filter(item => item.id !== u.id));
+                                    setSuccessMsg(`User ${u.email} permanently deleted.`);
+                                    setTimeout(() => setSuccessMsg(null), 3000);
+                                  } catch (err) {
+                                    setErrorMsg('Failed to delete user account.');
+                                  }
+                                }
+                              }}
+                              className="px-3 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-extrabold rounded-xl shadow-xs transition-all cursor-pointer"
+                              title="Permanently Delete"
+                            >
+                              <span>Delete</span>
+                            </button>
+                          </>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}

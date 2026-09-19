@@ -561,5 +561,29 @@ export const updateFirestoreUserCoins = async (userId: string, newCoins: number)
   }
 };
 
+/**
+ * Permanently delete user from Cloud Firestore
+ */
+export const deleteFirestoreUser = async (userId: string): Promise<void> => {
+  try {
+    const userRef = doc(db, 'users', userId);
+    await deleteDoc(userRef);
+  } catch (err) {
+    console.warn('Error deleting user from Firestore:', err);
+  }
+};
+
+/**
+ * Block user in Cloud Firestore
+ */
+export const blockFirestoreUser = async (userId: string, isBlocked: boolean): Promise<void> => {
+  try {
+    const userRef = doc(db, 'users', userId);
+    await setDoc(userRef, { isBlocked, updatedAt: new Date().toISOString() }, { merge: true });
+  } catch (err) {
+    console.warn('Error blocking user in Firestore:', err);
+  }
+};
+
 export { onAuthStateChanged };
 export type { FirebaseUser };

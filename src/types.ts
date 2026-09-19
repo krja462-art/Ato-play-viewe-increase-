@@ -12,6 +12,7 @@ export interface User {
   referralEarnings?: number;
   referredBy?: string;
   isAdmin?: boolean;
+  isBlocked?: boolean;
 }
 
 export interface Campaign {
