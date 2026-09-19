@@ -25,7 +25,6 @@ export const PreLoginInstallScreen: React.FC<PreLoginInstallScreenProps> = ({ on
         setIsInstalling(false);
       }
     } else {
-      // Fallback: trigger browser prompt or show shortcut instructions
       window.alert('To install app / create shortcut, please tap your browser menu (3 dots) and select "Add to Home Screen" or "Install App".');
     }
   };
@@ -79,20 +78,50 @@ export const PreLoginInstallScreen: React.FC<PreLoginInstallScreenProps> = ({ on
         </div>
       </div>
 
-      {/* Bottom Center Install Button */}
-      <div className="max-w-md mx-auto w-full pb-8 sm:pb-12 text-center space-y-4">
-        <button
-          onClick={handleInstallClick}
-          disabled={isInstalling}
-          className="w-full py-4 px-8 bg-white hover:bg-blue-50 active:scale-98 text-blue-700 font-black text-base sm:text-lg rounded-2xl shadow-2xl shadow-blue-900/30 transition-all flex items-center justify-center space-x-3 cursor-pointer border border-white/80"
-        >
-          <Download className="w-6 h-6 text-blue-600 animate-bounce" />
-          <span>{isInstalling ? 'Installing App...' : 'Install App / Create Shortcut'}</span>
-        </button>
+      {/* Bottom Banner matching screenshot design */}
+      <div className="max-w-md mx-auto w-full pb-8 sm:pb-12">
+        <div className="bg-white text-zinc-900 border border-blue-200/80 rounded-3xl p-4 sm:p-5 shadow-2xl flex items-center justify-between gap-3">
+          
+          {/* App Icon + Information */}
+          <div className="flex items-center space-x-3.5 min-w-0">
+            <img
+              src="/icon.png"
+              alt="AtoPlay Booster Logo"
+              className="w-12 h-12 rounded-2xl shadow-xs border border-zinc-100 object-contain shrink-0"
+              onError={(e) => {
+                (e.target as HTMLImageElement).src = '/favicon.png';
+              }}
+            />
+            <div className="min-w-0">
+              <div className="flex items-center space-x-1.5">
+                <h4 className="font-extrabold text-sm sm:text-base text-zinc-900 truncate">AtoPlay Booster</h4>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 font-black">
+                  APP
+                </span>
+              </div>
+              <p className="text-xs text-zinc-500 truncate mt-0.5">Install for full-screen & fast access</p>
+            </div>
+          </div>
 
-        <p className="text-xs text-blue-200 font-medium">
-          Fast, secure, and lightweight PWA installation.
-        </p>
+          {/* Action Buttons */}
+          <div className="flex items-center space-x-2 shrink-0">
+            <button
+              onClick={handleInstallClick}
+              disabled={isInstalling}
+              className="px-4 py-2.5 rounded-2xl bg-blue-600 hover:bg-blue-700 active:scale-95 text-white font-bold text-xs sm:text-sm shadow-md shadow-blue-600/25 transition-all flex items-center space-x-1.5 cursor-pointer"
+            >
+              <Download className="w-4 h-4" />
+              <span>{isInstalling ? 'Installing...' : 'Install'}</span>
+            </button>
+            <button
+              onClick={onSkip}
+              className="p-2 rounded-xl text-zinc-400 hover:text-zinc-600 hover:bg-zinc-100 transition-colors cursor-pointer"
+              title="Skip"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* iOS Installation Modal */}
@@ -126,3 +155,4 @@ export const PreLoginInstallScreen: React.FC<PreLoginInstallScreenProps> = ({ on
     </div>
   );
 };
+
