@@ -29,7 +29,13 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
-  const [showInstallScreen, setShowInstallScreen] = useState(true);
+  const [showInstallScreen, setShowInstallScreen] = useState(() => {
+    try {
+      return localStorage.getItem('pwa_prelogin_installed') !== 'true';
+    } catch {
+      return true;
+    }
+  });
 
   const { isOnline, isReconnected } = useOnlineStatus();
   useTheme(); // Initialize and apply documentElement dark class

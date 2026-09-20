@@ -12,6 +12,12 @@ export const PreLoginInstallScreen: React.FC<PreLoginInstallScreenProps> = ({ on
   const [showIOSModal, setShowIOSModal] = useState(false);
 
   const handleInstallClick = async () => {
+    // Permanently mark as installed/skipped so pre-login screen never appears again
+    try {
+      localStorage.setItem('pwa_prelogin_installed', 'true');
+      localStorage.setItem('pwa_installed', 'true');
+    } catch {}
+
     if (isIOS) {
       setShowIOSModal(true);
       return;
@@ -23,17 +29,19 @@ export const PreLoginInstallScreen: React.FC<PreLoginInstallScreenProps> = ({ on
         await install();
       } finally {
         setIsInstalling(false);
+        onSkip();
       }
     } else {
       // Direct prompt fallback & browser instructions
       const userAgent = navigator.userAgent || navigator.vendor || (window as any).opera;
       if (/android/i.test(userAgent)) {
-        window.alert('To install AtoPlay Booster instantly:\n1. Tap the Chrome 3-dots menu (top right)\n2. Select "Add to Home screen" or "Install app"');
+        window.alert('To install AtoPlay Booster instantly on Android:\n1. Tap the Chrome 3-dots menu (top right)\n2. Select "Add to Home screen" or "Install app"');
       } else if (/iphone|ipad|ipod/i.test(userAgent)) {
         setShowIOSModal(true);
       } else {
         window.alert('To install AtoPlay Booster, tap your browser menu and select "Install AtoPlay Booster" or "Add to Home Screen".');
       }
+      onSkip();
     }
   };
 
