@@ -1361,7 +1361,6 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
                     disabled={startingSession}
                     onClick={async (e) => {
                       e.stopPropagation();
-                      setSelectedCampaign(camp);
                       try {
                         setStartingSession(true);
                         const data = await apiFetch('/api/watch/start-session', {
@@ -1395,10 +1394,12 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
                           setIsCompleted(false);
                           hasLeftAppRef.current = false;
 
+                          // Directly open the video URL instantly in a new tab/window
                           try {
                             window.open(camp.videoUrl, '_blank', 'noopener,noreferrer');
                           } catch (err) {
                             console.error('Popup open error:', err);
+                            window.location.href = camp.videoUrl;
                           }
                         } else {
                           alert(data?.message || 'Could not start watch session.');
