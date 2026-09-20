@@ -1359,9 +1359,55 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
                   {/* Watch Video Button */}
                   <button 
                     disabled={startingSession}
-                    onClick={(e) => {
+                    onClick={async (e) => {
                       e.stopPropagation();
-                      handleSelectCampaign(camp);
+                      setSelectedCampaign(camp);
+                      try {
+                        setStartingSession(true);
+                        const data = await apiFetch('/api/watch/start-session', {
+                          method: 'POST',
+                          headers: {
+                            'Content-Type': 'application/json',
+                            'x-user-id': user.id
+                          },
+                          body: JSON.stringify({ campaignId: camp.id })
+                        });
+
+                        if (data?.success) {
+                          const now = data.startTime || Date.now();
+                          const newSession: ActiveWatchState = {
+                            sessionId: data.sessionId,
+                            sessionToken: data.sessionToken,
+                            campaign: camp,
+                            startTime: now,
+                            durationSeconds: 60,
+                            userId: user.id,
+                            countBefore: data.countBefore,
+                            userClickedFollow: false
+                          };
+                          localStorage.setItem(STORAGE_KEY, JSON.stringify(newSession));
+                          setSessionId(data.sessionId);
+                          setSessionToken(data.sessionToken);
+                          setTimeLeft(60);
+                          setStartTime(now);
+                          setVideoStarted(true);
+                          setIsPlaying(true);
+                          setIsCompleted(false);
+                          hasLeftAppRef.current = false;
+
+                          try {
+                            window.open(camp.videoUrl, '_blank', 'noopener,noreferrer');
+                          } catch (err) {
+                            console.error('Popup open error:', err);
+                          }
+                        } else {
+                          alert(data?.message || 'Could not start watch session.');
+                        }
+                      } catch (err) {
+                        console.error('Error starting session:', err);
+                      } finally {
+                        setStartingSession(false);
+                      }
                     }}
                     className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-black text-xs sm:text-sm shadow-md shadow-blue-500/20 transition-all hover:scale-102 active:scale-95 cursor-pointer flex items-center space-x-1.5 shrink-0"
                   >
