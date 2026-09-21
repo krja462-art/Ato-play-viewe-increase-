@@ -538,7 +538,7 @@ export const Campaigns: React.FC<CampaignsProps> = ({
                   </div>
                 </div>
 
-                {/* 3-dot Menu on right with Delete and Options */}
+                {/* 3-dot Menu on right with Delete option */}
                 <div className="relative shrink-0">
                   <button 
                     onClick={() => setActiveMenuId(activeMenuId === camp.id ? null : camp.id)}
@@ -557,52 +557,17 @@ export const Campaigns: React.FC<CampaignsProps> = ({
                         onClick={() => setActiveMenuId(null)} 
                       />
 
-                      <div className="absolute right-0 top-11 w-48 bg-white rounded-2xl shadow-xl border border-zinc-200 py-1.5 z-30 divide-y divide-zinc-100 animate-in fade-in zoom-in-95 duration-150">
-                        <div className="px-3.5 py-1 text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
-                          Options
-                        </div>
-
-                        <div className="py-1">
-                          {camp.videoUrl && (
-                            <button
-                              onClick={() => {
-                                setActiveMenuId(null);
-                                window.open(camp.videoUrl, '_blank', 'noopener,noreferrer');
-                              }}
-                              className="w-full px-3.5 py-2 text-left text-xs text-zinc-700 hover:bg-zinc-50 flex items-center space-x-2 font-medium cursor-pointer transition-colors"
-                            >
-                              <ExternalLink className="w-4 h-4 text-blue-600 shrink-0" />
-                              <span>Open Video</span>
-                            </button>
-                          )}
-                          <button
-                            onClick={() => {
-                              setActiveMenuId(null);
-                              if (camp.videoUrl) {
-                                navigator.clipboard.writeText(camp.videoUrl);
-                                setSuccessMsg('Video link copied to clipboard!');
-                                setTimeout(() => setSuccessMsg(null), 3000);
-                              }
-                            }}
-                            className="w-full px-3.5 py-2 text-left text-xs text-zinc-700 hover:bg-zinc-50 flex items-center space-x-2 font-medium cursor-pointer transition-colors"
-                          >
-                            <Clipboard className="w-4 h-4 text-zinc-500 shrink-0" />
-                            <span>Copy Link</span>
-                          </button>
-                        </div>
-
-                        <div className="pt-1">
-                          <button
-                            onClick={() => {
-                              setActiveMenuId(null);
-                              handleDeleteCampaign(camp.id);
-                            }}
-                            className="w-full px-3.5 py-2 text-left text-xs text-red-600 hover:bg-red-50 flex items-center space-x-2 font-bold cursor-pointer transition-colors"
-                          >
-                            <Trash2 className="w-4 h-4 text-red-500 shrink-0" />
-                            <span>Delete Campaign</span>
-                          </button>
-                        </div>
+                      <div className="absolute right-0 top-11 w-44 bg-white rounded-2xl shadow-xl border border-zinc-200 py-1.5 z-30 animate-in fade-in zoom-in-95 duration-150">
+                        <button
+                          onClick={() => {
+                            setActiveMenuId(null);
+                            handleDeleteCampaign(camp.id);
+                          }}
+                          className="w-full px-4 py-2.5 text-left text-xs text-red-600 hover:bg-red-50 flex items-center space-x-2.5 font-bold cursor-pointer transition-colors"
+                        >
+                          <Trash2 className="w-4 h-4 text-red-500 shrink-0" />
+                          <span>Delete Campaign</span>
+                        </button>
                       </div>
                     </>
                   )}
