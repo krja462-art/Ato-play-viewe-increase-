@@ -27,6 +27,7 @@ import {
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 import { User, Campaign } from '../types';
+import { cleanVideoUrl } from './videoExtractor';
 
 // Initialize Firebase App
 export const app = initializeApp(firebaseConfig);
@@ -261,6 +262,7 @@ export const saveCampaignToFirestore = async (campaign: Campaign): Promise<void>
     const campRef = doc(db, 'campaigns', campaign.id);
     await setDoc(campRef, {
       ...campaign,
+      videoUrl: cleanVideoUrl(campaign.videoUrl || ''),
       viewsRequired: campaign.viewsRequired ?? campaign.targetViews ?? 10,
       viewsCompleted: campaign.viewsCompleted ?? campaign.completedViews ?? 0,
       rewardPerView: campaign.rewardPerView ?? 60
@@ -371,7 +373,7 @@ export const getPublicCampaignsFromFirestore = async (currentUserId?: string): P
         id: docSnap.id,
         userId: data.userId || 'creator',
         userName: data.userName || 'AtoPlay Creator',
-        videoUrl: data.videoUrl || '',
+        videoUrl: cleanVideoUrl(data.videoUrl || ''),
         title: data.title || 'AtoPlay Video Promotion',
         thumbnailUrl: data.thumbnailUrl || 'https://cdn.atoplay.in/atoplay-thumbnails/58d4d4aa-c235-48a1-8423-57fbeefa914e/thumbnails/61f8d5c2-3b2b-4789-8581-c6727ce0388a.webp',
         viewsRequired: reqViews,
@@ -420,7 +422,7 @@ export const getMyCampaignsFromFirestore = async (userId: string): Promise<Campa
           id: docSnap.id,
           userId: data.userId,
           userName: data.userName || 'My Campaign',
-          videoUrl: data.videoUrl,
+          videoUrl: cleanVideoUrl(data.videoUrl || ''),
           title: data.title || 'AtoPlay Video Promotion',
           thumbnailUrl: data.thumbnailUrl,
           viewsRequired: Number(data.viewsRequired ?? data.targetViews ?? 10),

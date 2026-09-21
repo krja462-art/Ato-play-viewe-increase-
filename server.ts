@@ -581,7 +581,10 @@ app.get("/api/campaigns", (req, res) => {
   );
 
   if (filter === 'my') {
-    const myCampaigns = activeUser ? campaigns.filter(c => c.userId === activeUser.id) : [];
+    const myCampaigns = activeUser ? campaigns.filter(c => c.userId === activeUser.id).map(c => ({
+      ...c,
+      videoUrl: cleanVideoUrl(c.videoUrl)
+    })) : [];
     return res.json({ success: true, campaigns: myCampaigns });
   }
 
@@ -608,7 +611,12 @@ app.get("/api/campaigns", (req, res) => {
     return true;
   });
 
-  res.json({ success: true, campaigns: queueCampaigns });
+  const cleanedQueue = queueCampaigns.map(c => ({
+    ...c,
+    videoUrl: cleanVideoUrl(c.videoUrl)
+  }));
+
+  res.json({ success: true, campaigns: cleanedQueue });
 });
 
 // Sync campaigns from Cloud Firestore or clients to server in-memory store
@@ -620,6 +628,10 @@ app.post("/api/campaigns/sync", (req, res) => {
       if (inc.id === 'camp_starter_1' || inc.id === 'camp_starter_2' || String(inc.userId || '').startsWith('creator_starter')) {
         continue;
       }
+      const safeInc = {
+        ...inc,
+        videoUrl: cleanVideoUrl(inc.videoUrl || '')
+      };
       const existingIdx = campaigns.findIndex(c => c.id === inc.id);
       if (existingIdx !== -1) {
         const existing = campaigns[existingIdx];
@@ -629,14 +641,15 @@ app.post("/api/campaigns/sync", (req, res) => {
         ]));
         campaigns[existingIdx] = {
           ...existing,
-          ...inc,
+          ...safeInc,
+          videoUrl: cleanVideoUrl(safeInc.videoUrl || existing.videoUrl),
           viewsCompleted: Math.max(existing.viewsCompleted ?? 0, inc.viewsCompleted ?? 0),
           completedViews: Math.max(existing.completedViews ?? 0, inc.completedViews ?? 0),
           completedUserIds: mergedCompletedUserIds,
           status: (Math.max(existing.viewsCompleted ?? 0, inc.viewsCompleted ?? 0) >= (existing.viewsRequired ?? 10)) ? 'completed' : (inc.status || existing.status)
         };
       } else {
-        campaigns.unshift(inc);
+        campaigns.unshift(safeInc);
       }
     }
   }
@@ -750,6 +763,51 @@ function generate4CharId(raw?: string): string {
     }
   }
   return String(Math.floor(1000 + Math.random() * 9000));
+}
+
+// Universal Video URL Sanitizer & Deduplicator
+function cleanVideoUrl(rawUrl: string): string {
+  if (!rawUrl || typeof rawUrl !== 'string') return '';
+  let s = rawUrl.trim().replace(/^["']|["']$/g, '');
+
+  // 1. Check for duplicated URLs (e.g. "https://...https://..." or "atoplay.com/...https://...")
+  const httpMatches = [...s.matchAll(/https?:\/\//gi)];
+  if (httpMatches.length > 1) {
+    const secondIndex = httpMatches[1].index;
+    if (secondIndex !== undefined && secondIndex > 0) {
+      s = s.substring(0, secondIndex).trim();
+    }
+  }
+
+  // 2. Check if there is an AtoPlay UUID inside the string
+  const uuidMatch = s.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+  if (uuidMatch) {
+    const videoId = uuidMatch[0].toLowerCase();
+    if (s.toLowerCase().includes('atoplay') || (!s.includes('youtube') && !s.includes('youtu.be'))) {
+      return `https://atoplay.com/video/${videoId}`;
+    }
+  }
+
+  // 3. Check for 32-character hex ID (UUID without dashes)
+  const hex32Match = s.match(/[0-9a-f]{32}/i);
+  if (hex32Match && (s.toLowerCase().includes('atoplay') || !s.includes('youtube'))) {
+    const h = hex32Match[0].toLowerCase();
+    const formatted = `${h.slice(0,8)}-${h.slice(8,12)}-${h.slice(12,16)}-${h.slice(16,20)}-${h.slice(20,32)}`;
+    return `https://atoplay.com/video/${formatted}`;
+  }
+
+  // 4. Check for YouTube video ID
+  const ytMatch = s.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/i);
+  if (ytMatch && ytMatch[1]) {
+    return `https://www.youtube.com/watch?v=${ytMatch[1]}`;
+  }
+
+  // 5. Ensure valid protocol
+  if (!s.startsWith('http://') && !s.startsWith('https://')) {
+    s = `https://${s}`;
+  }
+
+  return s;
 }
 
 // Enhanced Helper to extract real metadata from video URL (AtoPlay, YouTube, etc.)
@@ -1201,7 +1259,7 @@ app.post("/api/campaigns", async (req, res) => {
     id: `camp_${Date.now()}`,
     userId: activeUser.id,
     userName: activeUser.name,
-    videoUrl,
+    videoUrl: cleanVideoUrl(videoUrl),
     title: finalTitle,
     thumbnailUrl: finalThumbnail,
     viewsRequired: views,

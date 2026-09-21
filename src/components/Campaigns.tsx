@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Campaign, User, format4CharId } from '../types';
 import { Plus, MoreVertical, Clock, Trash2, Coins, AlertCircle, Sparkles, X, Video, ExternalLink, Check, Search, ShieldCheck, Clipboard, Image as ImageIcon, CheckCircle2 } from 'lucide-react';
 import { AtoPlayBadge } from './AtoPlayBadge';
-import { apiFetch, extractVideoMetadataClient } from '../lib/api';
+import { apiFetch, extractVideoMetadataClient, cleanVideoUrl } from '../lib/api';
 import { saveCampaignToFirestore, deleteCampaignInFirestore, saveUserCoinsToFirestore, getMyCampaignsFromFirestore } from '../lib/firebase';
 import confetti from 'canvas-confetti';
 
@@ -148,7 +148,10 @@ export const Campaigns: React.FC<CampaignsProps> = ({
         }
       }
 
-      const mergedList = Array.from(campMap.values());
+      const mergedList = Array.from(campMap.values()).map(c => ({
+        ...c,
+        videoUrl: cleanVideoUrl(c.videoUrl || '')
+      }));
       mergedList.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
       setCampaigns(mergedList);
     } catch (err) {
@@ -213,11 +216,13 @@ export const Campaigns: React.FC<CampaignsProps> = ({
 
   // Immediate paste event handler
   const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
+    e.preventDefault();
     const pasted = e.clipboardData.getData('text').trim().replace(/^["']|["']$/g, '');
     if (pasted) {
-      setVideoUrl(pasted);
-      if (isValidVideoUrl(pasted)) {
-        handleFetchMetadata(pasted);
+      const clean = cleanVideoUrl(pasted);
+      setVideoUrl(clean);
+      if (isValidVideoUrl(clean)) {
+        handleFetchMetadata(clean);
       }
     }
   };
@@ -228,9 +233,10 @@ export const Campaigns: React.FC<CampaignsProps> = ({
       if (navigator?.clipboard?.readText) {
         const text = (await navigator.clipboard.readText()).trim().replace(/^["']|["']$/g, '');
         if (text) {
-          setVideoUrl(text);
-          if (isValidVideoUrl(text)) {
-            handleFetchMetadata(text);
+          const clean = cleanVideoUrl(text);
+          setVideoUrl(clean);
+          if (isValidVideoUrl(clean)) {
+            handleFetchMetadata(clean);
           }
         }
       }
@@ -241,7 +247,13 @@ export const Campaigns: React.FC<CampaignsProps> = ({
 
   // Debounced auto-fetch preview when typing or pasting a complete valid URL
   const handleUrlChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const newUrl = e.target.value;
+    let newUrl = e.target.value;
+    if (newUrl.includes('http://') || newUrl.includes('https://') || newUrl.includes('atoplay')) {
+      const cleaned = cleanVideoUrl(newUrl);
+      if (cleaned && cleaned !== newUrl && newUrl.length > cleaned.length) {
+        newUrl = cleaned;
+      }
+    }
     setVideoUrl(newUrl);
 
     if (debounceTimerRef.current) {
@@ -298,7 +310,7 @@ export const Campaigns: React.FC<CampaignsProps> = ({
           'x-user-id': user.id
         },
         body: JSON.stringify({
-          videoUrl: videoUrl.trim(),
+          videoUrl: cleanVideoUrl(videoUrl),
           targetViews: views,
           viewsRequired: views,
           rewardPerView: 60,

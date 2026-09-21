@@ -55,6 +55,56 @@ export function formatDuration(seconds: number): string {
   return `${mins}:${remSecs.toString().padStart(2, '0')}`;
 }
 
+/**
+ * Universal Video URL Sanitizer & Normalizer
+ * Fixes duplicate URLs (e.g. pasted twice: https://...https://...),
+ * extracts canonical AtoPlay video URL (https://atoplay.com/video/<uuid>),
+ * and ensures standard protocols.
+ */
+export function cleanVideoUrl(rawUrl: string): string {
+  if (!rawUrl || typeof rawUrl !== 'string') return '';
+  let s = rawUrl.trim().replace(/^["']|["']$/g, '');
+
+  // 1. Check for duplicated URLs (e.g. "https://...https://..." or "atoplay.com/...https://...")
+  const httpMatches = [...s.matchAll(/https?:\/\//gi)];
+  if (httpMatches.length > 1) {
+    const secondIndex = httpMatches[1].index;
+    if (secondIndex !== undefined && secondIndex > 0) {
+      s = s.substring(0, secondIndex).trim();
+    }
+  }
+
+  // 2. Check if there is an AtoPlay UUID inside the string
+  const uuidMatch = s.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+  if (uuidMatch) {
+    const videoId = uuidMatch[0].toLowerCase();
+    if (s.toLowerCase().includes('atoplay') || (!s.includes('youtube') && !s.includes('youtu.be'))) {
+      return `https://atoplay.com/video/${videoId}`;
+    }
+  }
+
+  // 3. Check for 32-character hex ID (UUID without dashes)
+  const hex32Match = s.match(/[0-9a-f]{32}/i);
+  if (hex32Match && (s.toLowerCase().includes('atoplay') || !s.includes('youtube'))) {
+    const h = hex32Match[0].toLowerCase();
+    const formatted = `${h.slice(0,8)}-${h.slice(8,12)}-${h.slice(12,16)}-${h.slice(16,20)}-${h.slice(20,32)}`;
+    return `https://atoplay.com/video/${formatted}`;
+  }
+
+  // 4. Check for YouTube video ID
+  const ytMatch = s.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/i);
+  if (ytMatch && ytMatch[1]) {
+    return `https://www.youtube.com/watch?v=${ytMatch[1]}`;
+  }
+
+  // 5. Ensure valid protocol
+  if (!s.startsWith('http://') && !s.startsWith('https://')) {
+    s = `https://${s}`;
+  }
+
+  return s;
+}
+
 const ATOPLAY_FALLBACK_THUMBNAILS = [
   "https://cdn.atoplay.in/atoplay-thumbnails/58d4d4aa-c235-48a1-8423-57fbeefa914e/thumbnails/61f8d5c2-3b2b-4789-8581-c6727ce0388a.webp",
   "https://cdn.atoplay.in/atoplay-thumbnails/58d4d4aa-c235-48a1-8423-57fbeefa914e/thumbnails/b079eff5-e942-4d88-813d-6bc5a40d08e9.webp",

@@ -1,7 +1,7 @@
 import { User, Campaign, Transaction } from '../types';
-import { extractVideoMetadata, VideoMetadata } from './videoExtractor';
+import { extractVideoMetadata, VideoMetadata, cleanVideoUrl } from './videoExtractor';
 
-export { extractVideoMetadata };
+export { extractVideoMetadata, cleanVideoUrl };
 export type { VideoMetadata };
 
 // Re-export for backward compatibility
@@ -40,8 +40,11 @@ function getStoredCampaigns(): Campaign[] {
     }
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed)) {
-      // Filter out any leftover sample dummy campaigns
-      const realOnly = parsed.filter(c => c && !String(c.id).startsWith('camp_init_'));
+      // Filter out any leftover sample dummy campaigns and clean video URLs
+      const realOnly = parsed.filter(c => c && !String(c.id).startsWith('camp_init_')).map(c => ({
+        ...c,
+        videoUrl: cleanVideoUrl(c.videoUrl || '')
+      }));
       return realOnly;
     }
     return [];
@@ -339,7 +342,7 @@ async function handleClientFallback<T>(endpoint: string, options?: RequestInit, 
       displayId: finalDisplayId || String(Math.floor(1000 + Math.random() * 9000)),
       userId: activeUser.id,
       userName: activeUser.name,
-      videoUrl: videoUrl.trim(),
+      videoUrl: cleanVideoUrl(videoUrl.trim()),
       title: finalTitle || 'AtoPlay Video Promotion',
       thumbnailUrl: finalThumbnail || 'https://cdn.atoplay.in/atoplay-thumbnails/58d4d4aa-c235-48a1-8423-57fbeefa914e/thumbnails/61f8d5c2-3b2b-4789-8581-c6727ce0388a.webp',
       viewsRequired: views,

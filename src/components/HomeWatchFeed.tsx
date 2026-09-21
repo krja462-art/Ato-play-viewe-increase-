@@ -6,7 +6,7 @@ import { SessionExpiredModal } from './SessionExpiredModal';
 import { FollowChannelModal } from './FollowChannelModal';
 import { AtoPlayBadge } from './AtoPlayBadge';
 import { playCoinCelebrationSound } from '../utils/audio';
-import { apiFetch, getWatchedIds, addWatchedId } from '../lib/api';
+import { apiFetch, getWatchedIds, addWatchedId, cleanVideoUrl } from '../lib/api';
 import { 
   updateCampaignViewsInFirestore, 
   saveUserCoinsToFirestore,
@@ -178,7 +178,12 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
       // Sort newest first
       publicFiltered.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
-      setCampaigns(publicFiltered);
+      const cleanedPublic = publicFiltered.map(c => ({
+        ...c,
+        videoUrl: cleanVideoUrl(c.videoUrl || '')
+      }));
+
+      setCampaigns(cleanedPublic);
 
       // Background sync all active firestore campaigns to server in-memory store
       if (firestoreCampaigns.length > 0) {
@@ -334,7 +339,7 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
     // 1. Open AtoPlay channel or video page in external tab
     const followUrl = selectedCampaign.channelId 
       ? `https://atoplay.com/channels/${selectedCampaign.channelId}`
-      : selectedCampaign.videoUrl;
+      : cleanVideoUrl(selectedCampaign.videoUrl);
     try {
       window.open(followUrl, '_blank', 'noopener,noreferrer');
     } catch (e) {
@@ -650,7 +655,8 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
 
       // Step 3: Open AtoPlay video in external browser / custom tab
       try {
-        window.open(selectedCampaign.videoUrl, '_blank', 'noopener,noreferrer');
+        const safeUrl = cleanVideoUrl(selectedCampaign.videoUrl);
+        window.open(safeUrl, '_blank', 'noopener,noreferrer');
       } catch (e) {
         console.error('Popup open error:', e);
       }
@@ -710,7 +716,8 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
   const handleOpenBrowserAgain = () => {
     if (selectedCampaign) {
       hasLeftAppRef.current = true;
-      window.open(selectedCampaign.videoUrl, '_blank', 'noopener,noreferrer');
+      const safeUrl = cleanVideoUrl(selectedCampaign.videoUrl);
+      window.open(safeUrl, '_blank', 'noopener,noreferrer');
     }
   };
 
@@ -1394,11 +1401,8 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
                           setIsCompleted(false);
                           hasLeftAppRef.current = false;
 
-                          // Ensure absolute URL
-                          let targetUrl = camp.videoUrl || '';
-                          if (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://')) {
-                            targetUrl = `https://${targetUrl}`;
-                          }
+                          // Ensure clean canonical video URL (fixes double paste or malformed links)
+                          const targetUrl = cleanVideoUrl(camp.videoUrl || '');
 
                           // Directly open the video URL instantly in a new tab/window
                           try {
