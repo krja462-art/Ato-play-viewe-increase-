@@ -351,7 +351,10 @@ export default function App() {
           onRefresh={handleAppRefresh}
           isRefreshing={isRefreshing}
         />
-        <SplashScreen onLoginSuccess={handleLoginSuccess} />
+        <SplashScreen 
+          onLoginSuccess={handleLoginSuccess} 
+          onOpenInstallScreen={() => setShowInstallScreen(true)}
+        />
         <PWAInstallBanner />
       </>
     );

@@ -6,7 +6,9 @@ import {
   Flame,
   UserCheck,
   Plus,
-  X
+  X,
+  Download,
+  Smartphone
 } from 'lucide-react';
 import { User } from '../types';
 import { 
@@ -17,9 +19,10 @@ import { apiFetch } from '../lib/api';
 
 interface SplashScreenProps {
   onLoginSuccess: (user: User) => void;
+  onOpenInstallScreen?: () => void;
 }
 
-export const SplashScreen: React.FC<SplashScreenProps> = ({ onLoginSuccess }) => {
+export const SplashScreen: React.FC<SplashScreenProps> = ({ onLoginSuccess, onOpenInstallScreen }) => {
   const [googleLoading, setGoogleLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   
@@ -265,6 +268,61 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onLoginSuccess }) =>
         </div>
 
       </div>
+
+      {/* App Screenshots & Install App Banner */}
+      {onOpenInstallScreen && (
+        <div className="w-full max-w-md bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl p-3.5 sm:p-4 shadow-xl flex items-center justify-between gap-3 text-white relative z-10 mb-4 transition-transform hover:scale-[1.01]">
+          <div 
+            onClick={onOpenInstallScreen}
+            className="flex items-center space-x-3 min-w-0 cursor-pointer"
+          >
+            {/* 3 Screenshot Micro-Previews Stack */}
+            <div className="flex -space-x-2 shrink-0">
+              <img
+                src={encodeURI('/App screenshots 1 .jpg')}
+                alt="Screen 1"
+                className="w-8 h-12 object-cover rounded-lg border-2 border-white/50 shadow-md transform -rotate-3"
+                onError={(e) => { (e.target as HTMLImageElement).src = '/Screenshot.png'; }}
+              />
+              <img
+                src={encodeURI('/App screenshots 2 .jpg')}
+                alt="Screen 2"
+                className="w-8 h-12 object-cover rounded-lg border-2 border-white/50 shadow-md z-1"
+                onError={(e) => { (e.target as HTMLImageElement).src = '/Screenshot.png'; }}
+              />
+              <img
+                src={encodeURI('/App screenshots 3.jpg')}
+                alt="Screen 3"
+                className="w-8 h-12 object-cover rounded-lg border-2 border-white/50 shadow-md transform rotate-3 z-2"
+                onError={(e) => { (e.target as HTMLImageElement).src = '/Screenshot.png'; }}
+              />
+            </div>
+
+            <div className="min-w-0">
+              <div className="flex items-center space-x-1.5">
+                <span className="font-black text-xs sm:text-sm text-white truncate">
+                  App Screenshots (3 Views)
+                </span>
+                <span className="text-[10px] px-1.5 py-0.2 bg-blue-500/40 text-blue-200 rounded-md font-bold">
+                  PWA
+                </span>
+              </div>
+              <p className="text-[11px] text-blue-100/80 truncate">
+                Preview app UI & install on home screen
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={onOpenInstallScreen}
+            className="px-3.5 py-2 rounded-2xl bg-white text-blue-800 hover:bg-blue-50 active:scale-95 font-black text-xs shadow-md shrink-0 flex items-center space-x-1.5 transition-all cursor-pointer"
+          >
+            <Download className="w-3.5 h-3.5 text-blue-700" />
+            <span>Install App</span>
+          </button>
+        </div>
+      )}
 
       {/* Clean Footer */}
       <div className="text-center text-xs text-blue-200/60 pb-4 relative z-10">
