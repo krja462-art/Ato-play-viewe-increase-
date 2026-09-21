@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { Coins, CheckCircle2, Award, Sparkles, X, ArrowRight, Play } from 'lucide-react';
 import { Campaign, format4CharId } from '../types';
 import { playCoinCelebrationSound } from '../utils/audio';
+import confetti from 'canvas-confetti';
 
 interface RewardPopupModalProps {
   isOpen: boolean;
@@ -37,6 +38,14 @@ export const RewardPopupModal: React.FC<RewardPopupModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       playCoinCelebrationSound();
+      try {
+        confetti({
+          particleCount: 100,
+          spread: 70,
+          origin: { y: 0.6 },
+          colors: ['#3b82f6', '#f59e0b', '#10b981', '#8b5cf6', '#ec4899']
+        });
+      } catch {}
     }
   }, [isOpen]);
 

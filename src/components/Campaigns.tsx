@@ -4,6 +4,7 @@ import { Plus, MoreVertical, Clock, Trash2, Coins, AlertCircle, Sparkles, X, Vid
 import { AtoPlayBadge } from './AtoPlayBadge';
 import { apiFetch, extractVideoMetadataClient } from '../lib/api';
 import { saveCampaignToFirestore, deleteCampaignInFirestore, saveUserCoinsToFirestore, getMyCampaignsFromFirestore } from '../lib/firebase';
+import confetti from 'canvas-confetti';
 
 interface CampaignsProps {
   user: User;
@@ -315,6 +316,16 @@ export const Campaigns: React.FC<CampaignsProps> = ({
         setCustomThumbnailUrl('');
         setShowCustomThumbInput(false);
         setIsModalOpen(false);
+
+        // Trigger confetti celebration on successful campaign launch
+        try {
+          confetti({
+            particleCount: 120,
+            spread: 80,
+            origin: { y: 0.5 },
+            colors: ['#3b82f6', '#f59e0b', '#10b981', '#8b5cf6', '#ec4899']
+          });
+        } catch {}
 
         // Sync campaign to Firestore
         if (data.campaign) {

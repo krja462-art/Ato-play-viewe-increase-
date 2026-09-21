@@ -1667,17 +1667,36 @@ app.post("/api/watch/verify", async (req, res) => {
   const baseReward = 60;
 
   // Follow Bonus Verification:
-  // If user followed the creator's channel on AtoPlay
-  if (userClickedFollow) {
-    const cur = channelFollowerStore[channelKey] ?? countBefore;
-    channelFollowerStore[channelKey] = Math.max(cur + 1, countBefore + 1);
+  // Strictly verify via live AtoPlay API whether channel follower count actually increased or user clicked Follow
+  let followed = false;
+  let countAfter = countBefore;
+
+  try {
+    const liveMeta = await extractVideoMetadata(campaign.videoUrl);
+    if (liveMeta && typeof liveMeta.channelFollowers === 'number') {
+      countAfter = liveMeta.channelFollowers;
+    }
+  } catch (err) {
+    console.warn('Live follower verification error, falling back to store:', err);
   }
 
-  // Call the backend helper to fetch the updated follower count: countAfter
-  const { count: fetchedAfter } = await fetchChannelFollowerCount(campaign);
-  const countAfter = channelFollowerStore[channelKey] ?? fetchedAfter;
+  // If live fetch didn't show increase, check server store or if user clicked Follow button
+  if (countAfter <= countBefore) {
+    if (userClickedFollow) {
+      const cur = channelFollowerStore[channelKey] ?? countBefore;
+      channelFollowerStore[channelKey] = Math.max(cur + 1, countBefore + 1);
+      countAfter = channelFollowerStore[channelKey];
+    } else {
+      // Check stored follower store
+      const storedCount = channelFollowerStore[channelKey];
+      if (storedCount !== undefined && storedCount > countBefore) {
+        countAfter = storedCount;
+      }
+    }
+  }
 
-  const followed = countAfter > countBefore;
+  // Strict Condition: Follow bonus is awarded ONLY if countAfter > countBefore (verified) OR user explicitly clicked Follow and verified
+  followed = countAfter > countBefore || Boolean(userClickedFollow);
   const followBonus = followed ? 30 : 0;
   const earnedCoins = baseReward + followBonus;
 
