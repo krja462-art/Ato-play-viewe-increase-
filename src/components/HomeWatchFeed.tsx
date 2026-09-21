@@ -1394,12 +1394,21 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
                           setIsCompleted(false);
                           hasLeftAppRef.current = false;
 
+                          // Ensure absolute URL
+                          let targetUrl = camp.videoUrl || '';
+                          if (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://')) {
+                            targetUrl = `https://${targetUrl}`;
+                          }
+
                           // Directly open the video URL instantly in a new tab/window
                           try {
-                            window.open(camp.videoUrl, '_blank', 'noopener,noreferrer');
+                            const newWindow = window.open(targetUrl, '_blank');
+                            if (!newWindow) {
+                              window.location.href = targetUrl;
+                            }
                           } catch (err) {
                             console.error('Popup open error:', err);
-                            window.location.href = camp.videoUrl;
+                            window.location.href = targetUrl;
                           }
                         } else {
                           alert(data?.message || 'Could not start watch session.');
