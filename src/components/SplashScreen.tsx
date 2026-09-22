@@ -10,14 +10,20 @@ import {
   Download,
   Smartphone,
   Maximize2,
-  Eye
+  Eye,
+  EyeOff,
+  Lock,
+  KeyRound,
+  ShieldCheck
 } from 'lucide-react';
 import { User } from '../types';
 import { 
   signInWithGoogle, 
-  syncFirebaseUserWithFirestore 
+  syncFirebaseUserWithFirestore,
+  syncAtoPlayUserWithFirestore
 } from '../lib/firebase';
 import { apiFetch } from '../lib/api';
+import { AtoPlayBadge } from './AtoPlayBadge';
 
 interface SplashScreenProps {
   onLoginSuccess: (user: User) => void;
@@ -36,6 +42,82 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onLoginSuccess, onOp
 
   // Default detected Google account
   const defaultGoogleEmail = 'krja462@gmail.com';
+
+  // Dual Login System: AtoPlay Channel & Password + Google Account
+  const [loginMode, setLoginMode] = useState<'atoplay' | 'google'>('atoplay');
+  const [channelUsername, setChannelUsername] = useState('');
+  const [channelPassword, setChannelPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [atoplayLoading, setAtoplayLoading] = useState(false);
+  const [referralInput, setReferralInput] = useState('');
+  const [showReferralField, setShowReferralField] = useState(false);
+
+  // AtoPlay Channel & Password Login / Registration Handler
+  const handleAtoPlayLogin = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    setErrorMessage(null);
+
+    const cleanName = channelUsername.trim().replace(/^@+/, '');
+    const cleanPass = channelPassword.trim();
+
+    if (!cleanName) {
+      setErrorMessage('Please enter your AtoPlay channel name or username.');
+      return;
+    }
+    if (!cleanPass) {
+      setErrorMessage('Please enter your password.');
+      return;
+    }
+    if (cleanPass.length < 3) {
+      setErrorMessage('Password must be at least 3 characters long.');
+      return;
+    }
+
+    setAtoplayLoading(true);
+
+    const pendingRef = referralInput.trim() || localStorage.getItem('pending_referral_code') || undefined;
+
+    try {
+      // 1. Authenticate with backend API
+      const res = await apiFetch('/api/auth/atoplay-login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: cleanName,
+          password: cleanPass,
+          referralCode: pendingRef
+        })
+      });
+
+      if (res?.success && res?.user) {
+        // 2. Sync with Cloud Firestore
+        syncAtoPlayUserWithFirestore(cleanName, cleanPass, pendingRef).catch((fErr) => {
+          console.warn('Firestore sync note:', fErr);
+        });
+
+        localStorage.removeItem('pending_referral_code');
+        localStorage.setItem('atoviewer_user', JSON.stringify(res.user));
+        onLoginSuccess(res.user);
+        return;
+      } else {
+        setErrorMessage(res?.message || 'Failed to login with AtoPlay credentials.');
+      }
+    } catch (err: any) {
+      console.warn('Backend login fallback to Firestore:', err);
+      try {
+        // Direct Firestore fallback
+        const firestoreUser = await syncAtoPlayUserWithFirestore(cleanName, cleanPass, pendingRef);
+        localStorage.removeItem('pending_referral_code');
+        localStorage.setItem('atoviewer_user', JSON.stringify(firestoreUser));
+        onLoginSuccess(firestoreUser);
+        return;
+      } catch (fsErr: any) {
+        setErrorMessage(fsErr?.message || 'Could not log in with AtoPlay channel. Please try again.');
+      }
+    } finally {
+      setAtoplayLoading(false);
+    }
+  };
 
   const completeGoogleLogin = async (email: string, displayName?: string, photoURL?: string) => {
     setGoogleLoading(true);
@@ -200,69 +282,261 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onLoginSuccess, onOp
         </div>
       </div>
 
-      {/* Main Card: Single Continue with Google Button */}
-      <div className="w-full max-w-md bg-white/10 backdrop-blur-2xl rounded-3xl p-6 sm:p-8 border border-white/20 shadow-2xl space-y-6 relative z-10 my-auto">
+      {/* Main Card: Dual AtoPlay Channel & Google Login System */}
+      <div className="w-full max-w-md bg-white/10 backdrop-blur-2xl rounded-3xl p-6 sm:p-8 border border-white/20 shadow-2xl space-y-5 relative z-10 my-auto">
         
+        {/* Dual Tab Switcher: AtoPlay Channel vs Google Account */}
+        <div className="grid grid-cols-2 p-1 rounded-2xl bg-black/30 border border-white/10 backdrop-blur-md">
+          <button
+            type="button"
+            id="tab-atoplay-channel"
+            onClick={() => {
+              setLoginMode('atoplay');
+              setErrorMessage(null);
+            }}
+            className={`py-2.5 px-3 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center space-x-2 transition-all cursor-pointer ${
+              loginMode === 'atoplay'
+                ? 'bg-red-600 text-white shadow-lg shadow-red-600/30 font-extrabold'
+                : 'text-blue-200 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            <AtoPlayBadge size="sm" />
+            <span>AtoPlay Channel</span>
+          </button>
+          
+          <button
+            type="button"
+            id="tab-google-login"
+            onClick={() => {
+              setLoginMode('google');
+              setErrorMessage(null);
+            }}
+            className={`py-2.5 px-3 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center space-x-2 transition-all cursor-pointer ${
+              loginMode === 'google'
+                ? 'bg-white text-zinc-900 shadow-lg font-extrabold'
+                : 'text-blue-200 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
+              <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+              <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+              <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+              <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+            </svg>
+            <span>Google Account</span>
+          </button>
+        </div>
+
         {/* Welcome Bonus Notice */}
-        <div className="text-center space-y-2">
+        <div className="text-center space-y-1.5">
           <div className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-full bg-amber-500/20 border border-amber-300/30 text-amber-200 text-xs font-bold">
             <Flame className="w-4 h-4 text-amber-400" />
             <span>Instant +300 Free Welcome Coins</span>
           </div>
-          <h2 className="text-xl font-bold text-white">
-            Sign In with Google
+          <h2 className="text-xl font-black text-white">
+            {loginMode === 'atoplay' ? 'Login with AtoPlay Channel' : 'Sign In with Google'}
           </h2>
           <p className="text-xs text-blue-200">
-            Sign in with your Google account to access your wallet, coins, and campaigns.
+            {loginMode === 'atoplay'
+              ? 'Enter your AtoPlay channel name & password. Your channel is instantly linked to your account!'
+              : 'Sign in with your Google account to access your wallet, coins, and campaigns.'}
           </p>
         </div>
 
         {errorMessage && (
-          <div className="p-3.5 rounded-2xl bg-red-500/20 border border-red-400/40 text-red-100 text-xs leading-relaxed">
-            {errorMessage}
+          <div className="p-3.5 rounded-2xl bg-red-500/20 border border-red-400/40 text-red-100 text-xs leading-relaxed flex items-start space-x-2">
+            <span className="shrink-0 mt-0.5">⚠️</span>
+            <span>{errorMessage}</span>
           </div>
         )}
 
-        {/* PRIMARY BUTTON: Continue with Google */}
-        <div className="space-y-3 pt-1">
-          <button
-            type="button"
-            id="google-signin-btn"
-            onClick={handleGoogleSignIn}
-            disabled={googleLoading}
-            className="w-full py-4 px-5 rounded-2xl bg-white hover:bg-blue-50 text-zinc-900 font-extrabold text-base shadow-2xl flex items-center justify-center space-x-3 transition-all transform hover:scale-[1.02] active:scale-[0.98] cursor-pointer disabled:opacity-80 group"
-          >
-            {googleLoading ? (
-              <div className="flex items-center space-x-2.5 text-zinc-700">
-                <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-                <span>Connecting with Google...</span>
-              </div>
-            ) : (
-              <>
-                <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24">
-                  <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                  <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                  <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
-                  <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
-                </svg>
-                <span className="text-zinc-900 font-extrabold group-hover:text-blue-700 transition-colors">
-                  Continue with Google
+        {/* MODE 1: ATOPLAY CHANNEL & PASSWORD LOGIN */}
+        {loginMode === 'atoplay' && (
+          <form onSubmit={handleAtoPlayLogin} className="space-y-4">
+            {/* Channel Name / Username Input */}
+            <div className="space-y-1.5 text-left">
+              <label className="text-xs font-bold text-blue-100 flex items-center justify-between">
+                <span>AtoPlay Channel Name / Username</span>
+                <span className="text-[11px] text-emerald-300 font-semibold flex items-center space-x-1">
+                  <CheckCircle className="w-3 h-3" />
+                  <span>Auto-Links to Profile</span>
                 </span>
-                <ArrowRight className="w-4 h-4 text-zinc-400 group-hover:translate-x-1 transition-transform" />
-              </>
-            )}
-          </button>
-        </div>
+              </label>
+              <div className="relative flex items-center">
+                <span className="absolute left-3.5 text-zinc-400 font-bold text-sm select-none">@</span>
+                <input
+                  type="text"
+                  id="atoplay-username-input"
+                  value={channelUsername}
+                  onChange={(e) => setChannelUsername(e.target.value)}
+                  placeholder="MyChannelName"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  className="w-full pl-8 pr-4 py-3.5 rounded-2xl bg-white/95 text-zinc-900 placeholder-zinc-400 font-semibold text-sm border border-white/20 focus:outline-none focus:ring-2 focus:ring-red-500 focus:bg-white transition-all shadow-inner"
+                />
+              </div>
+              <p className="text-[11px] text-blue-200/80">
+                AtoPlay par jo aapka channel ya username hai wo yahan dalein.
+              </p>
+            </div>
+
+            {/* Password Input */}
+            <div className="space-y-1.5 text-left">
+              <label className="text-xs font-bold text-blue-100 flex items-center justify-between">
+                <span>Account Password</span>
+                <span className="text-[11px] text-blue-200/80">Secure Wallet Pin</span>
+              </label>
+              <div className="relative flex items-center">
+                <Lock className="w-4 h-4 text-zinc-400 absolute left-3.5" />
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  id="atoplay-password-input"
+                  value={channelPassword}
+                  onChange={(e) => setChannelPassword(e.target.value)}
+                  placeholder="Enter your password"
+                  className="w-full pl-10 pr-11 py-3.5 rounded-2xl bg-white/95 text-zinc-900 placeholder-zinc-400 font-semibold text-sm border border-white/20 focus:outline-none focus:ring-2 focus:ring-red-500 focus:bg-white transition-all shadow-inner"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 p-1.5 text-zinc-400 hover:text-zinc-600 cursor-pointer"
+                  tabIndex={-1}
+                >
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+              <p className="text-[11px] text-blue-200/80">
+                Pehle banaya hua password dalein, ya naye account ke liye password set karein.
+              </p>
+            </div>
+
+            {/* Optional Referral Code Toggle */}
+            <div className="text-left">
+              {!showReferralField ? (
+                <button
+                  type="button"
+                  onClick={() => setShowReferralField(true)}
+                  className="text-xs text-amber-300 hover:text-amber-200 font-semibold flex items-center space-x-1 cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Have a referral code? (+250 Bonus Coins)</span>
+                </button>
+              ) : (
+                <div className="space-y-1 pt-1 animate-in fade-in duration-150">
+                  <label className="text-xs font-bold text-amber-200 flex items-center space-x-1">
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>Referral Code</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={referralInput}
+                    onChange={(e) => setReferralInput(e.target.value.toUpperCase())}
+                    placeholder="e.g. REF-A482"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-white/95 text-zinc-900 font-bold text-xs border border-white/20 focus:outline-none uppercase"
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* PRIMARY SUBMIT: Login with AtoPlay Channel */}
+            <button
+              type="submit"
+              id="atoplay-submit-btn"
+              disabled={atoplayLoading}
+              className="w-full py-4 px-5 rounded-2xl bg-gradient-to-r from-red-600 via-rose-600 to-red-600 hover:from-red-500 hover:to-rose-500 text-white font-black text-base shadow-xl shadow-red-900/40 flex items-center justify-center space-x-2.5 transition-all transform hover:scale-[1.02] active:scale-[0.98] cursor-pointer disabled:opacity-80 group"
+            >
+              {atoplayLoading ? (
+                <div className="flex items-center space-x-2.5 text-white">
+                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  <span>Verifying & Logging In...</span>
+                </div>
+              ) : (
+                <>
+                  <AtoPlayBadge size="sm" />
+                  <span>Login / Register Channel</span>
+                  <ArrowRight className="w-4 h-4 text-white/80 group-hover:translate-x-1 transition-transform" />
+                </>
+              )}
+            </button>
+
+            {/* Switch to Google Shortcut */}
+            <div className="pt-2 text-center">
+              <p className="text-xs text-blue-200/80">
+                Prefer using Google?{' '}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLoginMode('google');
+                    setErrorMessage(null);
+                  }}
+                  className="text-white font-bold underline hover:text-blue-100 cursor-pointer ml-1"
+                >
+                  Sign in with Google
+                </button>
+              </p>
+            </div>
+          </form>
+        )}
+
+        {/* MODE 2: GOOGLE ACCOUNT LOGIN */}
+        {loginMode === 'google' && (
+          <div className="space-y-4">
+            <button
+              type="button"
+              id="google-signin-btn"
+              onClick={handleGoogleSignIn}
+              disabled={googleLoading}
+              className="w-full py-4 px-5 rounded-2xl bg-white hover:bg-blue-50 text-zinc-900 font-extrabold text-base shadow-2xl flex items-center justify-center space-x-3 transition-all transform hover:scale-[1.02] active:scale-[0.98] cursor-pointer disabled:opacity-80 group"
+            >
+              {googleLoading ? (
+                <div className="flex items-center space-x-2.5 text-zinc-700">
+                  <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                  <span>Connecting with Google...</span>
+                </div>
+              ) : (
+                <>
+                  <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24">
+                    <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                    <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                    <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+                    <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+                  </svg>
+                  <span className="text-zinc-900 font-extrabold group-hover:text-blue-700 transition-colors">
+                    Continue with Google
+                  </span>
+                  <ArrowRight className="w-4 h-4 text-zinc-400 group-hover:translate-x-1 transition-transform" />
+                </>
+              )}
+            </button>
+
+            {/* Switch to AtoPlay Channel Shortcut */}
+            <div className="pt-2 text-center">
+              <p className="text-xs text-blue-200/80">
+                Want to login with AtoPlay username?{' '}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLoginMode('atoplay');
+                    setErrorMessage(null);
+                  }}
+                  className="text-white font-bold underline hover:text-blue-100 cursor-pointer ml-1"
+                >
+                  AtoPlay Channel & Password
+                </button>
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* Verification Badges */}
         <div className="pt-2 border-t border-white/10 flex items-center justify-center space-x-4 text-xs text-blue-200/90">
           <div className="flex items-center space-x-1">
             <CheckCircle className="w-3.5 h-3.5 text-emerald-400" />
-            <span>Google Accounts</span>
+            <span>AtoPlay Linked</span>
           </div>
           <div className="flex items-center space-x-1">
             <CheckCircle className="w-3.5 h-3.5 text-emerald-400" />
-            <span>Firebase Auth</span>
+            <span>Google Accounts</span>
           </div>
           <div className="flex items-center space-x-1">
             <CheckCircle className="w-3.5 h-3.5 text-emerald-400" />

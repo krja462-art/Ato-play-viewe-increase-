@@ -16,6 +16,7 @@ export interface User {
   atoPlayUsername?: string;
   warningCount?: number;
   isFollowRestricted?: boolean;
+  loginMethod?: 'google' | 'atoplay';
 }
 
 export interface FollowLog {

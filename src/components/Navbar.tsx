@@ -13,6 +13,7 @@ interface NavbarProps {
   onLogout?: () => void;
   onRefresh?: () => void;
   isRefreshing?: boolean;
+  onUserUpdate?: (updatedUser: User) => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -23,7 +24,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   user,
   onLogout,
   onRefresh,
-  isRefreshing = false
+  isRefreshing = false,
+  onUserUpdate
 }) => {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 
@@ -152,6 +154,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         onClose={() => setIsDrawerOpen(false)}
         user={user || null}
         onLogout={onLogout}
+        onUserUpdate={onUserUpdate}
       />
 
       {/* Professional Fixed Bottom Navigation Bar (Hidden when Slide Drawer is open) */}

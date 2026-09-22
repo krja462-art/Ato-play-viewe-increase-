@@ -385,6 +385,7 @@ export default function App() {
         onLogout={handleLogout}
         onRefresh={handleAppRefresh}
         isRefreshing={isRefreshing}
+        onUserUpdate={handleUpdateUser}
       />
 
       {/* Main Content Area (Home Feed or Campaign Page) */}

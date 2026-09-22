@@ -604,16 +604,114 @@ export const blockFirestoreUser = async (userId: string, isBlocked: boolean): Pr
 /**
  * Save AtoPlay Channel Name / Username to User Profile in Firestore
  */
-export const saveUserAtoPlayUsernameToFirestore = async (userId: string, atoPlayUsername: string): Promise<void> => {
+export const saveUserAtoPlayUsernameToFirestore = async (userId: string, atoPlayUsername: string, password?: string): Promise<void> => {
   try {
     const userRef = doc(db, 'users', userId);
     await setDoc(userRef, { 
       atoPlayUsername: atoPlayUsername.trim(), 
+      ...(password ? { passwordHash: password } : {}),
       updatedAt: new Date().toISOString() 
     }, { merge: true });
   } catch (err) {
     console.warn('Error saving AtoPlay username in Firestore:', err);
   }
+};
+
+/**
+ * Synchronize AtoPlay Channel / Username credentials with Cloud Firestore /users/{uid}
+ */
+export const syncAtoPlayUserWithFirestore = async (
+  username: string, 
+  password?: string, 
+  pendingReferralCode?: string
+): Promise<User> => {
+  const cleanUsername = username.trim().replace(/^@+/, '');
+  const usernameKey = cleanUsername.toLowerCase();
+  const userId = `ato_${usernameKey.replace(/[^a-z0-9_]/g, '_')}`;
+  const isAdmin = usernameKey === 'krja462' || usernameKey.includes('krja462');
+  const now = new Date().toISOString();
+  const today = now.split('T')[0];
+
+  const userRef = doc(db, 'users', userId);
+  let finalUser: User;
+
+  try {
+    const docSnap = await getDoc(userRef);
+    if (docSnap.exists()) {
+      const data = docSnap.data();
+      const coins = isAdmin ? ADMIN_UNLIMITED_COINS : (typeof data.coins === 'number' ? data.coins : 100);
+      finalUser = {
+        id: userId,
+        name: data.name || cleanUsername,
+        email: data.email || `${usernameKey}@atoplay.user`,
+        coins: coins,
+        avatar: data.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80',
+        streak: typeof data.streak === 'number' ? data.streak : 1,
+        lastCheckIn: data.lastCheckIn || today,
+        createdAt: data.createdAt || now,
+        referralCode: data.referralCode || (isAdmin ? 'REF-KRJA' : `REF-${userId.slice(-4).toUpperCase()}`),
+        referralsCount: typeof data.referralsCount === 'number' ? data.referralsCount : 0,
+        referralEarnings: typeof data.referralEarnings === 'number' ? data.referralEarnings : 0,
+        referredBy: data.referredBy,
+        isAdmin: isAdmin ? true : undefined,
+        atoPlayUsername: cleanUsername,
+        loginMethod: 'atoplay'
+      };
+
+      await setDoc(userRef, {
+        atoPlayUsername: cleanUsername,
+        loginMethod: 'atoplay',
+        ...(password ? { passwordHash: password } : {}),
+        updatedAt: now
+      }, { merge: true });
+    } else {
+      const initialCoins = isAdmin ? ADMIN_UNLIMITED_COINS : (pendingReferralCode ? 350 : 100);
+      finalUser = {
+        id: userId,
+        name: cleanUsername,
+        email: `${usernameKey}@atoplay.user`,
+        coins: initialCoins,
+        avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80',
+        streak: 1,
+        lastCheckIn: today,
+        createdAt: now,
+        referralCode: isAdmin ? 'REF-KRJA' : `REF-${userId.slice(-4).toUpperCase()}`,
+        referralsCount: 0,
+        referralEarnings: 0,
+        referredBy: pendingReferralCode || undefined,
+        isAdmin: isAdmin ? true : undefined,
+        atoPlayUsername: cleanUsername,
+        loginMethod: 'atoplay'
+      };
+
+      await setDoc(userRef, {
+        ...finalUser,
+        ...(password ? { passwordHash: password } : {}),
+        createdAt: now,
+        updatedAt: now
+      }, { merge: true });
+    }
+  } catch (err) {
+    console.warn('Firestore AtoPlay user sync error, using local fallback:', err);
+    finalUser = {
+      id: userId,
+      name: cleanUsername,
+      email: `${usernameKey}@atoplay.user`,
+      coins: isAdmin ? ADMIN_UNLIMITED_COINS : 100,
+      avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80',
+      streak: 1,
+      lastCheckIn: today,
+      createdAt: now,
+      referralCode: isAdmin ? 'REF-KRJA' : `REF-${userId.slice(-4).toUpperCase()}`,
+      referralsCount: 0,
+      referralEarnings: 0,
+      isAdmin: isAdmin ? true : undefined,
+      atoPlayUsername: cleanUsername,
+      loginMethod: 'atoplay'
+    };
+  }
+
+  return finalUser;
 };
 
 /**

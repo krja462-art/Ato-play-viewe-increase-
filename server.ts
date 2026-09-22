@@ -16,6 +16,8 @@ app.get(["/api/health", "/healthz"], (_req, res) => {
 
 // In-Memory Database State
 const users: Record<string, User> = {};
+const userPasswords: Record<string, string> = {};
+const atoplayUsernameMap: Record<string, string> = {}; // lowercase atoplay handle -> userId
 let currentSessionUser: User | null = null;
 
 let campaigns: Campaign[] = [];
@@ -485,6 +487,142 @@ app.post("/api/auth/firebase-login", (req, res) => {
     user, 
     isNewUser,
     message: isNewUser ? "Welcome! 100 bonus coins added." : "Authenticated successfully with Google" 
+  });
+});
+
+// AtoPlay Channel & Password Login / Registration Endpoint
+app.post("/api/auth/atoplay-login", (req, res) => {
+  const { username, password, referralCode: inputReferralCode } = req.body;
+  
+  if (!username || !username.trim()) {
+    return res.status(400).json({ 
+      success: false, 
+      message: "Please enter your AtoPlay channel name or username." 
+    });
+  }
+
+  const cleanUsername = username.trim().replace(/^@+/, '');
+  const usernameKey = cleanUsername.toLowerCase();
+  const cleanPassword = password ? String(password).trim() : '';
+
+  if (!cleanPassword || cleanPassword.length < 3) {
+    return res.status(400).json({ 
+      success: false, 
+      message: "Password must be at least 3 characters long." 
+    });
+  }
+
+  // 1. Check if user already exists by mapped handle, atoPlayUsername, or user ID
+  let existingUserId = atoplayUsernameMap[usernameKey];
+  if (!existingUserId) {
+    const found = Object.values(users).find(u => 
+      (u.atoPlayUsername && u.atoPlayUsername.toLowerCase() === usernameKey) ||
+      u.id === `ato_${usernameKey}` ||
+      u.email.toLowerCase() === `${usernameKey}@atoplay.user`
+    );
+    if (found) {
+      existingUserId = found.id;
+      atoplayUsernameMap[usernameKey] = found.id;
+    }
+  }
+
+  let user = existingUserId ? users[existingUserId] : null;
+  let isNewUser = false;
+
+  if (user) {
+    // Check password if previously recorded
+    const savedPassword = userPasswords[user.id];
+    if (savedPassword && savedPassword !== cleanPassword) {
+      return res.status(401).json({ 
+        success: false, 
+        message: `Incorrect password for @${cleanUsername}. Please enter the correct password.` 
+      });
+    }
+
+    // Save or update password if not set
+    if (!savedPassword) {
+      userPasswords[user.id] = cleanPassword;
+    }
+
+    user.atoPlayUsername = cleanUsername;
+    user.loginMethod = 'atoplay';
+  } else {
+    // New user registration
+    isNewUser = true;
+    const deterministicUid = `ato_${usernameKey.replace(/[^a-z0-9_]/g, '_')}`;
+    const isAdmin = usernameKey === 'krja462' || usernameKey.includes('krja462');
+
+    user = {
+      id: deterministicUid,
+      name: cleanUsername,
+      email: `${usernameKey}@atoplay.user`,
+      coins: isAdmin ? ADMIN_UNLIMITED_COINS : 100, // Instant Welcome bonus
+      avatar: `https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80`,
+      streak: 1,
+      lastCheckIn: new Date().toISOString().split('T')[0],
+      createdAt: new Date().toISOString(),
+      referralsCount: 0,
+      referralEarnings: 0,
+      atoPlayUsername: cleanUsername,
+      loginMethod: 'atoplay',
+      isAdmin: isAdmin ? true : undefined
+    };
+    user.referralCode = generateUserReferralCode(user);
+    users[deterministicUid] = user;
+    userPasswords[deterministicUid] = cleanPassword;
+    atoplayUsernameMap[usernameKey] = deterministicUid;
+
+    transactions.push({
+      id: `tx_${Date.now()}`,
+      userId: deterministicUid,
+      type: "bonus_signup",
+      amount: isAdmin ? ADMIN_UNLIMITED_COINS : 100,
+      description: isAdmin ? "Admin Unlimited Coins Granted" : `Welcome Bonus on AtoPlay Channel Login (+100 Coins)`,
+      createdAt: new Date().toISOString(),
+    });
+
+    // Handle Referral Bonus
+    if (inputReferralCode) {
+      const cleanRef = String(inputReferralCode).trim().toUpperCase();
+      const referrerId = referralCodes[cleanRef];
+      const referrer = referrerId ? users[referrerId] : null;
+
+      if (referrer && referrer.id !== deterministicUid) {
+        user.referredBy = referrer.id;
+        referrer.coins += 250;
+        referrer.referralsCount = (referrer.referralsCount || 0) + 1;
+        referrer.referralEarnings = (referrer.referralEarnings || 0) + 250;
+
+        transactions.unshift({
+          id: `tx_${Date.now()}_ref`,
+          userId: referrer.id,
+          type: "referral_bonus",
+          amount: 250,
+          description: `Referral Reward: Channel @${cleanUsername} joined via your link!`,
+          createdAt: new Date().toISOString(),
+        });
+
+        user.coins += 250;
+        transactions.unshift({
+          id: `tx_${Date.now()}_ref_inv`,
+          userId: user.id,
+          type: "referral_received",
+          amount: 250,
+          description: `Referral Bonus for using link: ${cleanRef}`,
+          createdAt: new Date().toISOString(),
+        });
+      }
+    }
+  }
+
+  currentSessionUser = user;
+  res.json({
+    success: true,
+    user,
+    isNewUser,
+    message: isNewUser 
+      ? `Welcome @${cleanUsername}! AtoPlay channel linked (+${user.coins} Coins).`
+      : `Welcome back @${cleanUsername}! Logged in successfully with channel linked.`
   });
 });
 
@@ -1708,15 +1846,21 @@ app.post("/api/user/atoplay-username", (req, res) => {
   if (!activeUser) {
     return res.status(401).json({ success: false, message: "Please log in" });
   }
-  const { username } = req.body;
+  const { username, password } = req.body;
   if (!username || !username.trim()) {
     return res.status(400).json({ success: false, message: "AtoPlay username is required" });
   }
   const cleanName = username.trim().replace(/^@+/, '');
   activeUser.atoPlayUsername = cleanName;
+  atoplayUsernameMap[cleanName.toLowerCase()] = activeUser.id;
+  
+  if (password && String(password).trim().length >= 3) {
+    userPasswords[activeUser.id] = String(password).trim();
+  }
+
   res.json({
     success: true,
-    message: `AtoPlay username linked: @${cleanName}`,
+    message: `AtoPlay channel successfully linked: @${cleanName}`,
     atoPlayUsername: cleanName,
     user: activeUser
   });
