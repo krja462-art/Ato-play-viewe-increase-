@@ -279,22 +279,43 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onLoginSuccess, onOp
             {/* 3 Screenshot Micro-Previews Stack */}
             <div className="flex -space-x-2 shrink-0">
               <img
-                src={encodeURI('/App screenshots 1 .jpg')}
+                src={encodeURI('/App image 1.png')}
                 alt="Screen 1"
                 className="w-8 h-12 object-cover rounded-lg border-2 border-white/50 shadow-md transform -rotate-3"
-                onError={(e) => { (e.target as HTMLImageElement).src = '/Screenshot.png'; }}
+                onError={(e) => { 
+                  const target = e.target as HTMLImageElement;
+                  if (!target.src.includes('App%20screenshots')) {
+                    target.src = encodeURI('/App screenshots 1 .jpg');
+                  } else {
+                    target.src = '/Screenshot.png';
+                  }
+                }}
               />
               <img
-                src={encodeURI('/App screenshots 2 .jpg')}
+                src={encodeURI('/App image2.png')}
                 alt="Screen 2"
                 className="w-8 h-12 object-cover rounded-lg border-2 border-white/50 shadow-md z-1"
-                onError={(e) => { (e.target as HTMLImageElement).src = '/Screenshot.png'; }}
+                onError={(e) => { 
+                  const target = e.target as HTMLImageElement;
+                  if (!target.src.includes('App%20screenshots')) {
+                    target.src = encodeURI('/App screenshots 2 .jpg');
+                  } else {
+                    target.src = '/Screenshot.png';
+                  }
+                }}
               />
               <img
-                src={encodeURI('/App screenshots 3.jpg')}
+                src={encodeURI('/App image 3.png')}
                 alt="Screen 3"
                 className="w-8 h-12 object-cover rounded-lg border-2 border-white/50 shadow-md transform rotate-3 z-2"
-                onError={(e) => { (e.target as HTMLImageElement).src = '/Screenshot.png'; }}
+                onError={(e) => { 
+                  const target = e.target as HTMLImageElement;
+                  if (!target.src.includes('App%20screenshots')) {
+                    target.src = encodeURI('/App screenshots 3.jpg');
+                  } else {
+                    target.src = '/Screenshot.png';
+                  }
+                }}
               />
             </div>
 

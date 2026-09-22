@@ -2338,7 +2338,14 @@ app.post("/api/assetlinks", (req, res) => {
 
 
 async function startServer() {
-  if (process.env.NODE_ENV !== "production") {
+  const isProduction =
+    process.env.NODE_ENV === "production" ||
+    Boolean(process.env.K_SERVICE) ||
+    Boolean(process.env.CLOUD_RUN_JOB) ||
+    (typeof __filename !== "undefined" && __filename.endsWith(".cjs")) ||
+    (fs.existsSync(path.join(process.cwd(), "dist", "index.html")) && !process.env.VITE_DEV_SERVER);
+
+  if (!isProduction) {
     const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
@@ -2349,7 +2356,7 @@ async function startServer() {
     // Resolve dist path reliably whether running from workspace or dist
     const distPath = fs.existsSync(path.join(process.cwd(), 'dist'))
       ? path.join(process.cwd(), 'dist')
-      : path.resolve(__dirname);
+      : (typeof __dirname !== 'undefined' ? __dirname : path.join(process.cwd(), 'dist'));
 
     app.use(express.static(distPath, { dotfiles: 'allow' }));
     app.get('*', (_req, res) => {
@@ -2362,9 +2369,21 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
+  const server = app.listen(PORT, "0.0.0.0", () => {
     console.log(`AtoPlay Booster Server running on http://localhost:${PORT}`);
   });
+
+  server.on('error', (err: any) => {
+    console.error('Server listen error:', err);
+  });
 }
+
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught Exception:', err);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
 
 startServer();
