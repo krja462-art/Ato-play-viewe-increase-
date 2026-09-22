@@ -85,6 +85,8 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
 
   // Track if user actually switched away / minimized the app
   const hasLeftAppRef = useRef(false);
+  const wasBackgroundedRef = useRef(false);
+  const isExpiringRef = useRef(false);
 
   const fetchCampaigns = async () => {
     try {
@@ -235,13 +237,16 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
   };
 
   // Invalidate and expire session both locally and on backend when returned < 60s
-  const handleExpireSession = useCallback(async (
+  const handleExpireSession = useCallback((
     sId: string,
     sToken: string,
     elapsed: number,
     camp: Campaign | null
   ) => {
     // Prevent duplicate triggers
+    if (isExpiringRef.current) return;
+    isExpiringRef.current = true;
+
     localStorage.removeItem(STORAGE_KEY);
     setIsPlaying(false);
     setSelectedCampaign(null);
@@ -250,27 +255,28 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
     setSessionToken(null);
     setTimeLeft(60);
     hasLeftAppRef.current = false;
+    wasBackgroundedRef.current = false;
     document.title = 'AtoPlay Booster - Video Promotion Exchange';
 
-    // Tell backend to destroy the security token immediately
-    try {
-      await apiFetch('/api/watch/expire-session', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          sessionId: sId,
-          sessionToken: sToken,
-          reason: 'premature_app_resume'
-        })
-      });
-    } catch (err) {
-      console.error('Failed to report expired session to backend', err);
-    }
-
-    // Open Expired Notification modal
+    // Open Expired Notification modal IMMEDIATELY (zero lag, synchronous)
     setExpiredElapsed(elapsed);
     setExpiredCampaign(camp);
     setShowExpiredModal(true);
+
+    // Tell backend to destroy the security token asynchronously in background
+    apiFetch('/api/watch/expire-session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sessionId: sId,
+        sessionToken: sToken,
+        reason: 'premature_app_resume'
+      })
+    }).catch(err => {
+      console.error('Failed to report expired session to backend', err);
+    }).finally(() => {
+      isExpiringRef.current = false;
+    });
   }, []);
 
   // Background Follower Check Function (Auto-credits 30 coins if AtoPlay follower count increased)
@@ -508,19 +514,26 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
 
     // App minimized / backgrounded handler
     const handleVisibilityHidden = () => {
-      if (document.hidden) {
+      if (document.hidden || document.visibilityState === 'hidden') {
         hasLeftAppRef.current = true;
+        wasBackgroundedRef.current = true;
       }
     };
 
     const handleWindowBlur = () => {
       hasLeftAppRef.current = true;
+      wasBackgroundedRef.current = true;
     };
 
-    // onResume handler: User resumes / returns to app
-    const handleOnResume = () => {
-      // Check if visible
-      if (document.visibilityState === 'visible' && !isVerifyingRef.current) {
+    // Immediate resume handler: executes on the exact instant user returns to the app
+    const checkAndProcessResume = () => {
+      // Check if visible in foreground and not currently processing
+      if (
+        document.visibilityState === 'visible' &&
+        !document.hidden &&
+        !isVerifyingRef.current &&
+        !isExpiringRef.current
+      ) {
         const elapsed = (Date.now() - startTime) / 1000;
 
         // If user returned after tapping follow on AtoPlay, trigger background check right away
@@ -528,50 +541,85 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
           triggerBackgroundFollowCheck(selectedCampaign);
         }
 
-        // If user returned after switching to external browser (or after at least 3 seconds)
-        if (hasLeftAppRef.current || (Date.now() - startTime) > 3000) {
+        // Check if user returned after leaving app or at least 1.5s after video started
+        if (wasBackgroundedRef.current || hasLeftAppRef.current || elapsed >= 1.5) {
           if (elapsed >= 60) {
             // Success: 60s completed! Claim coins with single-use security token
+            isVerifyingRef.current = true;
             setIsPlaying(false);
             setTimeLeft(0);
             verifyWatchSession(selectedCampaign.id, sessionId, sessionToken, selectedCampaign);
           } else {
             // Expired: User returned BEFORE 60 seconds!
-            // Requirement: "Agar 60 seconds se kam waqt hua ho, toh reward claim na ho aur session expire ho jaye."
+            // Requirement: Immediately show the Session Expired modal without requiring a screen tap
+            isExpiringRef.current = true;
             handleExpireSession(sessionId, sessionToken, elapsed, selectedCampaign);
           }
         }
       }
     };
 
-    // Keep page title informative while backgrounded
+    // Frame-based monitor: wakes up instantly (0-16ms) as soon as tab restores to foreground
+    let animFrameId: number;
+    const frameLoop = () => {
+      if (document.visibilityState === 'visible' && !document.hidden) {
+        if (wasBackgroundedRef.current || hasLeftAppRef.current) {
+          checkAndProcessResume();
+        }
+      }
+      animFrameId = requestAnimationFrame(frameLoop);
+    };
+    animFrameId = requestAnimationFrame(frameLoop);
+
+    // Keep page title informative while backgrounded & perform continuous check
     const timerInterval = setInterval(() => {
       const elapsed = (Date.now() - startTime) / 1000;
       const remaining = Math.max(0, 60 - Math.floor(elapsed));
       setTimeLeft(remaining);
 
-      if (document.hidden) {
+      if (document.hidden || document.visibilityState === 'hidden') {
+        hasLeftAppRef.current = true;
+        wasBackgroundedRef.current = true;
         if (remaining > 0) {
           document.title = `(${remaining}s) Watching in External Browser - AtoPlay`;
         } else {
           document.title = `(🎉 60s Complete! Return to claim) AtoPlay`;
         }
+      } else {
+        // App is visible in foreground! Check immediately if user came back
+        if (wasBackgroundedRef.current || hasLeftAppRef.current || elapsed >= 2.0) {
+          checkAndProcessResume();
+        }
       }
-    }, 1000);
+    }, 300);
 
-    document.addEventListener('visibilitychange', handleVisibilityHidden);
-    document.addEventListener('visibilitychange', handleOnResume);
+    const onVisibilityChange = () => {
+      if (document.hidden || document.visibilityState === 'hidden') {
+        handleVisibilityHidden();
+      } else {
+        checkAndProcessResume();
+      }
+    };
+
+    // Attach all lifecycle events across Android Chrome, iOS Safari, PWA, and desktop
+    document.addEventListener('visibilitychange', onVisibilityChange);
     window.addEventListener('blur', handleWindowBlur);
-    window.addEventListener('focus', handleOnResume);
-    window.addEventListener('pageshow', handleOnResume);
+    window.addEventListener('focus', checkAndProcessResume);
+    window.addEventListener('pageshow', checkAndProcessResume);
+    document.addEventListener('resume', checkAndProcessResume);
+    window.addEventListener('pointerdown', checkAndProcessResume, { passive: true });
+    window.addEventListener('touchstart', checkAndProcessResume, { passive: true });
 
     return () => {
+      cancelAnimationFrame(animFrameId);
       clearInterval(timerInterval);
-      document.removeEventListener('visibilitychange', handleVisibilityHidden);
-      document.removeEventListener('visibilitychange', handleOnResume);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
       window.removeEventListener('blur', handleWindowBlur);
-      window.removeEventListener('focus', handleOnResume);
-      window.removeEventListener('pageshow', handleOnResume);
+      window.removeEventListener('focus', checkAndProcessResume);
+      window.removeEventListener('pageshow', checkAndProcessResume);
+      document.removeEventListener('resume', checkAndProcessResume);
+      window.removeEventListener('pointerdown', checkAndProcessResume);
+      window.removeEventListener('touchstart', checkAndProcessResume);
       document.title = 'AtoPlay Booster - Video Promotion Exchange';
     };
   }, [isPlaying, startTime, isCompleted, sessionId, sessionToken, selectedCampaign, verifyWatchSession, handleExpireSession]);
@@ -644,6 +692,11 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
       // Step 2: Persist token to localStorage
       localStorage.setItem(STORAGE_KEY, JSON.stringify(newSession));
 
+      isExpiringRef.current = false;
+      isVerifyingRef.current = false;
+      hasLeftAppRef.current = false;
+      wasBackgroundedRef.current = false;
+
       setSessionId(data.sessionId);
       setSessionToken(data.sessionToken);
       setTimeLeft(60);
@@ -651,12 +704,16 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
       setVideoStarted(true);
       setIsPlaying(true);
       setIsCompleted(false);
-      hasLeftAppRef.current = false;
 
       // Step 3: Open AtoPlay video in external browser / custom tab
       try {
         const safeUrl = cleanVideoUrl(selectedCampaign.videoUrl);
         window.open(safeUrl, '_blank', 'noopener,noreferrer');
+        // Mark that external video was opened so premature back triggers modal immediately
+        setTimeout(() => {
+          hasLeftAppRef.current = true;
+          wasBackgroundedRef.current = true;
+        }, 1200);
       } catch (e) {
         console.error('Popup open error:', e);
       }
@@ -1204,12 +1261,16 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
             setSessionToken(null);
             setActiveTab('campaigns');
           }}
+          user={user}
+          onCoinEarned={onCoinEarned}
         />
 
         {/* Session Expired Modal (< 60s completed) */}
         <SessionExpiredModal
           isOpen={showExpiredModal}
           onClose={() => {
+            isExpiringRef.current = false;
+            isVerifyingRef.current = false;
             setShowExpiredModal(false);
             setExpiredCampaign(null);
             setExpiredElapsed(0);
@@ -1218,6 +1279,8 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
           elapsedSeconds={expiredElapsed}
           campaign={expiredCampaign}
           onRetry={() => {
+            isExpiringRef.current = false;
+            isVerifyingRef.current = false;
             setShowExpiredModal(false);
             if (expiredCampaign) {
               handleSelectCampaign(expiredCampaign);
@@ -1468,12 +1531,16 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
           setSessionToken(null);
           setActiveTab('campaigns');
         }}
+        user={user}
+        onCoinEarned={onCoinEarned}
       />
 
       {/* Session Expired Modal (If restored and < 60s) */}
       <SessionExpiredModal
         isOpen={showExpiredModal}
         onClose={() => {
+          isExpiringRef.current = false;
+          isVerifyingRef.current = false;
           setShowExpiredModal(false);
           setExpiredCampaign(null);
           setExpiredElapsed(0);
@@ -1482,6 +1549,8 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
         elapsedSeconds={expiredElapsed}
         campaign={expiredCampaign}
         onRetry={() => {
+          isExpiringRef.current = false;
+          isVerifyingRef.current = false;
           setShowExpiredModal(false);
           if (expiredCampaign) {
             handleSelectCampaign(expiredCampaign);

@@ -1511,7 +1511,30 @@ app.post("/api/follow/verify", async (req, res) => {
     return res.status(400).json({ success: false, message: "Campaign ID required" });
   }
 
-  const campaign = campaigns.find(c => c.id === campaignId);
+  let campaign = campaigns.find(c => c.id === campaignId || c.displayId === campaignId);
+  if (!campaign && req.body.videoUrl) {
+    campaign = {
+      id: campaignId,
+      displayId: req.body.displayId || '----',
+      userId: 'creator',
+      userName: req.body.channelName || 'Creator Channel',
+      title: 'AtoPlay Video',
+      videoUrl: req.body.videoUrl,
+      thumbnailUrl: '',
+      channelName: req.body.channelName,
+      channelId: req.body.channelId,
+      channelFollowers: typeof clientCountBefore === 'number' ? clientCountBefore : 0,
+      viewsRequired: 100,
+      viewsCompleted: 0,
+      targetViews: 100,
+      completedViews: 0,
+      rewardPerView: 60,
+      durationSeconds: 60,
+      totalCoinsCost: 0,
+      status: 'active',
+      createdAt: new Date().toISOString()
+    };
+  }
   if (!campaign) {
     return res.status(404).json({ success: false, message: "Campaign not found" });
   }

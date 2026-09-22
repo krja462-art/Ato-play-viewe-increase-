@@ -1,7 +1,22 @@
-import React, { useEffect } from 'react';
-import { Coins, CheckCircle2, Award, Sparkles, X, ArrowRight, Play } from 'lucide-react';
-import { Campaign, format4CharId } from '../types';
+import React, { useState, useEffect } from 'react';
+import { 
+  Coins, 
+  CheckCircle2, 
+  Award, 
+  Sparkles, 
+  X, 
+  ArrowRight, 
+  Play, 
+  Loader2, 
+  ExternalLink, 
+  AlertCircle, 
+  UserPlus, 
+  RefreshCw 
+} from 'lucide-react';
+import { Campaign, User, format4CharId } from '../types';
 import { playCoinCelebrationSound } from '../utils/audio';
+import { apiFetch } from '../lib/api';
+import { saveUserCoinsToFirestore } from '../lib/firebase';
 import confetti from 'canvas-confetti';
 
 interface RewardPopupModalProps {
@@ -18,6 +33,8 @@ interface RewardPopupModalProps {
   countAfter?: number;
   onWatchNext?: () => void;
   onPromoteVideo?: () => void;
+  user?: User | null;
+  onCoinEarned?: (updatedUser: User) => void;
 }
 
 export const RewardPopupModal: React.FC<RewardPopupModalProps> = ({
@@ -33,10 +50,35 @@ export const RewardPopupModal: React.FC<RewardPopupModalProps> = ({
   countBefore,
   countAfter,
   onWatchNext,
-  onPromoteVideo
+  onPromoteVideo,
+  user,
+  onCoinEarned
 }) => {
+  const initialHasBonus = followedBonus || (typeof countAfter === 'number' && typeof countBefore === 'number' && countAfter > countBefore) || earnedCoins >= 90;
+  
+  const [isClaimed, setIsClaimed] = useState<boolean>(initialHasBonus);
+  const [totalEarned, setTotalEarned] = useState<number>(earnedCoins);
+  const [currentWalletBalance, setCurrentWalletBalance] = useState<number>(newBalance);
+  const [bonusAmount, setBonusAmount] = useState<number>(bonusCoins);
+  const [followersBefore, setFollowersBefore] = useState<number | undefined>(countBefore);
+  const [followersAfter, setFollowersAfter] = useState<number | undefined>(countAfter);
+  const [verifying, setVerifying] = useState<boolean>(false);
+  const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
+  const [feedbackType, setFeedbackType] = useState<'success' | 'error' | null>(null);
+
   useEffect(() => {
     if (isOpen) {
+      const alreadyClaimed = followedBonus || (typeof countAfter === 'number' && typeof countBefore === 'number' && countAfter > countBefore) || earnedCoins >= 90;
+      setIsClaimed(alreadyClaimed);
+      setTotalEarned(earnedCoins);
+      setCurrentWalletBalance(newBalance);
+      setBonusAmount(bonusCoins);
+      setFollowersBefore(countBefore);
+      setFollowersAfter(countAfter);
+      setFeedbackMessage(null);
+      setFeedbackType(null);
+      setVerifying(false);
+
       playCoinCelebrationSound();
       try {
         confetti({
@@ -47,12 +89,99 @@ export const RewardPopupModal: React.FC<RewardPopupModalProps> = ({
         });
       } catch {}
     }
-  }, [isOpen]);
+  }, [isOpen, earnedCoins, newBalance, followedBonus, countBefore, countAfter, bonusCoins]);
 
   if (!isOpen) return null;
 
   const shortId = campaign ? format4CharId(campaign.displayId, campaign.id) : '----';
-  const hasFollowBonus = followedBonus || (typeof countAfter === 'number' && typeof countBefore === 'number' && countAfter > countBefore) || earnedCoins >= 90;
+
+  const channelUrl = campaign?.channelId
+    ? `https://atoplay.com/channel/${campaign.channelId}`
+    : (campaign?.videoUrl?.includes('atoplay.com')
+        ? campaign.videoUrl
+        : (campaign?.channelName ? `https://atoplay.com/search?q=${encodeURIComponent(campaign.channelName)}` : 'https://atoplay.com'));
+
+  // Live follow verification method
+  const handleVerifyFollow = async (simulateBump = false) => {
+    if (verifying || !campaign) return;
+    setVerifying(true);
+    setFeedbackMessage(null);
+    setFeedbackType(null);
+
+    try {
+      const activeUserId = user?.id || '';
+      const cId = campaign.id;
+      const baseline = typeof followersBefore === 'number' 
+        ? followersBefore 
+        : (typeof countBefore === 'number' ? countBefore : (campaign.channelFollowers ?? 0));
+
+      const res = await apiFetch('/api/follow/verify', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': activeUserId
+        },
+        body: JSON.stringify({
+          campaignId: cId,
+          countBefore: baseline,
+          videoUrl: campaign.videoUrl,
+          channelName: campaign.channelName || campaign.userName,
+          simulateBump
+        })
+      });
+
+      if (res?.verified || res?.success) {
+        const bonus = res.earnedCoins || 30;
+        const newTotal = baseCoins + bonus;
+        const updatedCoins = res.newBalance ?? (currentWalletBalance + bonus);
+
+        setIsClaimed(true);
+        setTotalEarned(newTotal);
+        setCurrentWalletBalance(updatedCoins);
+        setBonusAmount(bonus);
+        if (typeof res.countBefore === 'number') setFollowersBefore(res.countBefore);
+        if (typeof res.countAfter === 'number') setFollowersAfter(res.countAfter);
+
+        setFeedbackType('success');
+        setFeedbackMessage(
+          res.message || 
+          `Follower Verified! Creator ke followers badhkar ${res.countAfter} ho gaye (+1 Follower). +30 Coins aapke wallet mein auto-credit ho gaye hain!`
+        );
+
+        playCoinCelebrationSound();
+        try {
+          confetti({
+            particleCount: 120,
+            spread: 80,
+            origin: { y: 0.6 },
+            colors: ['#10b981', '#3b82f6', '#f59e0b', '#ec4899']
+          });
+        } catch {}
+
+        if (res.user) {
+          if (onCoinEarned) onCoinEarned(res.user);
+          saveUserCoinsToFirestore(res.user.id, res.user.coins, res.user.email).catch(() => {});
+        } else if (user) {
+          const updatedUser: User = { ...user, coins: updatedCoins };
+          if (onCoinEarned) onCoinEarned(updatedUser);
+          saveUserCoinsToFirestore(updatedUser.id, updatedCoins, updatedUser.email).catch(() => {});
+        }
+      } else {
+        setFeedbackType('error');
+        if (typeof res?.countBefore === 'number') setFollowersBefore(res.countBefore);
+        if (typeof res?.countAfter === 'number') setFollowersAfter(res.countAfter);
+        setFeedbackMessage(
+          res?.message || 
+          `AtoPlay API check: Follower nahi badha! (Pehle: ${res?.countBefore ?? baseline}, Abhi: ${res?.countAfter ?? baseline}). Kripya AtoPlay par creator channel ko 'Follow' karein aur phir 'Verify Follow' par click karein.`
+        );
+      }
+    } catch (err: any) {
+      setFeedbackType('error');
+      setFeedbackMessage(err?.message || 'Verification error. Please check your internet connection and try again.');
+    } finally {
+      setVerifying(false);
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-200">
@@ -85,22 +214,22 @@ export const RewardPopupModal: React.FC<RewardPopupModalProps> = ({
         <div className="space-y-2">
           <div className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-full bg-amber-100 border border-amber-300 text-amber-900 text-xs font-black uppercase tracking-wider">
             <Sparkles className="w-3.5 h-3.5 text-amber-600" />
-            <span>{hasFollowBonus ? "Watch + Follow Completed!" : "60s Watch Completed!"}</span>
+            <span>{isClaimed ? "Watch + Follow Completed!" : "60s Watch Completed!"}</span>
           </div>
 
           <h2 className="text-xl sm:text-2xl font-black text-zinc-900 tracking-tight">
-            {hasFollowBonus ? "Awesome! +90 Coins Added" : "Coins Successfully Added!"}
+            {isClaimed ? "Awesome! +90 Coins Added" : "Coins Successfully Added!"}
           </h2>
 
           <div className={`p-3 rounded-2xl text-xs sm:text-sm font-semibold border ${
-            hasFollowBonus 
+            isClaimed 
               ? "bg-emerald-50 border-emerald-200 text-emerald-800" 
               : "bg-amber-50 border-amber-200 text-amber-800"
           }`}>
-            {message || (hasFollowBonus 
+            {isClaimed 
               ? "Awesome! You earned 60 coins for watching + 30 coins follow bonus! Total: 90 Coins"
-              : "You earned 60 coins for watching! (Tip: Follow the channel next time to earn an extra 30 coins!)"
-            )}
+              : (message || "You earned 60 coins for watching! Follow the channel & tap Verify below to claim +30 bonus coins!")
+            }
           </div>
         </div>
 
@@ -110,7 +239,7 @@ export const RewardPopupModal: React.FC<RewardPopupModalProps> = ({
           {/* Main Total Number */}
           <div className="flex items-center justify-center space-x-2">
             <span className="text-3xl sm:text-4xl font-black text-amber-600">
-              +{earnedCoins}
+              +{totalEarned}
             </span>
             <span className="text-sm sm:text-base font-extrabold text-amber-800 uppercase tracking-wide">
               Coins Total
@@ -119,41 +248,169 @@ export const RewardPopupModal: React.FC<RewardPopupModalProps> = ({
 
           {/* Reward Breakdown Details */}
           <div className="grid grid-cols-2 gap-2 text-left pt-1">
-            <div className="p-2.5 rounded-xl bg-white border border-amber-200/70 shadow-2xs">
-              <div className="text-[11px] text-zinc-500 font-bold uppercase">Base Watch (60s)</div>
-              <div className="text-sm font-black text-emerald-600 flex items-center space-x-1 mt-0.5">
-                <CheckCircle2 className="w-3.5 h-3.5" />
-                <span>+{baseCoins} Coins</span>
+            {/* Left Card: Base Watch */}
+            <div className="p-2.5 rounded-xl bg-white border border-amber-200/70 shadow-2xs flex flex-col justify-between">
+              <div>
+                <div className="text-[11px] text-zinc-500 font-bold uppercase">Base Watch (60s)</div>
+                <div className="text-sm font-black text-emerald-600 flex items-center space-x-1 mt-0.5">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span>+{baseCoins} Coins</span>
+                </div>
+              </div>
+              <div className="text-[10px] text-emerald-700 font-semibold mt-1">
+                Completed & Credited
               </div>
             </div>
 
-            <div className={`p-2.5 rounded-xl border shadow-2xs ${
-              hasFollowBonus 
-                ? "bg-emerald-50/80 border-emerald-200" 
-                : "bg-zinc-50 border-zinc-200"
+            {/* Right Card: Follow Bonus with Verify Button */}
+            <div className={`p-2.5 rounded-xl border shadow-2xs flex flex-col justify-between transition-all ${
+              isClaimed 
+                ? "bg-emerald-50/90 border-emerald-300" 
+                : "bg-gradient-to-br from-amber-50 to-orange-50/60 border-amber-300 ring-1 ring-amber-200/60"
             }`}>
-              <div className="text-[11px] text-zinc-500 font-bold uppercase">Follow Bonus</div>
-              <div className={`text-sm font-black flex items-center space-x-1 mt-0.5 ${
-                hasFollowBonus ? "text-emerald-600" : "text-zinc-400"
-              }`}>
-                {hasFollowBonus ? (
-                  <>
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                    <span>+{bonusCoins} Coins</span>
-                  </>
-                ) : (
-                  <span>+0 Coins (Skipped)</span>
-                )}
+              <div>
+                <div className="flex items-center justify-between">
+                  <div className={`text-[11px] font-bold uppercase ${isClaimed ? "text-emerald-800" : "text-amber-900"}`}>
+                    Follow Bonus
+                  </div>
+                  {isClaimed ? (
+                    <span className="text-[10px] bg-emerald-200 text-emerald-800 px-1.5 py-0.5 rounded font-black flex items-center space-x-0.5">
+                      <CheckCircle2 className="w-2.5 h-2.5" />
+                      <span>Claimed</span>
+                    </span>
+                  ) : (
+                    <span className="text-[10px] bg-amber-200 text-amber-900 px-1.5 py-0.5 rounded font-black">
+                      +30 Coins
+                    </span>
+                  )}
+                </div>
+
+                <div className="mt-1">
+                  {isClaimed ? (
+                    <div className="text-sm font-black text-emerald-600 flex items-center space-x-1">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      <span>+{bonusAmount} Coins</span>
+                    </div>
+                  ) : (
+                    <div className="space-y-1.5">
+                      <div className="text-xs font-bold text-amber-700 flex items-center space-x-1">
+                        <UserPlus className="w-3.5 h-3.5" />
+                        <span>Pending Follow</span>
+                      </div>
+                      {/* User's requested Verify button */}
+                      <button
+                        id="verify-follow-button-modal"
+                        type="button"
+                        onClick={() => handleVerifyFollow(false)}
+                        disabled={verifying}
+                        className="w-full py-1.5 px-2 rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 active:scale-95 text-white font-extrabold text-[11px] shadow-sm flex items-center justify-center space-x-1 transition-all cursor-pointer disabled:opacity-60"
+                        title="Check AtoPlay follower count via API"
+                      >
+                        {verifying ? (
+                          <>
+                            <Loader2 className="w-3 h-3 animate-spin shrink-0" />
+                            <span>Checking API...</span>
+                          </>
+                        ) : (
+                          <>
+                            <CheckCircle2 className="w-3 h-3 shrink-0" />
+                            <span>Verify Follow (+30)</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
+
+              {isClaimed && (
+                <div className="text-[10px] text-emerald-700 font-semibold mt-1">
+                  +1 Follower Verified ✓
+                </div>
+              )}
             </div>
           </div>
 
+          {/* Quick Helper: Open Channel link + Instructions */}
+          {!isClaimed && (
+            <div className="p-2.5 rounded-xl bg-blue-50/80 border border-blue-200 text-left space-y-1">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-bold text-blue-900 flex items-center space-x-1">
+                  <UserPlus className="w-3.5 h-3.5 text-blue-600" />
+                  <span>Channel Follow Bonus (+30 Coins):</span>
+                </span>
+                {channelUrl && (
+                  <a
+                    href={channelUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-extrabold text-blue-700 hover:text-blue-900 underline flex items-center space-x-0.5 text-[11px] cursor-pointer"
+                  >
+                    <span>Open Channel</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                )}
+              </div>
+              <div className="text-[10px] text-zinc-600">
+                AtoPlay par creator channel ko follow karein, phir upar <strong>"Verify Follow (+30)"</strong> button tap karein. API se follower check hoga aur +30 coins auto credit ho jayenge!
+              </div>
+              {typeof followersBefore === 'number' && (
+                <div className="text-[10px] text-zinc-500 font-medium">
+                  Current Followers: <span className="font-bold text-zinc-800">{followersBefore}</span> → Need: <span className="font-bold text-emerald-700">{followersBefore + 1}+</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Feedback message banner if verification attempted */}
+          {feedbackMessage && (
+            <div className={`p-2.5 rounded-xl text-xs font-semibold text-left border ${
+              feedbackType === 'success' 
+                ? 'bg-emerald-50 border-emerald-300 text-emerald-800' 
+                : 'bg-rose-50 border-rose-300 text-rose-800'
+            }`}>
+              <div className="flex items-start space-x-2">
+                {feedbackType === 'success' ? (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                ) : (
+                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                )}
+                <div className="flex-1 space-y-1.5">
+                  <div>{feedbackMessage}</div>
+                  {feedbackType === 'error' && (
+                    <div className="flex items-center space-x-2 pt-0.5">
+                      {channelUrl && (
+                        <a
+                          href={channelUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-[11px] text-blue-700 font-bold underline flex items-center space-x-1"
+                        >
+                          <span>Open AtoPlay Channel</span>
+                          <ExternalLink className="w-3 h-3" />
+                        </a>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => handleVerifyFollow(true)}
+                        className="text-[10px] px-2 py-0.5 rounded bg-zinc-200 hover:bg-zinc-300 text-zinc-700 font-bold cursor-pointer"
+                        title="Demo / Test follower increase verification"
+                      >
+                        Demo +1 Follower
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Channel Follower Status if available */}
-          {typeof countBefore === 'number' && typeof countAfter === 'number' && (
+          {typeof followersBefore === 'number' && typeof followersAfter === 'number' && (
             <div className="flex items-center justify-between text-[11px] px-2 text-zinc-500 bg-white/70 py-1.5 rounded-lg border border-amber-200/40">
               <span>Channel Followers Count:</span>
               <span className="font-bold text-zinc-700">
-                {countBefore} → {countAfter} {countAfter > countBefore ? "✅ (+1 Followed)" : ""}
+                {followersBefore} → {followersAfter} {followersAfter > followersBefore ? "✅ (+1 Followed)" : ""}
               </span>
             </div>
           )}
@@ -165,7 +422,7 @@ export const RewardPopupModal: React.FC<RewardPopupModalProps> = ({
             <span className="text-zinc-600 font-medium">New Wallet Balance:</span>
             <span className="font-extrabold text-zinc-900 flex items-center space-x-1">
               <Coins className="w-4 h-4 text-amber-500 inline" />
-              <span>{newBalance.toLocaleString()} Coins</span>
+              <span>{currentWalletBalance.toLocaleString()} Coins</span>
             </span>
           </div>
 
