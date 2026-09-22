@@ -111,6 +111,9 @@ export const syncFirebaseUserWithFirestore = async (fbUser: FirebaseUser, pendin
     // Check if client had higher local coins before refresh
     let localSavedCoins: number | null = null;
     let localAtoPlayUsername: string | null = null;
+    let localChannelBanner: string | null = null;
+    let localChannelImage: string | null = null;
+    let localChannelName: string | null = null;
     try {
       const raw = localStorage.getItem('atoviewer_user');
       if (raw) {
@@ -118,6 +121,9 @@ export const syncFirebaseUserWithFirestore = async (fbUser: FirebaseUser, pendin
         if (p && p.id === fbUser.uid) {
           if (typeof p.coins === 'number') localSavedCoins = p.coins;
           if (p.atoPlayUsername) localAtoPlayUsername = p.atoPlayUsername;
+          if (p.channelBanner) localChannelBanner = p.channelBanner;
+          if (p.channelImage) localChannelImage = p.channelImage;
+          if (p.channelName) localChannelName = p.channelName;
         }
       }
     } catch {}
@@ -131,10 +137,10 @@ export const syncFirebaseUserWithFirestore = async (fbUser: FirebaseUser, pendin
 
       const existingUser: User = {
         id: fbUser.uid,
-        name: data.name || fbUser.displayName || (isAdmin ? 'Admin (KRJA)' : 'AtoPlay Creator'),
+        name: data.channelName || data.name || fbUser.displayName || (isAdmin ? 'Admin (KRJA)' : 'AtoPlay Creator'),
         email: fbUser.email || data.email || cleanEmail,
         coins: finalCoins,
-        avatar: fbUser.photoURL || data.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80',
+        avatar: data.channelImage || fbUser.photoURL || data.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80',
         streak: typeof data.streak === 'number' ? data.streak : 1,
         lastCheckIn: data.lastCheckIn || today,
         createdAt: data.createdAt || now,
@@ -144,8 +150,12 @@ export const syncFirebaseUserWithFirestore = async (fbUser: FirebaseUser, pendin
         referredBy: data.referredBy,
         isAdmin: isAdmin ? true : Boolean(data.isAdmin),
         atoPlayUsername: data.atoPlayUsername || localAtoPlayUsername || '',
+        channelName: data.channelName || localChannelName || '',
+        channelBanner: data.channelBanner || localChannelBanner || '',
+        channelImage: data.channelImage || localChannelImage || '',
         warningCount: typeof data.warningCount === 'number' ? data.warningCount : 0,
-        isFollowRestricted: Boolean(data.isFollowRestricted)
+        isFollowRestricted: Boolean(data.isFollowRestricted),
+        loginMethod: 'google'
       };
 
       setDoc(userRef, {
@@ -154,8 +164,12 @@ export const syncFirebaseUserWithFirestore = async (fbUser: FirebaseUser, pendin
         coins: finalCoins,
         isAdmin: isAdmin ? true : Boolean(data.isAdmin),
         atoPlayUsername: existingUser.atoPlayUsername,
+        channelName: existingUser.channelName,
+        channelBanner: existingUser.channelBanner,
+        channelImage: existingUser.channelImage,
         warningCount: existingUser.warningCount,
-        isFollowRestricted: existingUser.isFollowRestricted
+        isFollowRestricted: existingUser.isFollowRestricted,
+        loginMethod: 'google'
       }, { merge: true }).catch(() => {});
 
       return existingUser;
@@ -166,6 +180,9 @@ export const syncFirebaseUserWithFirestore = async (fbUser: FirebaseUser, pendin
 
   let localInitialCoins = pendingReferralCode ? 350 : 100;
   let localAtoPlayUsernameFallback = '';
+  let localChannelBannerFallback = '';
+  let localChannelImageFallback = '';
+  let localChannelNameFallback = '';
   try {
     const raw = localStorage.getItem('atoviewer_user');
     if (raw) {
@@ -173,16 +190,19 @@ export const syncFirebaseUserWithFirestore = async (fbUser: FirebaseUser, pendin
       if (p && p.id === fbUser.uid) {
         if (typeof p.coins === 'number') localInitialCoins = Math.max(localInitialCoins, p.coins);
         if (p.atoPlayUsername) localAtoPlayUsernameFallback = p.atoPlayUsername;
+        if (p.channelBanner) localChannelBannerFallback = p.channelBanner;
+        if (p.channelImage) localChannelImageFallback = p.channelImage;
+        if (p.channelName) localChannelNameFallback = p.channelName;
       }
     }
   } catch {}
 
   const newUser: User = {
     id: fbUser.uid,
-    name: fbUser.displayName || (isAdmin ? 'Admin (KRJA)' : (cleanEmail ? cleanEmail.split('@')[0] : 'AtoPlay Creator')),
+    name: localChannelNameFallback || fbUser.displayName || (isAdmin ? 'Admin (KRJA)' : (cleanEmail ? cleanEmail.split('@')[0] : 'AtoPlay Creator')),
     email: cleanEmail,
     coins: isAdmin ? ADMIN_UNLIMITED_COINS : localInitialCoins,
-    avatar: fbUser.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80',
+    avatar: localChannelImageFallback || fbUser.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80',
     streak: 1,
     lastCheckIn: today,
     createdAt: now,
@@ -192,8 +212,12 @@ export const syncFirebaseUserWithFirestore = async (fbUser: FirebaseUser, pendin
     referredBy: pendingReferralCode || undefined,
     isAdmin: isAdmin ? true : undefined,
     atoPlayUsername: localAtoPlayUsernameFallback,
+    channelName: localChannelNameFallback,
+    channelBanner: localChannelBannerFallback,
+    channelImage: localChannelImageFallback,
     warningCount: 0,
-    isFollowRestricted: false
+    isFollowRestricted: false,
+    loginMethod: 'google'
   };
 
   try {

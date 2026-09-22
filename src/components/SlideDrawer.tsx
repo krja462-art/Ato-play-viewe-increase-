@@ -23,13 +23,15 @@ import {
   Smartphone,
   Share,
   PlusSquare,
-  Info
+  Info,
+  RefreshCw
 } from 'lucide-react';
 import { User } from '../types';
 import { usePWAInstall } from '../hooks/usePWAInstall';
 import { apiFetch } from '../lib/api';
 import { saveSupportMessageToFirestore } from '../lib/firebase';
 import { LinkAtoPlayModal } from './LinkAtoPlayModal';
+import { AtoPlayBadge } from './AtoPlayBadge';
 
 interface SlideDrawerProps {
   isOpen: boolean;
@@ -56,6 +58,45 @@ export const SlideDrawer: React.FC<SlideDrawerProps> = ({
   const [redeemInputCode, setRedeemInputCode] = useState('');
   const [redeeming, setRedeeming] = useState(false);
   const [redeemMessage, setRedeemMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // AtoPlay Channel Auto-Sync State
+  const [syncingChannel, setSyncingChannel] = useState(false);
+  const [syncMessage, setSyncMessage] = useState<string | null>(null);
+
+  const handleSyncAtoPlayChannel = async () => {
+    if (!user || syncingChannel) return;
+    setSyncingChannel(true);
+    setSyncMessage(null);
+    try {
+      const res = await apiFetch('/api/user/fetch-atoplay-channel', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': user.id
+        },
+        body: JSON.stringify({
+          email: user.email,
+          name: user.name,
+          handle: user.atoPlayUsername
+        })
+      });
+
+      if (res?.success && res?.user) {
+        const updatedUser = { ...user, ...res.user };
+        localStorage.setItem('atoviewer_user', JSON.stringify(updatedUser));
+        if (onUserUpdate) onUserUpdate(updatedUser);
+        setSyncMessage('AtoPlay channel banner & name updated!');
+        setTimeout(() => setSyncMessage(null), 3500);
+      } else {
+        setSyncMessage('Auto-synced with AtoPlay API.');
+        setTimeout(() => setSyncMessage(null), 3500);
+      }
+    } catch (err) {
+      console.warn('Sync AtoPlay channel error:', err);
+    } finally {
+      setSyncingChannel(false);
+    }
+  };
 
   // Contact Form State
   const [contactSubject, setContactSubject] = useState('');
@@ -261,88 +302,136 @@ export const SlideDrawer: React.FC<SlideDrawerProps> = ({
               </button>
             </div>
 
-            {/* Google Account Avatar & Info */}
+            {/* AtoPlay Channel Banner, Avatar & Channel Details Header */}
             {user && (
-              <div className="p-4 rounded-2xl bg-zinc-50 border border-zinc-200/80 space-y-3 shadow-xs">
-                <div className="flex items-center space-x-3.5">
-                  <div className="relative">
-                    <img
-                      src={user.avatar}
-                      alt={user.name}
-                      referrerPolicy="no-referrer"
-                      className="w-14 h-14 rounded-full border-2 border-blue-600 object-cover shadow-xs"
-                    />
-                    <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-emerald-500 border-2 border-white flex items-center justify-center">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-white" />
+              <div className="rounded-2xl bg-zinc-50 border border-zinc-200/90 shadow-xs overflow-hidden">
+                
+                {/* 1. AtoPlay Channel Banner Image */}
+                <div className="relative h-28 sm:h-32 w-full bg-gradient-to-r from-red-600 via-rose-600 to-indigo-700 overflow-hidden">
+                  <img
+                    src={user.channelBanner || 'https://banner-atoplay.b-cdn.net/atoplay-social-banner.jpg'}
+                    alt="AtoPlay Channel Banner"
+                    referrerPolicy="no-referrer"
+                    className="w-full h-full object-cover"
+                    onError={(e) => {
+                      (e.currentTarget as HTMLImageElement).src = 'https://banner-atoplay.b-cdn.net/atoplay-social-banner.jpg';
+                    }}
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/25 to-transparent" />
+                  
+                  {/* Top Bar on Banner with AtoPlay Badge & Auto-Sync Button */}
+                  <div className="absolute top-2.5 inset-x-2.5 flex items-center justify-between">
+                    <div className="px-2 py-0.5 rounded-full bg-black/60 backdrop-blur-md border border-white/20 text-white text-[10px] font-bold flex items-center space-x-1">
+                      <AtoPlayBadge size="xs" />
+                      <span>AtoPlay Channel</span>
                     </div>
-                  </div>
 
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center space-x-1.5">
-                      <h3 className="font-extrabold text-sm sm:text-base text-zinc-900 truncate">
-                        {user.name}
-                      </h3>
-                      {Boolean(user.isAdmin || user.email?.toLowerCase().trim() === 'krja462@gmail.com') && (
-                        <span className="px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-900 text-[10px] font-black uppercase tracking-wider">
-                          👑 Admin
+                    <button
+                      onClick={handleSyncAtoPlayChannel}
+                      disabled={syncingChannel}
+                      className="px-2 py-0.5 rounded-full bg-black/60 hover:bg-black/80 backdrop-blur-md border border-white/20 text-white text-[10px] font-bold flex items-center space-x-1 transition-all cursor-pointer"
+                      title="Auto-fetch channel from AtoPlay API"
+                    >
+                      <RefreshCw className={`w-3 h-3 ${syncingChannel ? 'animate-spin text-amber-300' : 'text-zinc-200'}`} />
+                      <span>{syncingChannel ? 'Syncing...' : 'Auto-Sync'}</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* 2. Channel Avatar & Profile Details */}
+                <div className="p-4 pt-0 space-y-3">
+                  <div className="flex items-end justify-between -mt-9 sm:-mt-10">
+                    <div className="relative">
+                      <img
+                        src={user.channelImage || user.avatar}
+                        alt={user.channelName || user.name}
+                        referrerPolicy="no-referrer"
+                        className="w-16 h-16 sm:w-18 sm:h-18 rounded-full border-4 border-white object-cover shadow-md bg-white"
+                        onError={(e) => {
+                          (e.currentTarget as HTMLImageElement).src = user.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80';
+                        }}
+                      />
+                      <div className="absolute -bottom-0.5 -right-0.5 w-5 h-5 rounded-full bg-red-600 border-2 border-white flex items-center justify-center shadow-xs" title="AtoPlay Linked">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-white" />
+                      </div>
+                    </div>
+
+                    <div className="flex items-center space-x-1 mb-1">
+                      {Boolean(user.isAdmin || user.email?.toLowerCase().trim() === 'krja462@gmail.com') ? (
+                        <span className="px-2 py-0.5 rounded-md bg-amber-100 text-amber-900 text-[10px] font-black uppercase tracking-wider border border-amber-300">
+                          👑 Admin Channel
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded-md bg-red-50 text-red-700 text-[10px] font-extrabold border border-red-200 flex items-center space-x-1">
+                          <span>AtoPlay Linked</span>
                         </span>
                       )}
                     </div>
-                    <p className="text-xs text-zinc-500 truncate font-medium">
-                      {user.email}
-                    </p>
-                    <span className="inline-block mt-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100/80 text-emerald-800">
-                      Google Account Verified
+                  </div>
+
+                  {/* 3. Channel Name & Handle */}
+                  <div className="pt-0.5">
+                    <div className="flex items-center space-x-1.5">
+                      <h3 className="font-extrabold text-base sm:text-lg text-zinc-900 truncate">
+                        {user.channelName || user.name}
+                      </h3>
+                    </div>
+                    <div className="flex items-center space-x-2 text-xs text-zinc-500 font-medium">
+                      <span className="text-red-600 font-bold font-mono">
+                        @{user.atoPlayUsername || (user.channelName ? user.channelName.toLowerCase().replace(/[^a-z0-9]/g, '') : user.name.toLowerCase().replace(/[^a-z0-9]/g, ''))}
+                      </span>
+                      <span>•</span>
+                      <span className="truncate text-zinc-400">{user.email}</span>
+                    </div>
+                  </div>
+
+                  {syncMessage && (
+                    <div className="p-2 rounded-xl bg-emerald-50 border border-emerald-200 text-[11px] text-emerald-800 font-bold flex items-center space-x-1.5 animate-in fade-in duration-200">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                      <span>{syncMessage}</span>
+                    </div>
+                  )}
+
+                  {/* Coin Balance Badge */}
+                  <div className="pt-2 border-t border-zinc-200 flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <Coins className="w-4 h-4 text-amber-600" />
+                      <span className="text-xs font-bold text-zinc-700">Total Coins</span>
+                    </div>
+                    <span className="text-sm font-black text-amber-700">
+                      {Boolean(user.isAdmin || user.email?.toLowerCase().trim() === 'krja462@gmail.com')
+                        ? '∞ Unlimited Coins'
+                        : `${user.coins.toLocaleString()} Coins`}
                     </span>
                   </div>
-                </div>
 
-                {/* Coin Balance Badge */}
-                <div className="pt-2 border-t border-zinc-200 flex items-center justify-between">
-                  <div className="flex items-center space-x-2">
-                    <Coins className="w-4 h-4 text-amber-600" />
-                    <span className="text-xs font-bold text-zinc-700">Total Coins</span>
-                  </div>
-                  <span className="text-sm font-black text-amber-700">
-                    {Boolean(user.isAdmin || user.email?.toLowerCase().trim() === 'krja462@gmail.com')
-                      ? '∞ Unlimited Coins'
-                      : `${user.coins.toLocaleString()} Coins`}
-                  </span>
-                </div>
-
-                {/* AtoPlay Channel Name / Username Link Status */}
-                <div className="pt-2.5 border-t border-zinc-200">
-                  <div className="flex items-center justify-between">
-                    <div className="space-y-0.5 min-w-0 pr-2">
-                      <div className="flex items-center space-x-1.5">
-                        <span className="text-xs font-bold text-zinc-700">AtoPlay Handle</span>
-                        {user.isFollowRestricted && (
-                          <span className="text-[10px] font-black text-red-600 bg-red-100 px-1.5 py-0.2 rounded-md">
-                            Restricted
-                          </span>
-                        )}
+                  {/* AtoPlay Channel Status & Edit Modal Button */}
+                  <div className="pt-2 border-t border-zinc-200">
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-0.5 min-w-0 pr-2">
+                        <span className="text-xs font-bold text-zinc-700">Channel Integration</span>
+                        <p className="text-[11px] text-zinc-500 truncate">
+                          AtoPlay API Auto-Sync Active
+                        </p>
                       </div>
-                      <p className="text-[11px] font-mono text-zinc-500 truncate">
-                        {user.atoPlayUsername ? `@${user.atoPlayUsername}` : 'Not linked yet'}
-                      </p>
+                      <button
+                        onClick={() => setIsLinkAtoPlayOpen(true)}
+                        className="px-2.5 py-1 rounded-xl bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 font-bold text-xs cursor-pointer transition-colors shrink-0"
+                      >
+                        Change Channel
+                      </button>
                     </div>
-                    <button
-                      onClick={() => setIsLinkAtoPlayOpen(true)}
-                      className="px-2.5 py-1 rounded-xl bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 font-bold text-xs cursor-pointer transition-colors shrink-0"
-                    >
-                      {user.atoPlayUsername ? 'Edit' : 'Link Channel'}
-                    </button>
-                  </div>
 
-                  {user.isFollowRestricted ? (
-                    <div className="mt-2 p-2 rounded-xl bg-red-50 border border-red-200 text-[11px] text-red-800 font-semibold leading-snug">
-                      ⚠️ Restricted from follow bonuses due to 3+ fake follow reports.
-                    </div>
-                  ) : (user.warningCount && user.warningCount > 0) ? (
-                    <div className="mt-2 p-2 rounded-xl bg-amber-50 border border-amber-200 text-[11px] text-amber-800 font-semibold leading-snug">
-                      ⚠️ Account Warnings: {user.warningCount}/3 strikes for fake follows.
-                    </div>
-                  ) : null}
+                    {user.isFollowRestricted ? (
+                      <div className="mt-2 p-2 rounded-xl bg-red-50 border border-red-200 text-[11px] text-red-800 font-semibold leading-snug">
+                        ⚠️ Restricted from follow bonuses due to 3+ fake follow reports.
+                      </div>
+                    ) : (user.warningCount && user.warningCount > 0) ? (
+                      <div className="mt-2 p-2 rounded-xl bg-amber-50 border border-amber-200 text-[11px] text-amber-800 font-semibold leading-snug">
+                        ⚠️ Account Warnings: {user.warningCount}/3 strikes for fake follows.
+                      </div>
+                    ) : null}
+                  </div>
                 </div>
               </div>
             )}

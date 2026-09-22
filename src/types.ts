@@ -14,6 +14,9 @@ export interface User {
   isAdmin?: boolean;
   isBlocked?: boolean;
   atoPlayUsername?: string;
+  channelName?: string;
+  channelBanner?: string;
+  channelImage?: string;
   warningCount?: number;
   isFollowRestricted?: boolean;
   loginMethod?: 'google' | 'atoplay';
