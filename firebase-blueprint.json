@@ -12,7 +12,10 @@
         "coins": { "type": "number", "description": "Current coins balance" },
         "streak": { "type": "number", "description": "Consecutive check-in streak" },
         "lastCheckIn": { "type": "string", "description": "ISO date of last check-in" },
-        "createdAt": { "type": "string", "description": "Account creation timestamp" }
+        "createdAt": { "type": "string", "description": "Account creation timestamp" },
+        "atoPlayUsername": { "type": "string", "description": "User AtoPlay channel name or username" },
+        "warningCount": { "type": "number", "description": "Number of confirmed fake follow reports" },
+        "isFollowRestricted": { "type": "boolean", "description": "Whether user is restricted from follow bonuses" }
       },
       "required": ["id", "email", "coins"]
     },
@@ -69,6 +72,23 @@
         "createdAt": { "type": "string", "description": "Timestamp when message was submitted" }
       },
       "required": ["userId", "targetEmail", "message", "createdAt"]
+    },
+    "FollowLog": {
+      "title": "FollowLog",
+      "description": "Log of users claiming follow bonus rewards on creator channels",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique log ID" },
+        "campaignId": { "type": "string", "description": "ID of the target campaign" },
+        "creatorId": { "type": "string", "description": "UID of the campaign creator" },
+        "followerUserId": { "type": "string", "description": "UID of the user who followed" },
+        "followerUsername": { "type": "string", "description": "User AtoPlay username" },
+        "timestamp": { "type": "string", "description": "Action timestamp" },
+        "status": { "type": "string", "enum": ["active", "reported"], "description": "Log status" },
+        "campaignTitle": { "type": "string", "description": "Campaign title" },
+        "reportedAt": { "type": "string", "description": "Timestamp when reported as fake" }
+      },
+      "required": ["id", "campaignId", "creatorId", "followerUserId", "followerUsername", "timestamp", "status"]
     }
   },
   "firestore": {
@@ -79,6 +99,10 @@
     "/campaigns/{campaignId}": {
       "schema": "Campaign",
       "description": "Stores active and completed video campaigns"
+    },
+    "/follow_logs/{logId}": {
+      "schema": "FollowLog",
+      "description": "Logs of claimed follow rewards for creator transparency and fake follow reporting"
     },
     "/support_messages/{messageId}": {
       "schema": "SupportMessage",

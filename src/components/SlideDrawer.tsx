@@ -29,6 +29,7 @@ import { User } from '../types';
 import { usePWAInstall } from '../hooks/usePWAInstall';
 import { apiFetch } from '../lib/api';
 import { saveSupportMessageToFirestore } from '../lib/firebase';
+import { LinkAtoPlayModal } from './LinkAtoPlayModal';
 
 interface SlideDrawerProps {
   isOpen: boolean;
@@ -46,6 +47,7 @@ export const SlideDrawer: React.FC<SlideDrawerProps> = ({
   onUserUpdate
 }) => {
   const [activeModal, setActiveModal] = useState<'privacy' | 'terms' | 'contact' | 'referral' | 'ios_install' | 'apk_bundle' | null>(null);
+  const [isLinkAtoPlayOpen, setIsLinkAtoPlayOpen] = useState(false);
   const { isInstallable, isInstalled, isIOS, install } = usePWAInstall();
 
   // Referral State
@@ -306,6 +308,41 @@ export const SlideDrawer: React.FC<SlideDrawerProps> = ({
                       ? '∞ Unlimited Coins'
                       : `${user.coins.toLocaleString()} Coins`}
                   </span>
+                </div>
+
+                {/* AtoPlay Channel Name / Username Link Status */}
+                <div className="pt-2.5 border-t border-zinc-200">
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-0.5 min-w-0 pr-2">
+                      <div className="flex items-center space-x-1.5">
+                        <span className="text-xs font-bold text-zinc-700">AtoPlay Handle</span>
+                        {user.isFollowRestricted && (
+                          <span className="text-[10px] font-black text-red-600 bg-red-100 px-1.5 py-0.2 rounded-md">
+                            Restricted
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] font-mono text-zinc-500 truncate">
+                        {user.atoPlayUsername ? `@${user.atoPlayUsername}` : 'Not linked yet'}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => setIsLinkAtoPlayOpen(true)}
+                      className="px-2.5 py-1 rounded-xl bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 font-bold text-xs cursor-pointer transition-colors shrink-0"
+                    >
+                      {user.atoPlayUsername ? 'Edit' : 'Link Channel'}
+                    </button>
+                  </div>
+
+                  {user.isFollowRestricted ? (
+                    <div className="mt-2 p-2 rounded-xl bg-red-50 border border-red-200 text-[11px] text-red-800 font-semibold leading-snug">
+                      ⚠️ Restricted from follow bonuses due to 3+ fake follow reports.
+                    </div>
+                  ) : (user.warningCount && user.warningCount > 0) ? (
+                    <div className="mt-2 p-2 rounded-xl bg-amber-50 border border-amber-200 text-[11px] text-amber-800 font-semibold leading-snug">
+                      ⚠️ Account Warnings: {user.warningCount}/3 strikes for fake follows.
+                    </div>
+                  ) : null}
                 </div>
               </div>
             )}
@@ -1093,6 +1130,18 @@ export const SlideDrawer: React.FC<SlideDrawerProps> = ({
 
           </div>
         </div>
+      )}
+
+      {/* Link AtoPlay Channel Name Modal */}
+      {user && isLinkAtoPlayOpen && (
+        <LinkAtoPlayModal
+          isOpen={isLinkAtoPlayOpen}
+          onClose={() => setIsLinkAtoPlayOpen(false)}
+          user={user}
+          onSuccess={(updated) => {
+            if (onUserUpdate) onUserUpdate(updated);
+          }}
+        />
       )}
     </>
   );

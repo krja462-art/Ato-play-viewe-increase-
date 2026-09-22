@@ -9,11 +9,14 @@ import {
   X, 
   Sparkles, 
   ShieldCheck, 
-  Radio
+  Radio,
+  UserCheck
 } from 'lucide-react';
-import { Campaign, format4CharId, User } from '../types';
+import { Campaign, format4CharId, User, FollowLog } from '../types';
 import { playCoinCelebrationSound } from '../utils/audio';
 import { AtoPlayBadge } from './AtoPlayBadge';
+import { LinkAtoPlayModal } from './LinkAtoPlayModal';
+import { saveFollowLogToFirestore } from '../lib/firebase';
 
 interface FollowChannelModalProps {
   isOpen: boolean;
@@ -44,6 +47,7 @@ export const FollowChannelModal: React.FC<FollowChannelModalProps> = ({
   const [statusType, setStatusType] = useState<'info' | 'success' | 'warning' | 'error'>('info');
   const [alreadyFollowed, setAlreadyFollowed] = useState(false);
   const [verifiedSuccess, setVerifiedSuccess] = useState(false);
+  const [isLinkModalOpen, setIsLinkModalOpen] = useState(false);
 
   // Initialize and fetch baseline follower count from AtoPlay API when modal opens
   useEffect(() => {
@@ -135,6 +139,18 @@ export const FollowChannelModal: React.FC<FollowChannelModalProps> = ({
   // Step 2: Verify Follow with AtoPlay API ("ager user ek bhi follow badhe to coin mile")
   const handleVerifyFollow = async (simulateBump: boolean = false) => {
     if (!campaign) return;
+
+    if (user?.isFollowRestricted) {
+      setStatusMessage('Aapka account 3 fake follow reports ki wajah se follow bonus ke liye restricted hai.');
+      setStatusType('error');
+      return;
+    }
+
+    if (!user?.atoPlayUsername) {
+      setIsLinkModalOpen(true);
+      return;
+    }
+
     setVerifying(true);
     setStatusMessage('AtoPlay API se live check ho raha hai: Kya follower badha...?');
     setStatusType('info');
@@ -146,6 +162,7 @@ export const FollowChannelModal: React.FC<FollowChannelModalProps> = ({
         body: JSON.stringify({ 
           campaignId: campaign.id,
           countBefore,
+          followerUsername: user.atoPlayUsername,
           simulateBump
         })
       });
@@ -156,6 +173,19 @@ export const FollowChannelModal: React.FC<FollowChannelModalProps> = ({
         setStatusMessage(data.message || `AtoPlay Verified! Followers ${data.countBefore} ➔ ${data.countAfter} (+1 Follower). +30 Coins credited!`);
         setStatusType('success');
         playCoinCelebrationSound();
+
+        // Save Follow Log to Cloud Firestore
+        const logToSave: FollowLog = data.followLog || {
+          id: `flog_${Date.now()}_${user.id.slice(-4)}`,
+          campaignId: campaign.id,
+          creatorId: campaign.userId,
+          followerUserId: user.id,
+          followerUsername: user.atoPlayUsername,
+          timestamp: new Date().toISOString(),
+          status: 'active',
+          campaignTitle: campaign.title
+        };
+        saveFollowLogToFirestore(logToSave).catch(err => console.warn('Follow log firestore err:', err));
 
         if (data.user) {
           onFollowSuccess(campaign.id, data.earnedCoins || 30, data.user);
@@ -346,23 +376,43 @@ export const FollowChannelModal: React.FC<FollowChannelModalProps> = ({
             </button>
 
             {/* Step 2 Button: Verify Follow */}
-            <button
-              onClick={() => handleVerifyFollow(false)}
-              disabled={verifying || loadingInitial}
-              className="w-full py-3.5 px-5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-black text-xs sm:text-sm shadow-lg shadow-emerald-600/25 transition-all hover:scale-101 active:scale-98 cursor-pointer flex items-center justify-center space-x-2"
-            >
-              {verifying ? (
-                <>
-                  <RefreshCw className="w-4 h-4 animate-spin" />
-                  <span>AtoPlay API Check Ho Raha Hai...</span>
-                </>
-              ) : (
-                <>
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>2. Verify Follow Karein (+30 Coins Claim)</span>
-                </>
-              )}
-            </button>
+            {!user.atoPlayUsername ? (
+              <div className="p-3 bg-amber-50 rounded-2xl border border-amber-300 space-y-2 text-left">
+                <p className="text-xs text-amber-900 font-semibold leading-relaxed">
+                  ⚠️ <strong>AtoPlay Username Not Linked:</strong> Please link your exact AtoPlay username first to claim follow bonus coins.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setIsLinkModalOpen(true)}
+                  className="w-full py-2.5 px-4 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs flex items-center justify-center space-x-1.5 cursor-pointer shadow-sm transition-colors"
+                >
+                  <UserCheck className="w-4 h-4" />
+                  <span>Link AtoPlay Username Now</span>
+                </button>
+              </div>
+            ) : user.isFollowRestricted ? (
+              <div className="p-3 bg-red-50 rounded-2xl border border-red-300 text-red-900 text-xs font-semibold">
+                ⚠️ Account Restricted: Aapka account follow bonus ke liye restricted hai (3 fake follow strikes).
+              </div>
+            ) : (
+              <button
+                onClick={() => handleVerifyFollow(false)}
+                disabled={verifying || loadingInitial}
+                className="w-full py-3.5 px-5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-black text-xs sm:text-sm shadow-lg shadow-emerald-600/25 transition-all hover:scale-101 active:scale-98 cursor-pointer flex items-center justify-center space-x-2"
+              >
+                {verifying ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    <span>AtoPlay API Check Ho Raha Hai...</span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>2. Verify Follow Karein (+30 Coins Claim)</span>
+                  </>
+                )}
+              </button>
+            )}
 
             {/* Test Simulation Helper if AtoPlay API cache delays */}
             {hasOpenedLink && !verifiedSuccess && (
@@ -415,6 +465,18 @@ export const FollowChannelModal: React.FC<FollowChannelModalProps> = ({
         )}
 
       </div>
+
+      {/* Link AtoPlay Username Modal */}
+      {user && isLinkModalOpen && (
+        <LinkAtoPlayModal
+          isOpen={isLinkModalOpen}
+          onClose={() => setIsLinkModalOpen(false)}
+          user={user}
+          onSuccess={(updated) => {
+            onFollowSuccess(campaign.id, 0, updated);
+          }}
+        />
+      )}
     </div>
   );
 };

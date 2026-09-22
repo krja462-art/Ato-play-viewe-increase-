@@ -23,10 +23,11 @@ import {
   getDocs,
   query,
   limit,
-  onSnapshot
+  onSnapshot,
+  where
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
-import { User, Campaign } from '../types';
+import { User, Campaign, FollowLog } from '../types';
 import { cleanVideoUrl } from './videoExtractor';
 
 // Initialize Firebase App
@@ -109,12 +110,14 @@ export const syncFirebaseUserWithFirestore = async (fbUser: FirebaseUser, pendin
     
     // Check if client had higher local coins before refresh
     let localSavedCoins: number | null = null;
+    let localAtoPlayUsername: string | null = null;
     try {
       const raw = localStorage.getItem('atoviewer_user');
       if (raw) {
         const p = JSON.parse(raw);
-        if (p && p.id === fbUser.uid && typeof p.coins === 'number') {
-          localSavedCoins = p.coins;
+        if (p && p.id === fbUser.uid) {
+          if (typeof p.coins === 'number') localSavedCoins = p.coins;
+          if (p.atoPlayUsername) localAtoPlayUsername = p.atoPlayUsername;
         }
       }
     } catch {}
@@ -139,14 +142,20 @@ export const syncFirebaseUserWithFirestore = async (fbUser: FirebaseUser, pendin
         referralsCount: typeof data.referralsCount === 'number' ? data.referralsCount : 0,
         referralEarnings: typeof data.referralEarnings === 'number' ? data.referralEarnings : 0,
         referredBy: data.referredBy,
-        isAdmin: isAdmin ? true : Boolean(data.isAdmin)
+        isAdmin: isAdmin ? true : Boolean(data.isAdmin),
+        atoPlayUsername: data.atoPlayUsername || localAtoPlayUsername || '',
+        warningCount: typeof data.warningCount === 'number' ? data.warningCount : 0,
+        isFollowRestricted: Boolean(data.isFollowRestricted)
       };
 
       setDoc(userRef, {
         name: existingUser.name,
         avatar: existingUser.avatar,
         coins: finalCoins,
-        isAdmin: isAdmin ? true : Boolean(data.isAdmin)
+        isAdmin: isAdmin ? true : Boolean(data.isAdmin),
+        atoPlayUsername: existingUser.atoPlayUsername,
+        warningCount: existingUser.warningCount,
+        isFollowRestricted: existingUser.isFollowRestricted
       }, { merge: true }).catch(() => {});
 
       return existingUser;
@@ -156,12 +165,14 @@ export const syncFirebaseUserWithFirestore = async (fbUser: FirebaseUser, pendin
   }
 
   let localInitialCoins = pendingReferralCode ? 350 : 100;
+  let localAtoPlayUsernameFallback = '';
   try {
     const raw = localStorage.getItem('atoviewer_user');
     if (raw) {
       const p = JSON.parse(raw);
-      if (p && p.id === fbUser.uid && typeof p.coins === 'number') {
-        localInitialCoins = Math.max(localInitialCoins, p.coins);
+      if (p && p.id === fbUser.uid) {
+        if (typeof p.coins === 'number') localInitialCoins = Math.max(localInitialCoins, p.coins);
+        if (p.atoPlayUsername) localAtoPlayUsernameFallback = p.atoPlayUsername;
       }
     }
   } catch {}
@@ -179,7 +190,10 @@ export const syncFirebaseUserWithFirestore = async (fbUser: FirebaseUser, pendin
     referralsCount: 0,
     referralEarnings: 0,
     referredBy: pendingReferralCode || undefined,
-    isAdmin: isAdmin ? true : undefined
+    isAdmin: isAdmin ? true : undefined,
+    atoPlayUsername: localAtoPlayUsernameFallback,
+    warningCount: 0,
+    isFollowRestricted: false
   };
 
   try {
@@ -584,6 +598,120 @@ export const blockFirestoreUser = async (userId: string, isBlocked: boolean): Pr
     await setDoc(userRef, { isBlocked, updatedAt: new Date().toISOString() }, { merge: true });
   } catch (err) {
     console.warn('Error blocking user in Firestore:', err);
+  }
+};
+
+/**
+ * Save AtoPlay Channel Name / Username to User Profile in Firestore
+ */
+export const saveUserAtoPlayUsernameToFirestore = async (userId: string, atoPlayUsername: string): Promise<void> => {
+  try {
+    const userRef = doc(db, 'users', userId);
+    await setDoc(userRef, { 
+      atoPlayUsername: atoPlayUsername.trim(), 
+      updatedAt: new Date().toISOString() 
+    }, { merge: true });
+  } catch (err) {
+    console.warn('Error saving AtoPlay username in Firestore:', err);
+  }
+};
+
+/**
+ * Save Follow Log to Firestore /follow_logs/{logId}
+ */
+export const saveFollowLogToFirestore = async (log: FollowLog): Promise<void> => {
+  try {
+    const logRef = doc(db, 'follow_logs', log.id);
+    await setDoc(logRef, log, { merge: true });
+  } catch (err) {
+    console.warn('Error saving follow log to Firestore:', err);
+  }
+};
+
+/**
+ * Fetch all Follow Logs for a specific Campaign from Firestore
+ */
+export const getFollowLogsFromFirestore = async (campaignId: string): Promise<FollowLog[]> => {
+  try {
+    const logsRef = collection(db, 'follow_logs');
+    const q = query(logsRef, where('campaignId', '==', campaignId));
+    const snapshot = await getDocs(q);
+    const logs: FollowLog[] = [];
+    snapshot.forEach(docSnap => {
+      const data = docSnap.data();
+      logs.push({
+        id: docSnap.id,
+        campaignId: data.campaignId,
+        creatorId: data.creatorId,
+        followerUserId: data.followerUserId,
+        followerUsername: data.followerUsername || 'Unknown',
+        timestamp: data.timestamp || new Date().toISOString(),
+        status: (data.status as 'active' | 'reported') || 'active',
+        campaignTitle: data.campaignTitle,
+        reportedAt: data.reportedAt
+      });
+    });
+    // Sort newest first
+    return logs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  } catch (err) {
+    console.warn('Error fetching follow logs from Firestore:', err);
+    return [];
+  }
+};
+
+/**
+ * Report fake follow in Firestore:
+ * - Marks log as 'reported'
+ * - Increments warningCount for follower
+ * - If warningCount >= 3, sets isFollowRestricted = true and deducts 30 coins (minimum 0)
+ */
+export const reportFakeFollowInFirestore = async (
+  logId: string, 
+  followerUserId: string
+): Promise<{ warningCount: number; isRestricted: boolean }> => {
+  try {
+    // 1. Mark follow log as reported
+    const logRef = doc(db, 'follow_logs', logId);
+    await updateDoc(logRef, {
+      status: 'reported',
+      reportedAt: new Date().toISOString()
+    });
+
+    // 2. Fetch follower doc to check warnings and update
+    const followerRef = doc(db, 'users', followerUserId);
+    const followerSnap = await getDoc(followerRef);
+    let newWarningCount = 1;
+    let isRestricted = false;
+    let currentCoins = 0;
+
+    if (followerSnap.exists()) {
+      const fData = followerSnap.data();
+      const prevWarnings = typeof fData.warningCount === 'number' ? fData.warningCount : 0;
+      newWarningCount = prevWarnings + 1;
+      isRestricted = newWarningCount >= 3 || Boolean(fData.isFollowRestricted);
+      currentCoins = typeof fData.coins === 'number' ? fData.coins : 0;
+
+      // Deduct 30 coins for fake claim (clamped to 0)
+      const adjustedCoins = Math.max(0, currentCoins - 30);
+
+      await updateDoc(followerRef, {
+        warningCount: newWarningCount,
+        isFollowRestricted: isRestricted,
+        coins: adjustedCoins,
+        updatedAt: new Date().toISOString()
+      });
+    } else {
+      await setDoc(followerRef, {
+        warningCount: 1,
+        isFollowRestricted: false,
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+    }
+
+    return { warningCount: newWarningCount, isRestricted };
+  } catch (err) {
+    console.warn('Error reporting fake follow in Firestore:', err);
+    return { warningCount: 1, isRestricted: false };
   }
 };
 

@@ -38,9 +38,9 @@ const SCREENSHOTS: ScreenshotItem[] = [
     badge: 'Watch & Earn',
     badgeColor: 'bg-amber-500/20 text-amber-300 border-amber-400/30',
     icon: <Tv className="w-3.5 h-3.5 text-amber-300" />,
-    primaryUrl: encodeURI('/App image 1.png'),
+    primaryUrl: '/app-image-1.png',
     fallbackUrls: [
-      encodeURI('/App image 1.png '),
+      encodeURI('/App image 1.png'),
       '/App%20image%201.png',
       encodeURI('/App screenshots 1 .jpg'),
       '/Screenshot.png'
@@ -53,8 +53,9 @@ const SCREENSHOTS: ScreenshotItem[] = [
     badge: 'Channel Booster',
     badgeColor: 'bg-blue-500/20 text-blue-300 border-blue-400/30',
     icon: <Flame className="w-3.5 h-3.5 text-blue-300" />,
-    primaryUrl: encodeURI('/App image2.png'),
+    primaryUrl: '/app-image-2.png',
     fallbackUrls: [
+      encodeURI('/App image2.png'),
       encodeURI('/App image 2.png'),
       '/App%20image2.png',
       encodeURI('/App screenshots 2 .jpg'),
@@ -68,9 +69,9 @@ const SCREENSHOTS: ScreenshotItem[] = [
     badge: 'Free Daily Coins',
     badgeColor: 'bg-emerald-500/20 text-emerald-300 border-emerald-400/30',
     icon: <Coins className="w-3.5 h-3.5 text-emerald-300" />,
-    primaryUrl: encodeURI('/App image 3.png'),
+    primaryUrl: '/app-image-3.png',
     fallbackUrls: [
-      encodeURI('/App image 3.png '),
+      encodeURI('/App image 3.png'),
       '/App%20image%203.png',
       encodeURI('/App screenshots 3.jpg'),
       '/Screenshot.png'

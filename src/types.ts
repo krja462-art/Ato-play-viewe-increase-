@@ -13,6 +13,21 @@ export interface User {
   referredBy?: string;
   isAdmin?: boolean;
   isBlocked?: boolean;
+  atoPlayUsername?: string;
+  warningCount?: number;
+  isFollowRestricted?: boolean;
+}
+
+export interface FollowLog {
+  id: string;
+  campaignId: string;
+  creatorId: string;
+  followerUserId: string;
+  followerUsername: string;
+  timestamp: string;
+  status: 'active' | 'reported';
+  campaignTitle?: string;
+  reportedAt?: string;
 }
 
 export interface Campaign {

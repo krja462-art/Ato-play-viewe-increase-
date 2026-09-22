@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Campaign, User, format4CharId } from '../types';
-import { Plus, MoreVertical, Clock, Trash2, Coins, AlertCircle, Sparkles, X, Video, ExternalLink, Check, Search, ShieldCheck, Clipboard, Image as ImageIcon, CheckCircle2 } from 'lucide-react';
+import { Plus, MoreVertical, Clock, Trash2, Coins, AlertCircle, Sparkles, X, Video, ExternalLink, Check, Search, ShieldCheck, Clipboard, Image as ImageIcon, CheckCircle2, Users } from 'lucide-react';
 import { AtoPlayBadge } from './AtoPlayBadge';
+import { FollowersLogModal } from './FollowersLogModal';
 import { apiFetch, extractVideoMetadataClient, cleanVideoUrl } from '../lib/api';
 import { saveCampaignToFirestore, deleteCampaignInFirestore, saveUserCoinsToFirestore, getMyCampaignsFromFirestore } from '../lib/firebase';
 import confetti from 'canvas-confetti';
@@ -24,6 +25,7 @@ export const Campaigns: React.FC<CampaignsProps> = ({
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [selectedCampaignForLogs, setSelectedCampaignForLogs] = useState<Campaign | null>(null);
 
   useEffect(() => {
     if (isCreateModalOpen !== undefined) {
@@ -524,12 +526,28 @@ export const Campaigns: React.FC<CampaignsProps> = ({
                     </p>
                   )}
 
-                  <div className="flex items-center space-x-3 text-xs text-zinc-500 font-mono">
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-500 font-mono">
                     <span>ID: <span className="font-extrabold text-zinc-700">{format4CharId(camp.displayId, camp.id)}</span></span>
                     <span className="text-zinc-300">•</span>
                     <span className="text-emerald-700 font-sans font-bold bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
                       Reward: 60 Coins/view
                     </span>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedCampaignForLogs(camp);
+                      }}
+                      className="inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 font-sans font-bold text-xs border border-blue-200 transition-colors cursor-pointer"
+                      title="View all users who claimed follow rewards for this campaign"
+                    >
+                      <Users className="w-3.5 h-3.5 text-blue-600" />
+                      <span>Followers Log</span>
+                      {camp.followedUserIds && camp.followedUserIds.length > 0 && (
+                        <span className="bg-blue-600 text-white text-[10px] px-1.5 py-0.2 rounded-full font-sans">
+                          {camp.followedUserIds.length}
+                        </span>
+                      )}
+                    </button>
                   </div>
 
                   <div className="space-y-1 pt-1">
@@ -569,7 +587,17 @@ export const Campaigns: React.FC<CampaignsProps> = ({
                         onClick={() => setActiveMenuId(null)} 
                       />
 
-                      <div className="absolute right-0 top-11 w-44 bg-white rounded-2xl shadow-xl border border-zinc-200 py-1.5 z-30 animate-in fade-in zoom-in-95 duration-150">
+                      <div className="absolute right-0 top-11 w-48 bg-white rounded-2xl shadow-xl border border-zinc-200 py-1.5 z-30 animate-in fade-in zoom-in-95 duration-150">
+                        <button
+                          onClick={() => {
+                            setActiveMenuId(null);
+                            setSelectedCampaignForLogs(camp);
+                          }}
+                          className="w-full px-4 py-2.5 text-left text-xs text-zinc-700 hover:bg-zinc-50 flex items-center space-x-2.5 font-bold cursor-pointer transition-colors border-b border-zinc-100"
+                        >
+                          <Users className="w-4 h-4 text-blue-600 shrink-0" />
+                          <span>View Followers Log</span>
+                        </button>
                         <button
                           onClick={() => {
                             setActiveMenuId(null);
@@ -912,6 +940,16 @@ export const Campaigns: React.FC<CampaignsProps> = ({
 
           </div>
         </div>
+      )}
+
+      {/* Followers Verification & Anti-Fraud Log Modal */}
+      {selectedCampaignForLogs && (
+        <FollowersLogModal
+          isOpen={Boolean(selectedCampaignForLogs)}
+          onClose={() => setSelectedCampaignForLogs(null)}
+          campaign={selectedCampaignForLogs}
+          user={user}
+        />
       )}
 
     </div>

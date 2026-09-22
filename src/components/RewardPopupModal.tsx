@@ -11,13 +11,15 @@ import {
   ExternalLink, 
   AlertCircle, 
   UserPlus, 
-  RefreshCw 
+  RefreshCw,
+  UserCheck
 } from 'lucide-react';
-import { Campaign, User, format4CharId } from '../types';
+import { Campaign, User, format4CharId, FollowLog } from '../types';
 import { playCoinCelebrationSound } from '../utils/audio';
 import { apiFetch } from '../lib/api';
-import { saveUserCoinsToFirestore } from '../lib/firebase';
+import { saveUserCoinsToFirestore, saveFollowLogToFirestore } from '../lib/firebase';
 import confetti from 'canvas-confetti';
+import { LinkAtoPlayModal } from './LinkAtoPlayModal';
 
 interface RewardPopupModalProps {
   isOpen: boolean;
@@ -63,6 +65,7 @@ export const RewardPopupModal: React.FC<RewardPopupModalProps> = ({
   const [followersBefore, setFollowersBefore] = useState<number | undefined>(countBefore);
   const [followersAfter, setFollowersAfter] = useState<number | undefined>(countAfter);
   const [verifying, setVerifying] = useState<boolean>(false);
+  const [isLinkModalOpen, setIsLinkModalOpen] = useState<boolean>(false);
   const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
   const [feedbackType, setFeedbackType] = useState<'success' | 'error' | null>(null);
 
@@ -104,6 +107,18 @@ export const RewardPopupModal: React.FC<RewardPopupModalProps> = ({
   // Live follow verification method
   const handleVerifyFollow = async (simulateBump = false) => {
     if (verifying || !campaign) return;
+
+    if (user?.isFollowRestricted) {
+      setFeedbackType('error');
+      setFeedbackMessage('Your account is restricted from claiming follow bonuses due to confirmed fake follow reports.');
+      return;
+    }
+
+    if (!user?.atoPlayUsername) {
+      setIsLinkModalOpen(true);
+      return;
+    }
+
     setVerifying(true);
     setFeedbackMessage(null);
     setFeedbackType(null);
@@ -126,6 +141,7 @@ export const RewardPopupModal: React.FC<RewardPopupModalProps> = ({
           countBefore: baseline,
           videoUrl: campaign.videoUrl,
           channelName: campaign.channelName || campaign.userName,
+          followerUsername: user.atoPlayUsername,
           simulateBump
         })
       });
@@ -147,6 +163,19 @@ export const RewardPopupModal: React.FC<RewardPopupModalProps> = ({
           res.message || 
           `Follower Verified! Creator ke followers badhkar ${res.countAfter} ho gaye (+1 Follower). +30 Coins aapke wallet mein auto-credit ho gaye hain!`
         );
+
+        // Save Follow Log to Cloud Firestore
+        const logToSave: FollowLog = res.followLog || {
+          id: `flog_${Date.now()}_${user.id.slice(-4)}`,
+          campaignId: cId,
+          creatorId: campaign.userId,
+          followerUserId: user.id,
+          followerUsername: user.atoPlayUsername,
+          timestamp: new Date().toISOString(),
+          status: 'active',
+          campaignTitle: campaign.title
+        };
+        saveFollowLogToFirestore(logToSave).catch(err => console.warn('Follow log firestore err:', err));
 
         playCoinCelebrationSound();
         try {
@@ -291,11 +320,35 @@ export const RewardPopupModal: React.FC<RewardPopupModalProps> = ({
                       <CheckCircle2 className="w-3.5 h-3.5" />
                       <span>+{bonusAmount} Coins</span>
                     </div>
+                  ) : user?.isFollowRestricted ? (
+                    <div className="mt-1 p-1.5 rounded-lg bg-red-100 border border-red-200 text-[10px] text-red-800 font-bold leading-tight">
+                      Restricted: Follow bonuses disabled due to 3 fake reports.
+                    </div>
+                  ) : !user?.atoPlayUsername ? (
+                    <div className="space-y-1.5 mt-1">
+                      <div className="text-[10px] text-amber-800 font-semibold leading-tight">
+                        Link your AtoPlay handle first:
+                      </div>
+                      <button
+                        id="link-atoplay-username-reward-btn"
+                        type="button"
+                        onClick={() => setIsLinkModalOpen(true)}
+                        className="w-full py-1.5 px-2 rounded-lg bg-amber-600 hover:bg-amber-700 active:scale-95 text-white font-extrabold text-[11px] shadow-sm flex items-center justify-center space-x-1 transition-all cursor-pointer"
+                      >
+                        <UserCheck className="w-3.5 h-3.5" />
+                        <span>Link AtoPlay Username</span>
+                      </button>
+                    </div>
                   ) : (
                     <div className="space-y-1.5">
-                      <div className="text-xs font-bold text-amber-700 flex items-center space-x-1">
-                        <UserPlus className="w-3.5 h-3.5" />
-                        <span>Pending Follow</span>
+                      <div className="text-xs font-bold text-amber-700 flex items-center justify-between">
+                        <span className="flex items-center space-x-1">
+                          <UserPlus className="w-3.5 h-3.5" />
+                          <span>Pending Follow</span>
+                        </span>
+                        <span className="font-mono text-[10px] text-amber-900 truncate max-w-[120px]">
+                          @{user.atoPlayUsername}
+                        </span>
                       </div>
                       {/* User's requested Verify button */}
                       <button
@@ -473,6 +526,18 @@ export const RewardPopupModal: React.FC<RewardPopupModalProps> = ({
         </div>
 
       </div>
+
+      {/* Link AtoPlay Username Modal */}
+      {user && isLinkModalOpen && (
+        <LinkAtoPlayModal
+          isOpen={isLinkModalOpen}
+          onClose={() => setIsLinkModalOpen(false)}
+          user={user}
+          onSuccess={(updated) => {
+            if (onCoinEarned) onCoinEarned(updated);
+          }}
+        />
+      )}
     </div>
   );
 };

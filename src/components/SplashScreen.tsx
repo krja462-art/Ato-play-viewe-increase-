@@ -8,7 +8,9 @@ import {
   Plus,
   X,
   Download,
-  Smartphone
+  Smartphone,
+  Maximize2,
+  Eye
 } from 'lucide-react';
 import { User } from '../types';
 import { 
@@ -25,6 +27,7 @@ interface SplashScreenProps {
 export const SplashScreen: React.FC<SplashScreenProps> = ({ onLoginSuccess, onOpenInstallScreen }) => {
   const [googleLoading, setGoogleLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
   
   // Google Account Chooser Modal (appears if domain is unauthorized on Vercel or popup blocked)
   const [showGoogleChooser, setShowGoogleChooser] = useState(false);
@@ -269,86 +272,161 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onLoginSuccess, onOp
 
       </div>
 
-      {/* App Screenshots & Install App Banner */}
-      {onOpenInstallScreen && (
-        <div className="w-full max-w-md bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl p-3.5 sm:p-4 shadow-xl flex items-center justify-between gap-3 text-white relative z-10 mb-4 transition-transform hover:scale-[1.01]">
-          <div 
-            onClick={onOpenInstallScreen}
-            className="flex items-center space-x-3 min-w-0 cursor-pointer"
-          >
-            {/* 3 Screenshot Micro-Previews Stack */}
-            <div className="flex -space-x-2 shrink-0">
-              <img
-                src={encodeURI('/App image 1.png')}
-                alt="Screen 1"
-                className="w-8 h-12 object-cover rounded-lg border-2 border-white/50 shadow-md transform -rotate-3"
-                onError={(e) => { 
-                  const target = e.target as HTMLImageElement;
-                  if (!target.src.includes('App%20screenshots')) {
-                    target.src = encodeURI('/App screenshots 1 .jpg');
-                  } else {
-                    target.src = '/Screenshot.png';
-                  }
-                }}
-              />
-              <img
-                src={encodeURI('/App image2.png')}
-                alt="Screen 2"
-                className="w-8 h-12 object-cover rounded-lg border-2 border-white/50 shadow-md z-1"
-                onError={(e) => { 
-                  const target = e.target as HTMLImageElement;
-                  if (!target.src.includes('App%20screenshots')) {
-                    target.src = encodeURI('/App screenshots 2 .jpg');
-                  } else {
-                    target.src = '/Screenshot.png';
-                  }
-                }}
-              />
-              <img
-                src={encodeURI('/App image 3.png')}
-                alt="Screen 3"
-                className="w-8 h-12 object-cover rounded-lg border-2 border-white/50 shadow-md transform rotate-3 z-2"
-                onError={(e) => { 
-                  const target = e.target as HTMLImageElement;
-                  if (!target.src.includes('App%20screenshots')) {
-                    target.src = encodeURI('/App screenshots 3.jpg');
-                  } else {
-                    target.src = '/Screenshot.png';
-                  }
-                }}
-              />
-            </div>
+      {/* App Screenshots Showcase (App image 1.png, App image2.png, App image 3.png) */}
+      <div className="w-full max-w-md bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl p-4 sm:p-5 shadow-2xl text-white relative z-10 mb-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-2">
+            <span className="font-extrabold text-sm text-white tracking-wide">
+              App Preview & Screenshots
+            </span>
+            <span className="text-[10px] px-2 py-0.5 bg-blue-500/40 text-blue-200 rounded-full font-bold uppercase">
+              Live App
+            </span>
+          </div>
+          {onOpenInstallScreen && (
+            <button
+              type="button"
+              onClick={onOpenInstallScreen}
+              className="text-xs text-blue-200 hover:text-white font-bold flex items-center space-x-1 cursor-pointer transition-colors"
+            >
+              <Download className="w-3.5 h-3.5 text-blue-300" />
+              <span>Install PWA</span>
+            </button>
+          )}
+        </div>
 
-            <div className="min-w-0">
-              <div className="flex items-center space-x-1.5">
-                <span className="font-black text-xs sm:text-sm text-white truncate">
-                  App Screenshots (3 Views)
-                </span>
-                <span className="text-[10px] px-1.5 py-0.2 bg-blue-500/40 text-blue-200 rounded-md font-bold">
-                  PWA
-                </span>
-              </div>
-              <p className="text-[11px] text-blue-100/80 truncate">
-                Preview app UI & install on home screen
-              </p>
+        {/* 3 Images Grid */}
+        <div className="grid grid-cols-3 gap-2.5">
+          {/* Image 1 */}
+          <div 
+            onClick={() => setPreviewImage(encodeURI('/App image 1.png'))}
+            className="group relative rounded-2xl overflow-hidden border border-white/20 bg-slate-900/60 aspect-[9/16] cursor-pointer hover:border-blue-400/80 transition-all hover:scale-102 shadow-lg"
+          >
+            <img
+              src="/app-image-1.png"
+              alt="Watch & Earn"
+              className="w-full h-full object-cover group-hover:opacity-95 transition-opacity"
+              onError={(e) => {
+                const target = e.target as HTMLImageElement;
+                if (!target.src.includes('App%20image')) {
+                  target.src = encodeURI('/App image 1.png');
+                }
+              }}
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-90 group-hover:opacity-100 transition-opacity" />
+            <div className="absolute bottom-1.5 inset-x-1 text-center">
+              <span className="text-[10px] sm:text-[11px] font-bold text-white leading-tight block truncate drop-shadow-md">
+                1. Watch & Earn
+              </span>
+            </div>
+            <div className="absolute top-1.5 right-1.5 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded-full bg-black/50 text-white">
+              <Maximize2 className="w-3 h-3" />
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={onOpenInstallScreen}
-            className="px-3.5 py-2 rounded-2xl bg-white text-blue-800 hover:bg-blue-50 active:scale-95 font-black text-xs shadow-md shrink-0 flex items-center space-x-1.5 transition-all cursor-pointer"
+          {/* Image 2 */}
+          <div 
+            onClick={() => setPreviewImage(encodeURI('/App image2.png'))}
+            className="group relative rounded-2xl overflow-hidden border border-white/20 bg-slate-900/60 aspect-[9/16] cursor-pointer hover:border-blue-400/80 transition-all hover:scale-102 shadow-lg"
           >
-            <Download className="w-3.5 h-3.5 text-blue-700" />
-            <span>Install App</span>
-          </button>
+            <img
+              src="/app-image-2.png"
+              alt="Promote Videos"
+              className="w-full h-full object-cover group-hover:opacity-95 transition-opacity"
+              onError={(e) => {
+                const target = e.target as HTMLImageElement;
+                if (!target.src.includes('App%20image2')) {
+                  target.src = encodeURI('/App image2.png');
+                }
+              }}
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-90 group-hover:opacity-100 transition-opacity" />
+            <div className="absolute bottom-1.5 inset-x-1 text-center">
+              <span className="text-[10px] sm:text-[11px] font-bold text-white leading-tight block truncate drop-shadow-md">
+                2. Promote
+              </span>
+            </div>
+            <div className="absolute top-1.5 right-1.5 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded-full bg-black/50 text-white">
+              <Maximize2 className="w-3 h-3" />
+            </div>
+          </div>
+
+          {/* Image 3 */}
+          <div 
+            onClick={() => setPreviewImage(encodeURI('/App image 3.png'))}
+            className="group relative rounded-2xl overflow-hidden border border-white/20 bg-slate-900/60 aspect-[9/16] cursor-pointer hover:border-blue-400/80 transition-all hover:scale-102 shadow-lg"
+          >
+            <img
+              src="/app-image-3.png"
+              alt="Wallet & Streaks"
+              className="w-full h-full object-cover group-hover:opacity-95 transition-opacity"
+              onError={(e) => {
+                const target = e.target as HTMLImageElement;
+                if (!target.src.includes('App%20image%203')) {
+                  target.src = encodeURI('/App image 3.png');
+                }
+              }}
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-90 group-hover:opacity-100 transition-opacity" />
+            <div className="absolute bottom-1.5 inset-x-1 text-center">
+              <span className="text-[10px] sm:text-[11px] font-bold text-white leading-tight block truncate drop-shadow-md">
+                3. Daily Wallet
+              </span>
+            </div>
+            <div className="absolute top-1.5 right-1.5 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded-full bg-black/50 text-white">
+              <Maximize2 className="w-3 h-3" />
+            </div>
+          </div>
         </div>
-      )}
+
+        <p className="text-[11px] text-center text-blue-200/80 pt-0.5">
+          Tap any screenshot to view full size • Tap Install to add to Home Screen
+        </p>
+      </div>
 
       {/* Clean Footer */}
       <div className="text-center text-xs text-blue-200/60 pb-4 relative z-10">
         © 2026 AtoViewer • AtoPlay Video Promotion Network
       </div>
+
+      {/* SCREENSHOT FULLSCREEN ZOOM MODAL */}
+      {previewImage && (
+        <div 
+          onClick={() => setPreviewImage(null)}
+          className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4 cursor-zoom-out animate-in fade-in duration-200"
+        >
+          <div 
+            onClick={(e) => e.stopPropagation()}
+            className="relative max-w-sm sm:max-w-md w-full max-h-[90vh] flex flex-col items-center cursor-default"
+          >
+            <button
+              type="button"
+              onClick={() => setPreviewImage(null)}
+              className="absolute -top-12 right-0 p-2 rounded-full bg-white/20 hover:bg-white/30 text-white transition-colors cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            <img
+              src={previewImage}
+              alt="Screenshot Preview"
+              className="w-full h-auto max-h-[80vh] object-contain rounded-3xl border border-white/20 shadow-2xl"
+            />
+            {onOpenInstallScreen && (
+              <button
+                type="button"
+                onClick={() => {
+                  setPreviewImage(null);
+                  onOpenInstallScreen();
+                }}
+                className="mt-4 px-6 py-2.5 rounded-full bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs sm:text-sm shadow-xl flex items-center space-x-2 transition-transform hover:scale-105 cursor-pointer"
+              >
+                <Download className="w-4 h-4" />
+                <span>Install Full App on Phone</span>
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* GOOGLE ACCOUNT CHOOSER MODAL (Seamlessly bypasses Vercel OAuth permission error) */}
       {showGoogleChooser && (
