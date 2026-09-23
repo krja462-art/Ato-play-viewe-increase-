@@ -110,6 +110,20 @@ export const Campaigns: React.FC<CampaignsProps> = ({
     try {
       setLoading(true);
 
+      // Background Follower Growth Check & Auto-Reward
+      try {
+        const checkRes = await apiFetch('/api/campaigns/check-followers', {
+          headers: { 'x-user-id': user.id }
+        });
+        if (checkRes?.success && checkRes.totalBonusCoinsAwarded > 0 && checkRes.user) {
+          if (onCampaignCreated) {
+            onCampaignCreated(checkRes.user);
+          }
+        }
+      } catch (err) {
+        console.warn('Check followers background error:', err);
+      }
+
       // 1. Fetch from server API
       let serverCamps: Campaign[] = [];
       try {

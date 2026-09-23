@@ -30,7 +30,7 @@ import { User } from '../types';
 import { usePWAInstall } from '../hooks/usePWAInstall';
 import { apiFetch } from '../lib/api';
 import { saveSupportMessageToFirestore } from '../lib/firebase';
-import { LinkAtoPlayModal } from './LinkAtoPlayModal';
+
 import { AtoPlayBadge } from './AtoPlayBadge';
 
 interface SlideDrawerProps {
@@ -49,7 +49,7 @@ export const SlideDrawer: React.FC<SlideDrawerProps> = ({
   onUserUpdate
 }) => {
   const [activeModal, setActiveModal] = useState<'privacy' | 'terms' | 'contact' | 'referral' | 'ios_install' | 'apk_bundle' | null>(null);
-  const [isLinkAtoPlayOpen, setIsLinkAtoPlayOpen] = useState(false);
+
   const { isInstallable, isInstalled, isIOS, install } = usePWAInstall();
 
   // Referral State
@@ -311,36 +311,7 @@ export const SlideDrawer: React.FC<SlideDrawerProps> = ({
                   </span>
                 </div>
 
-                {/* AtoPlay Channel Status & Edit Modal Button */}
-                <div className="pt-2 border-t border-zinc-200">
-                  <div className="flex items-center justify-between">
-                    <div className="space-y-0.5 min-w-0 pr-2">
-                      <div className="flex items-center space-x-1.5">
-                        <AtoPlayBadge size="xs" />
-                        <span className="text-xs font-bold text-zinc-700">AtoPlay Channel</span>
-                      </div>
-                      <p className="text-[11px] text-zinc-500 truncate font-mono">
-                        {user.atoPlayUsername ? `@${user.atoPlayUsername}` : 'Channel not linked yet'}
-                      </p>
-                    </div>
-                    <button
-                      onClick={() => setIsLinkAtoPlayOpen(true)}
-                      className="px-2.5 py-1 rounded-xl bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 font-bold text-xs cursor-pointer transition-colors shrink-0"
-                    >
-                      {user.atoPlayUsername ? 'Edit' : 'Link Channel'}
-                    </button>
-                  </div>
 
-                  {user.isFollowRestricted ? (
-                    <div className="mt-2 p-2 rounded-xl bg-red-50 border border-red-200 text-[11px] text-red-800 font-semibold leading-snug">
-                      ⚠️ Restricted from follow bonuses due to 3+ fake follow reports.
-                    </div>
-                  ) : (user.warningCount && user.warningCount > 0) ? (
-                    <div className="mt-2 p-2 rounded-xl bg-amber-50 border border-amber-200 text-[11px] text-amber-800 font-semibold leading-snug">
-                      ⚠️ Account Warnings: {user.warningCount}/3 strikes for fake follows.
-                    </div>
-                  ) : null}
-                </div>
               </div>
             )}
 
@@ -1129,17 +1100,7 @@ export const SlideDrawer: React.FC<SlideDrawerProps> = ({
         </div>
       )}
 
-      {/* Link AtoPlay Channel Name Modal */}
-      {user && isLinkAtoPlayOpen && (
-        <LinkAtoPlayModal
-          isOpen={isLinkAtoPlayOpen}
-          onClose={() => setIsLinkAtoPlayOpen(false)}
-          user={user}
-          onSuccess={(updated) => {
-            if (onUserUpdate) onUserUpdate(updated);
-          }}
-        />
-      )}
+
     </>
   );
 };

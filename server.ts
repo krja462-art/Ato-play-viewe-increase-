@@ -1435,6 +1435,8 @@ app.post("/api/campaigns", async (req, res) => {
     channelName: metadata.channelName || activeUser.name,
     channelId: (metadata as any).channelId,
     channelFollowers: (metadata as any).channelFollowers,
+    initialFollowers: (metadata as any).channelFollowers || 150,
+    lastCheckedFollowers: (metadata as any).channelFollowers || 150,
     durationText: metadata.durationText || "1:00"
   };
 
@@ -1456,6 +1458,59 @@ app.post("/api/campaigns", async (req, res) => {
     campaign: newCampaign, 
     user: activeUser,
     message: `Campaign created successfully! ${totalCost} coins deducted.`
+  });
+});
+
+// Background Follower Growth & Auto-Reward Verification Endpoint
+app.get("/api/campaigns/check-followers", async (req, res) => {
+  const activeUser = getActiveUser(req);
+  if (!activeUser) {
+    return res.status(401).json({ success: false, message: "Unauthorized" });
+  }
+
+  const userCampaigns = campaigns.filter(c => c.userId === activeUser.id && c.status === 'active');
+  let totalBonusCoinsAwarded = 0;
+  const updates: Array<{ campaignId: string; newFollowers: number; bonusEarned: number }> = [];
+
+  for (const camp of userCampaigns) {
+    try {
+      const meta = await extractVideoMetadata(camp.videoUrl);
+      const currentLiveFollowers = meta.channelFollowers || camp.lastCheckedFollowers || camp.initialFollowers || 150;
+      const baseline = camp.lastCheckedFollowers || camp.initialFollowers || camp.channelFollowers || 150;
+
+      if (currentLiveFollowers > baseline) {
+        const extra = currentLiveFollowers - baseline;
+        const bonusEarned = extra * 30; // +30 coins per extra follower
+        totalBonusCoinsAwarded += bonusEarned;
+
+        camp.lastCheckedFollowers = currentLiveFollowers;
+        camp.channelFollowers = currentLiveFollowers;
+
+        activeUser.coins += bonusEarned;
+        if (users[activeUser.id]) {
+          users[activeUser.id].coins = activeUser.coins;
+        }
+
+        transactions.unshift({
+          id: `tx_fol_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+          userId: activeUser.id,
+          type: "earned_follow",
+          amount: bonusEarned,
+          description: `🎉 +${bonusEarned} Coins Bonus! ${extra} new channel follower(s) detected for campaign "${camp.title}".`,
+          createdAt: new Date().toISOString()
+        });
+
+        updates.push({ campaignId: camp.id, newFollowers: currentLiveFollowers, bonusEarned });
+      }
+    } catch {}
+  }
+
+  res.json({
+    success: true,
+    totalBonusCoinsAwarded,
+    user: activeUser,
+    updates,
+    message: totalBonusCoinsAwarded > 0 ? `🎉 ${totalBonusCoinsAwarded} bonus coins earned from new channel followers!` : 'Checked followers successfully.'
   });
 });
 

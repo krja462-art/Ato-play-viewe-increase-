@@ -60,6 +60,8 @@ export interface Campaign {
   completedUserIds?: string[];
   followedUserIds?: string[];
   channelFollowers?: number;
+  initialFollowers?: number;
+  lastCheckedFollowers?: number;
   channelId?: string;
   followLogs?: FollowLog[];
 }
