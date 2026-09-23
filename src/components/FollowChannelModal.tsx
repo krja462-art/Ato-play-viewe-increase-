@@ -180,11 +180,18 @@ export const FollowChannelModal: React.FC<FollowChannelModalProps> = ({
           campaignId: campaign.id,
           creatorId: campaign.userId,
           followerUserId: user.id,
-          followerUsername: user.atoPlayUsername,
+          followerUsername: user.atoPlayUsername || user.name || 'AtoPlay User',
+          followerEmail: user.email,
+          followerAvatar: user.avatar,
+          followerName: user.name,
           timestamp: new Date().toISOString(),
           status: 'active',
           campaignTitle: campaign.title
         };
+        // Ensure email and avatar are attached even if data.followLog was partial
+        if (!logToSave.followerEmail && user.email) logToSave.followerEmail = user.email;
+        if (!logToSave.followerAvatar && user.avatar) logToSave.followerAvatar = user.avatar;
+        if (!logToSave.followerName && user.name) logToSave.followerName = user.name;
         saveFollowLogToFirestore(logToSave).catch(err => console.warn('Follow log firestore err:', err));
 
         if (data.user) {

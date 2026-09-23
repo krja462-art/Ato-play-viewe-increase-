@@ -230,7 +230,7 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onLoginSuccess, onOp
             Sign In with Google
           </h2>
           <p className="text-xs text-blue-100/90 leading-relaxed max-w-xs mx-auto">
-            Aapke Google account se login hote hi AtoPlay API se aapke channel ka <strong>Name</strong> aur <strong>Banner Image</strong> automatic slide bar par fetch ho jayega.
+            Apne Google account se login karein aur AtoPlay creators ke saath views exchange karke coins kamayein.
           </p>
         </div>
 
@@ -253,7 +253,7 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onLoginSuccess, onOp
             {googleLoading ? (
               <div className="flex items-center space-x-2.5 text-zinc-700">
                 <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-                <span>Connecting & Fetching Channel...</span>
+                <span>Connecting Google Account...</span>
               </div>
             ) : (
               <>

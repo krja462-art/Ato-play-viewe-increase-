@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Campaign, User, format4CharId } from '../types';
-import { Plus, MoreVertical, Clock, Trash2, Coins, AlertCircle, Sparkles, X, Video, ExternalLink, Check, Search, ShieldCheck, Clipboard, Image as ImageIcon, CheckCircle2, Users } from 'lucide-react';
+import { Plus, MoreVertical, Clock, Trash2, Coins, AlertCircle, Sparkles, X, Video, ExternalLink, Check, Search, ShieldCheck, Clipboard, Image as ImageIcon, CheckCircle2, Users, Mail, UserCheck } from 'lucide-react';
 import { AtoPlayBadge } from './AtoPlayBadge';
 import { FollowersLogModal } from './FollowersLogModal';
 import { apiFetch, extractVideoMetadataClient, cleanVideoUrl } from '../lib/api';
-import { saveCampaignToFirestore, deleteCampaignInFirestore, saveUserCoinsToFirestore, getMyCampaignsFromFirestore } from '../lib/firebase';
+import { saveCampaignToFirestore, deleteCampaignInFirestore, saveUserCoinsToFirestore, getMyCampaignsFromFirestore, getFollowLogsFromFirestore, reportFakeFollowInFirestore } from '../lib/firebase';
 import confetti from 'canvas-confetti';
 
 interface CampaignsProps {
@@ -155,11 +155,59 @@ export const Campaigns: React.FC<CampaignsProps> = ({
         videoUrl: cleanVideoUrl(c.videoUrl || '')
       }));
       mergedList.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-      setCampaigns(mergedList);
+
+      // Fetch follow logs for each campaign so followers (avatar, email, name) are immediately loaded
+      const campaignsWithLogs = await Promise.all(
+        mergedList.map(async (camp) => {
+          let logs = camp.followLogs || [];
+          if (logs.length === 0) {
+            try {
+              const fLogs = await getFollowLogsFromFirestore(camp.id);
+              if (fLogs && fLogs.length > 0) {
+                logs = fLogs;
+              }
+            } catch (fErr) {
+              console.warn('Error loading follow logs for camp:', camp.id, fErr);
+            }
+          }
+          return {
+            ...camp,
+            followLogs: logs
+          };
+        })
+      );
+
+      setCampaigns(campaignsWithLogs);
     } catch (err) {
       console.error('Failed to load campaigns', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleReportFollower = async (campaignId: string, logId: string, followerUserId: string) => {
+    try {
+      await apiFetch('/api/follow/report-fake', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-user-id': user.id },
+        body: JSON.stringify({ logId })
+      }).catch(() => null);
+
+      await reportFakeFollowInFirestore(logId, followerUserId).catch(() => null);
+
+      setCampaigns(prev => prev.map(c => {
+        if (c.id !== campaignId) return c;
+        return {
+          ...c,
+          followLogs: c.followLogs?.map(l => l.id === logId ? { ...l, status: 'reported' as const } : l)
+        };
+      }));
+
+      setSuccessMsg('Fake follower reported. 1 warning strike added.');
+      setTimeout(() => setSuccessMsg(null), 3000);
+    } catch (e: any) {
+      setErrorMsg(e?.message || 'Failed to report fake follow');
+      setTimeout(() => setErrorMsg(null), 3000);
     }
   };
 
@@ -487,129 +535,238 @@ export const Campaigns: React.FC<CampaignsProps> = ({
             const isCompleted = compViews >= reqViews || camp.status === 'completed';
 
             return (
-              <div key={camp.id} className="p-4 flex items-center space-x-4 relative hover:bg-zinc-50 transition-colors">
+              <div key={camp.id} className="p-4 sm:p-5 flex flex-col space-y-3.5 relative hover:bg-zinc-50/50 transition-colors">
                 
-                {/* Stretched Thumbnail on left */}
-                <div className="w-28 sm:w-36 aspect-video rounded-xl bg-zinc-950 overflow-hidden shrink-0 border border-zinc-200 shadow-xs relative">
-                  {/* AtoPlay Official Video Thumbnail Badge */}
-                  <AtoPlayBadge size="sm" className="absolute top-1 left-1 z-10" />
+                {/* Top Row: Video Thumbnail + Meta + Actions */}
+                <div className="flex items-start sm:items-center space-x-3.5 sm:space-x-4">
+                  {/* Stretched Thumbnail on left */}
+                  <div className="w-24 sm:w-36 aspect-video rounded-xl bg-zinc-950 overflow-hidden shrink-0 border border-zinc-200 shadow-xs relative">
+                    {/* AtoPlay Official Video Thumbnail Badge */}
+                    <AtoPlayBadge size="sm" className="absolute top-1 left-1 z-10" />
 
-                  <img 
-                    src={camp.thumbnailUrl} 
-                    alt={camp.title} 
-                    referrerPolicy="no-referrer"
-                    crossOrigin="anonymous"
-                    onError={(e) => {
-                      const target = e.currentTarget;
-                      if (!target.src.includes('unsplash.com')) {
-                        target.src = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80";
-                      }
-                    }}
-                    className="w-full h-full object-cover" 
-                  />
-                  <div className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-black/80 text-white text-[9px] font-bold">
-                    {camp.durationText || '60s'}
+                    <img 
+                      src={camp.thumbnailUrl} 
+                      alt={camp.title} 
+                      referrerPolicy="no-referrer"
+                      crossOrigin="anonymous"
+                      onError={(e) => {
+                        const target = e.currentTarget;
+                        if (!target.src.includes('unsplash.com')) {
+                          target.src = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80";
+                        }
+                      }}
+                      className="w-full h-full object-cover" 
+                    />
+                    <div className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-black/80 text-white text-[9px] font-bold">
+                      {camp.durationText || '60s'}
+                    </div>
+                  </div>
+
+                  {/* Info section: Title in blue, ID below, Progress bar */}
+                  <div className="flex-1 min-w-0 space-y-1">
+                    <div className="flex items-center justify-between">
+                      <h3 className="font-bold text-sm sm:text-base text-blue-600 truncate">
+                        {camp.title}
+                      </h3>
+                    </div>
+
+                    {camp.channelName && (
+                      <p className="text-xs text-zinc-500 font-medium truncate">
+                        {camp.channelName}
+                      </p>
+                    )}
+
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-500 font-mono">
+                      <span>ID: <span className="font-extrabold text-zinc-700">{format4CharId(camp.displayId, camp.id)}</span></span>
+                      <span className="text-zinc-300">•</span>
+                      <span className="text-emerald-700 font-sans font-bold bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                        Reward: 60 Coins/view
+                      </span>
+                    </div>
+
+                    <div className="space-y-1 pt-1">
+                      <div className="flex items-center justify-between text-xs text-zinc-700 font-semibold">
+                        <div className="flex items-center space-x-1.5">
+                          <Clock className="w-3.5 h-3.5 text-blue-600" />
+                          <span>{compViews}/{reqViews} {isCompleted ? 'views (Completed ✓)' : 'views'}</span>
+                        </div>
+                        <span className="text-[11px] text-zinc-400">{progress}%</span>
+                      </div>
+
+                      <div className="w-full h-2 bg-zinc-100 rounded-full overflow-hidden">
+                        <div 
+                          className={`h-full transition-all duration-500 ${isCompleted ? 'bg-emerald-500' : 'bg-blue-600'}`} 
+                          style={{ width: `${progress}%` }} 
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 3-dot Menu on right with Delete option */}
+                  <div className="relative shrink-0">
+                    <button 
+                      onClick={() => setActiveMenuId(activeMenuId === camp.id ? null : camp.id)}
+                      className="p-2 sm:p-2.5 rounded-xl text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 transition-colors cursor-pointer"
+                      title="Campaign Options"
+                      aria-label="Campaign Options"
+                    >
+                      <MoreVertical className="w-5 h-5" />
+                    </button>
+
+                    {activeMenuId === camp.id && (
+                      <>
+                        {/* Click outside backdrop */}
+                        <div 
+                          className="fixed inset-0 z-20" 
+                          onClick={() => setActiveMenuId(null)} 
+                        />
+
+                        <div className="absolute right-0 top-11 w-48 bg-white rounded-2xl shadow-xl border border-zinc-200 py-1.5 z-30 animate-in fade-in zoom-in-95 duration-150">
+                          <button
+                            onClick={() => {
+                              setActiveMenuId(null);
+                              setSelectedCampaignForLogs(camp);
+                            }}
+                            className="w-full px-4 py-2.5 text-left text-xs text-zinc-700 hover:bg-zinc-50 flex items-center space-x-2.5 font-bold cursor-pointer transition-colors border-b border-zinc-100"
+                          >
+                            <Users className="w-4 h-4 text-blue-600 shrink-0" />
+                            <span>View Followers Log</span>
+                          </button>
+                          <button
+                            onClick={() => {
+                              setActiveMenuId(null);
+                              handleDeleteCampaign(camp.id);
+                            }}
+                            className="w-full px-4 py-2.5 text-left text-xs text-red-600 hover:bg-red-50 flex items-center space-x-2.5 font-bold cursor-pointer transition-colors"
+                          >
+                            <Trash2 className="w-4 h-4 text-red-500 shrink-0" />
+                            <span>Delete Campaign</span>
+                          </button>
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
 
-                {/* Info section: Title in blue, ID below, Progress bar */}
-                <div className="flex-1 min-w-0 space-y-1">
-                  <div className="flex items-center justify-between">
-                    <h3 className="font-bold text-sm sm:text-base text-blue-600 truncate">
-                      {camp.title}
-                    </h3>
-                  </div>
+                {/* Followers Section Directly Under This Campaign */}
+                <div className="w-full pt-3 border-t border-zinc-100">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center space-x-2">
+                      <div className="w-5 h-5 rounded-md bg-blue-100 text-blue-700 flex items-center justify-center">
+                        <UserCheck className="w-3 h-3" />
+                      </div>
+                      <span className="text-xs font-extrabold text-zinc-800">
+                        Followers from this Video
+                      </span>
+                      <span className="px-1.5 py-0.2 rounded-full bg-blue-50 text-blue-700 font-extrabold text-[10px] border border-blue-200">
+                        {camp.followLogs?.length || 0}
+                      </span>
+                    </div>
 
-                  {camp.channelName && (
-                    <p className="text-xs text-zinc-500 font-medium truncate">
-                      {camp.channelName}
-                    </p>
-                  )}
-
-                  <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-500 font-mono">
-                    <span>ID: <span className="font-extrabold text-zinc-700">{format4CharId(camp.displayId, camp.id)}</span></span>
-                    <span className="text-zinc-300">•</span>
-                    <span className="text-emerald-700 font-sans font-bold bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
-                      Reward: 60 Coins/view
-                    </span>
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
                         setSelectedCampaignForLogs(camp);
                       }}
-                      className="inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 font-sans font-bold text-xs border border-blue-200 transition-colors cursor-pointer"
-                      title="View all users who claimed follow rewards for this campaign"
+                      className="inline-flex items-center space-x-1 text-[11px] font-bold text-blue-600 hover:text-blue-800 transition-colors cursor-pointer"
                     >
-                      <Users className="w-3.5 h-3.5 text-blue-600" />
-                      <span>Followers Log</span>
-                      {camp.followedUserIds && camp.followedUserIds.length > 0 && (
-                        <span className="bg-blue-600 text-white text-[10px] px-1.5 py-0.2 rounded-full font-sans">
-                          {camp.followedUserIds.length}
-                        </span>
-                      )}
+                      <Users className="w-3 h-3" />
+                      <span>Full Log ({camp.followLogs?.length || 0})</span>
                     </button>
                   </div>
 
-                  <div className="space-y-1 pt-1">
-                    <div className="flex items-center justify-between text-xs text-zinc-700 font-semibold">
-                      <div className="flex items-center space-x-1.5">
-                        <Clock className="w-3.5 h-3.5 text-blue-600" />
-                        <span>{compViews}/{reqViews} {isCompleted ? 'views (Completed ✓)' : 'views'}</span>
-                      </div>
-                      <span className="text-[11px] text-zinc-400">{progress}%</span>
+                  {camp.followLogs && camp.followLogs.length > 0 ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-1.5">
+                      {camp.followLogs.map((log) => {
+                        const followerName = log.followerName || log.followerUsername || 'AtoPlay User';
+                        const followerGmail = log.followerEmail || (log.followerUserId?.includes('@') ? log.followerUserId : `${log.followerUsername || 'user'}@gmail.com`);
+                        const followerAvatar = log.followerAvatar || `https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80`;
+                        const isReported = log.status === 'reported';
+
+                        return (
+                          <div 
+                            key={log.id}
+                            className={`p-2.5 rounded-xl border flex items-center justify-between space-x-2.5 transition-all ${
+                              isReported 
+                                ? 'bg-zinc-50 border-zinc-200 opacity-60' 
+                                : 'bg-gradient-to-r from-blue-50/40 via-white to-white border-blue-100/90 shadow-2xs'
+                            }`}
+                          >
+                            <div className="flex items-center space-x-2.5 min-w-0">
+                              {/* User Google Avatar */}
+                              <div className="relative shrink-0">
+                                <img
+                                  src={followerAvatar}
+                                  alt={followerName}
+                                  referrerPolicy="no-referrer"
+                                  crossOrigin="anonymous"
+                                  className="w-9 h-9 rounded-full object-cover border border-white shadow-xs bg-zinc-100"
+                                  onError={(e) => {
+                                    (e.currentTarget as HTMLImageElement).src = 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80';
+                                  }}
+                                />
+                                <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-emerald-500 border border-white flex items-center justify-center">
+                                  <Check className="w-2.5 h-2.5 text-white stroke-[3]" />
+                                </div>
+                              </div>
+
+                              {/* Follower Info: Name, Gmail, Handle */}
+                              <div className="min-w-0">
+                                <div className="flex items-center space-x-1.5">
+                                  <span className="font-extrabold text-xs text-zinc-900 truncate">
+                                    {followerName}
+                                  </span>
+                                  {log.followerUsername && (
+                                    <span className="text-[10px] text-zinc-400 font-mono truncate">
+                                      @{log.followerUsername}
+                                    </span>
+                                  )}
+                                </div>
+
+                                {/* Prominent Gmail Display */}
+                                <div className="flex items-center space-x-1 text-[11px] font-semibold text-blue-700 truncate mt-0.5">
+                                  <Mail className="w-3 h-3 text-red-500 shrink-0" />
+                                  <span className="truncate">{followerGmail}</span>
+                                </div>
+
+                                <div className="text-[10px] text-zinc-400 flex items-center space-x-1 mt-0.5">
+                                  <span>{new Date(log.timestamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                                  <span>•</span>
+                                  <span className="text-emerald-600 font-bold">+30 Coins</span>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Report Button */}
+                            <div className="shrink-0">
+                              {isReported ? (
+                                <span className="px-2 py-0.5 rounded-md bg-zinc-100 text-zinc-500 text-[10px] font-bold border border-zinc-200">
+                                  Reported
+                                </span>
+                              ) : (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleReportFollower(camp.id, log.id, log.followerUserId);
+                                  }}
+                                  className="px-2 py-1 rounded-lg bg-white hover:bg-red-50 text-red-600 text-[10px] font-bold border border-red-200 shadow-2xs cursor-pointer transition-colors"
+                                  title="Report fake follow if this user didn't subscribe"
+                                >
+                                  Report Fake
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
-
-                    <div className="w-full h-2 bg-zinc-100 rounded-full overflow-hidden">
-                      <div 
-                        className={`h-full transition-all duration-500 ${isCompleted ? 'bg-emerald-500' : 'bg-blue-600'}`} 
-                        style={{ width: `${progress}%` }} 
-                      />
+                  ) : (
+                    <div className="py-2.5 px-3 rounded-xl bg-zinc-50 border border-dashed border-zinc-200 text-center flex items-center justify-center space-x-2 text-[11px] text-zinc-500">
+                      <Users className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                      <span>
+                        Abhi tak kisi user ne follow nahi kiya hai. Video dekh kar follow karne wale users ka <strong>Avatar aur Gmail</strong> yahan dikhega.
+                      </span>
                     </div>
-                  </div>
-                </div>
-
-                {/* 3-dot Menu on right with Delete option */}
-                <div className="relative shrink-0">
-                  <button 
-                    onClick={() => setActiveMenuId(activeMenuId === camp.id ? null : camp.id)}
-                    className="p-2 sm:p-2.5 rounded-xl text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 transition-colors cursor-pointer"
-                    title="Campaign Options"
-                    aria-label="Campaign Options"
-                  >
-                    <MoreVertical className="w-5 h-5" />
-                  </button>
-
-                  {activeMenuId === camp.id && (
-                    <>
-                      {/* Click outside backdrop */}
-                      <div 
-                        className="fixed inset-0 z-20" 
-                        onClick={() => setActiveMenuId(null)} 
-                      />
-
-                      <div className="absolute right-0 top-11 w-48 bg-white rounded-2xl shadow-xl border border-zinc-200 py-1.5 z-30 animate-in fade-in zoom-in-95 duration-150">
-                        <button
-                          onClick={() => {
-                            setActiveMenuId(null);
-                            setSelectedCampaignForLogs(camp);
-                          }}
-                          className="w-full px-4 py-2.5 text-left text-xs text-zinc-700 hover:bg-zinc-50 flex items-center space-x-2.5 font-bold cursor-pointer transition-colors border-b border-zinc-100"
-                        >
-                          <Users className="w-4 h-4 text-blue-600 shrink-0" />
-                          <span>View Followers Log</span>
-                        </button>
-                        <button
-                          onClick={() => {
-                            setActiveMenuId(null);
-                            handleDeleteCampaign(camp.id);
-                          }}
-                          className="w-full px-4 py-2.5 text-left text-xs text-red-600 hover:bg-red-50 flex items-center space-x-2.5 font-bold cursor-pointer transition-colors"
-                        >
-                          <Trash2 className="w-4 h-4 text-red-500 shrink-0" />
-                          <span>Delete Campaign</span>
-                        </button>
-                      </div>
-                    </>
                   )}
                 </div>
 

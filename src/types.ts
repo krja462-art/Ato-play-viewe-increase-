@@ -28,6 +28,9 @@ export interface FollowLog {
   creatorId: string;
   followerUserId: string;
   followerUsername: string;
+  followerEmail?: string;
+  followerAvatar?: string;
+  followerName?: string;
   timestamp: string;
   status: 'active' | 'reported';
   campaignTitle?: string;
@@ -58,6 +61,7 @@ export interface Campaign {
   followedUserIds?: string[];
   channelFollowers?: number;
   channelId?: string;
+  followLogs?: FollowLog[];
 }
 
 export interface Transaction {

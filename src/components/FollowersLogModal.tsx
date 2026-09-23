@@ -10,7 +10,9 @@ import {
   Search, 
   ExternalLink,
   RefreshCw,
-  Info
+  Info,
+  Mail,
+  Check
 } from 'lucide-react';
 import { Campaign, FollowLog, format4CharId, User } from '../types';
 import { apiFetch } from '../lib/api';
@@ -280,40 +282,72 @@ If confirmed:
                 minute: '2-digit'
               });
               const isReported = item.status === 'reported';
+              const followerName = item.followerName || item.followerUsername || 'AtoPlay Follower';
+              const followerGmail = item.followerEmail || (item.followerUserId?.includes('@') ? item.followerUserId : `${item.followerUsername || 'user'}@gmail.com`);
+              const followerAvatar = item.followerAvatar || `https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80`;
 
               return (
                 <div key={item.id} className={`p-3.5 flex items-center justify-between space-x-3 transition-colors ${isReported ? 'bg-amber-50/50' : 'hover:bg-zinc-50'}`}>
                   
-                  {/* Left: Username + Date */}
-                  <div className="space-y-1 min-w-0">
-                    <div className="flex items-center space-x-2">
-                      <span className="font-extrabold text-xs sm:text-sm text-zinc-900 truncate">
-                        @{item.followerUsername}
-                      </span>
-                      {isReported ? (
-                        <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 font-bold text-[10px] inline-flex items-center space-x-1 border border-amber-200">
-                          <AlertTriangle className="w-3 h-3 text-amber-600" />
-                          <span>Reported Fake ⚠️</span>
-                        </span>
-                      ) : (
-                        <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold text-[10px] inline-flex items-center space-x-1 border border-emerald-200">
-                          <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                          <span>Claimed (+30 Coins) ✓</span>
-                        </span>
-                      )}
+                  {/* Left: Avatar + Details (Name, Gmail, Handle, Date) */}
+                  <div className="flex items-center space-x-3 min-w-0">
+                    <div className="relative shrink-0">
+                      <img
+                        src={followerAvatar}
+                        alt={followerName}
+                        referrerPolicy="no-referrer"
+                        crossOrigin="anonymous"
+                        className="w-10 h-10 rounded-full object-cover border border-white shadow-xs bg-zinc-200"
+                        onError={(e) => {
+                          (e.currentTarget as HTMLImageElement).src = 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80';
+                        }}
+                      />
+                      <div className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full bg-emerald-500 border-2 border-white flex items-center justify-center">
+                        <Check className="w-2.5 h-2.5 text-white stroke-[3]" />
+                      </div>
                     </div>
 
-                    <div className="flex items-center space-x-2 text-[11px] text-zinc-400">
-                      <Clock className="w-3 h-3" />
-                      <span>{formattedDate}</span>
-                      {item.reportedAt && (
-                        <>
-                          <span>•</span>
-                          <span className="text-amber-700 font-medium">
-                            Reported: {new Date(item.reportedAt).toLocaleDateString()}
+                    <div className="space-y-0.5 min-w-0">
+                      <div className="flex items-center space-x-2">
+                        <span className="font-extrabold text-xs sm:text-sm text-zinc-900 truncate">
+                          {followerName}
+                        </span>
+                        {item.followerUsername && item.followerUsername !== followerName && (
+                          <span className="text-[11px] text-zinc-400 font-mono truncate">
+                            @{item.followerUsername}
                           </span>
-                        </>
-                      )}
+                        )}
+                        {isReported ? (
+                          <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 font-bold text-[10px] inline-flex items-center space-x-1 border border-amber-200">
+                            <AlertTriangle className="w-3 h-3 text-amber-600" />
+                            <span>Reported Fake ⚠️</span>
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold text-[10px] inline-flex items-center space-x-1 border border-emerald-200">
+                            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                            <span>Claimed (+30 Coins) ✓</span>
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Prominent Gmail Display */}
+                      <div className="flex items-center space-x-1 text-xs font-semibold text-blue-700 truncate">
+                        <Mail className="w-3.5 h-3.5 text-red-500 shrink-0" />
+                        <span className="truncate">{followerGmail}</span>
+                      </div>
+
+                      <div className="flex items-center space-x-2 text-[11px] text-zinc-400">
+                        <Clock className="w-3 h-3" />
+                        <span>{formattedDate}</span>
+                        {item.reportedAt && (
+                          <>
+                            <span>•</span>
+                            <span className="text-amber-700 font-medium">
+                              Reported: {new Date(item.reportedAt).toLocaleDateString()}
+                            </span>
+                          </>
+                        )}
+                      </div>
                     </div>
                   </div>
 

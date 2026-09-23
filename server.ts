@@ -86,6 +86,9 @@ export interface FollowLogItem {
   creatorId: string;
   followerUserId: string;
   followerUsername: string;
+  followerEmail?: string;
+  followerAvatar?: string;
+  followerName?: string;
   timestamp: string;
   status: 'active' | 'reported';
   campaignTitle?: string;
@@ -397,85 +400,6 @@ app.post("/api/user/sync-wallet", (req, res) => {
   res.json({ success: true, user });
 });
 
-// Helper to auto-fetch AtoPlay channel details (banner, avatar, name) by email/username
-async function resolveAtoPlayChannelForEmail(email: string, displayName?: string, inputHandle?: string) {
-  const cleanEmail = String(email || '').trim().toLowerCase();
-  const emailPrefix = cleanEmail.split('@')[0] || 'creator';
-  const cleanHandle = (inputHandle || '').trim().replace(/^@+/, '');
-  const isAdmin = cleanEmail === ADMIN_EMAIL || cleanEmail.includes('krja462');
-
-  const queriesToTry: string[] = [];
-  if (cleanHandle) queriesToTry.push(cleanHandle);
-  if (emailPrefix && emailPrefix !== cleanHandle) queriesToTry.push(emailPrefix);
-  if (displayName && displayName !== 'AtoPlay Creator' && displayName !== 'Admin (KRJA)') {
-    queriesToTry.push(displayName);
-  }
-
-  for (const q of queriesToTry) {
-    try {
-      const searchRes = await fetch(`https://api.atoplay.com/api/search/search?query=${encodeURIComponent(q)}&page=1&limit=4`, {
-        headers: {
-          'Accept': 'application/json',
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        }
-      });
-      if (searchRes.ok) {
-        const items = await searchRes.json();
-        if (Array.isArray(items) && items.length > 0) {
-          for (const item of items) {
-            const cId = item.channelId;
-            if (cId) {
-              const cRes = await fetch(`https://api.atoplay.com/api/channels/${cId}`, {
-                headers: {
-                  'Accept': 'application/json',
-                  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-                }
-              });
-              if (cRes.ok) {
-                const cData = await cRes.json();
-                const ch = cData?.channel;
-                if (ch) {
-                  const chEmail = (ch.contactEmail || '').toLowerCase().trim();
-                  const isMatch = (chEmail && chEmail === cleanEmail) || 
-                                  (cleanHandle && ch.name?.toLowerCase().includes(cleanHandle.toLowerCase())) ||
-                                  (!cleanHandle && (ch.name?.toLowerCase().includes(emailPrefix.toLowerCase()) || chEmail.includes(emailPrefix)));
-                  
-                  if (isMatch || items.length === 1) {
-                    return {
-                      channelName: ch.name || `${emailPrefix} Channel`,
-                      channelBanner: ch.channelBanner || 'https://banner-atoplay.b-cdn.net/atoplay-social-banner.jpg',
-                      channelImage: ch.channelImage || item.thumbnailUrl || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=240&q=80',
-                      atoPlayUsername: cleanHandle || (ch.name ? ch.name.replace(/[^a-zA-Z0-9]/g, '') : emailPrefix),
-                      followersCount: ch.followersCount || 0,
-                      isAutoFetched: true
-                    };
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    } catch (err) {
-      console.warn('AtoPlay channel search probe error:', err);
-    }
-  }
-
-  // High-fidelity fallback based on user's Gmail
-  const fallbackName = isAdmin ? 'KRJA Official Channel' : (displayName || `${emailPrefix.charAt(0).toUpperCase() + emailPrefix.slice(1)} Channel`);
-  const fallbackBanner = 'https://banner-atoplay.b-cdn.net/atoplay-social-banner.jpg';
-  const fallbackImage = `https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=240&q=80`;
-
-  return {
-    channelName: fallbackName,
-    channelBanner: fallbackBanner,
-    channelImage: fallbackImage,
-    atoPlayUsername: cleanHandle || emailPrefix,
-    followersCount: isAdmin ? 1250 : 0,
-    isAutoFetched: false
-  };
-}
-
 app.post("/api/auth/firebase-login", async (req, res) => {
   const { uid, email, name, avatar, referralCode: inputReferralCode } = req.body;
   if (!email) {
@@ -489,27 +413,20 @@ app.post("/api/auth/firebase-login", async (req, res) => {
   let user = users[effectiveUid];
   let isNewUser = false;
 
-  // Auto-fetch AtoPlay Channel (banner, avatar, name) for this Gmail
-  const atoPlayChannel = await resolveAtoPlayChannelForEmail(cleanEmail, name, user?.atoPlayUsername);
-
   if (!user) {
     isNewUser = true;
     user = {
       id: effectiveUid,
-      name: atoPlayChannel.channelName || name || (isAdmin ? "Admin (KRJA)" : cleanEmail.split('@')[0]),
+      name: name || (isAdmin ? "Admin (KRJA)" : cleanEmail.split('@')[0]),
       email: cleanEmail,
       coins: isAdmin ? ADMIN_UNLIMITED_COINS : 100, // Unlimited coins for admin, 100 Welcome Bonus for normal users
-      avatar: atoPlayChannel.channelImage || avatar || `https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80`,
+      avatar: avatar || `https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80`,
       streak: 1,
       lastCheckIn: new Date().toISOString().split('T')[0],
       createdAt: new Date().toISOString(),
       referralsCount: 0,
       referralEarnings: 0,
       isAdmin: isAdmin ? true : undefined,
-      atoPlayUsername: atoPlayChannel.atoPlayUsername,
-      channelName: atoPlayChannel.channelName,
-      channelBanner: atoPlayChannel.channelBanner,
-      channelImage: atoPlayChannel.channelImage,
       loginMethod: 'google'
     };
     user.referralCode = generateUserReferralCode(user);
@@ -563,15 +480,9 @@ app.post("/api/auth/firebase-login", async (req, res) => {
       user.coins = ADMIN_UNLIMITED_COINS;
       user.isAdmin = true;
     }
-    // Update AtoPlay channel details
-    if (atoPlayChannel.channelName) user.channelName = atoPlayChannel.channelName;
-    if (atoPlayChannel.channelBanner) user.channelBanner = atoPlayChannel.channelBanner;
-    if (atoPlayChannel.channelImage) {
-      user.channelImage = atoPlayChannel.channelImage;
-      user.avatar = atoPlayChannel.channelImage;
-    }
-    if (!user.atoPlayUsername && atoPlayChannel.atoPlayUsername) {
-      user.atoPlayUsername = atoPlayChannel.atoPlayUsername;
+    if (name) user.name = name;
+    if (avatar && !user.avatar?.includes('googleusercontent') && avatar.includes('googleusercontent')) {
+      user.avatar = avatar;
     }
     if (!user.referralCode) user.referralCode = generateUserReferralCode(user);
     user.loginMethod = 'google';
@@ -582,38 +493,7 @@ app.post("/api/auth/firebase-login", async (req, res) => {
     success: true, 
     user, 
     isNewUser,
-    atoPlayChannel,
     message: isNewUser ? "Welcome! 100 bonus coins added." : "Authenticated successfully with Google" 
-  });
-});
-
-// Dedicated Endpoint: Fetch / Re-sync AtoPlay Channel for User
-app.post("/api/user/fetch-atoplay-channel", async (req, res) => {
-  const activeUser = getActiveUser(req);
-  const { email, username, channelHandle } = req.body || {};
-  const targetEmail = email || activeUser?.email || '';
-  const targetHandle = channelHandle || username || activeUser?.atoPlayUsername || '';
-  const targetName = activeUser?.name || '';
-
-  if (!targetEmail && !targetHandle) {
-    return res.status(400).json({ success: false, message: "Email or username required" });
-  }
-
-  const channel = await resolveAtoPlayChannelForEmail(targetEmail, targetName, targetHandle);
-
-  if (activeUser) {
-    activeUser.channelName = channel.channelName;
-    activeUser.channelBanner = channel.channelBanner;
-    activeUser.channelImage = channel.channelImage;
-    activeUser.avatar = channel.channelImage;
-    activeUser.atoPlayUsername = channel.atoPlayUsername;
-    users[activeUser.id] = activeUser;
-  }
-
-  res.json({
-    success: true,
-    channel,
-    user: activeUser
   });
 });
 
@@ -861,7 +741,8 @@ app.get("/api/campaigns", (req, res) => {
   if (filter === 'my') {
     const myCampaigns = activeUser ? campaigns.filter(c => c.userId === activeUser.id).map(c => ({
       ...c,
-      videoUrl: cleanVideoUrl(c.videoUrl)
+      videoUrl: cleanVideoUrl(c.videoUrl),
+      followLogs: followLogs.filter(l => l.campaignId === c.id)
     })) : [];
     return res.json({ success: true, campaigns: myCampaigns });
   }
@@ -1934,11 +1815,18 @@ app.post("/api/follow/verify", async (req, res) => {
       creatorId: campaign.userId,
       followerUserId: activeUser.id,
       followerUsername: resolvedFollowerUsername,
+      followerEmail: activeUser.email,
+      followerAvatar: activeUser.avatar,
+      followerName: activeUser.name,
       timestamp: new Date().toISOString(),
       status: 'active',
       campaignTitle: campaign.title
     };
     followLogs.unshift(followLogEntry);
+  } else {
+    if (!followLogEntry.followerEmail && activeUser.email) followLogEntry.followerEmail = activeUser.email;
+    if (!followLogEntry.followerAvatar && activeUser.avatar) followLogEntry.followerAvatar = activeUser.avatar;
+    if (!followLogEntry.followerName && activeUser.name) followLogEntry.followerName = activeUser.name;
   }
 
   // Log transaction
