@@ -114,10 +114,7 @@ export const RewardPopupModal: React.FC<RewardPopupModalProps> = ({
       return;
     }
 
-    if (!user?.atoPlayUsername) {
-      setIsLinkModalOpen(true);
-      return;
-    }
+    const effectiveUsername = user?.atoPlayUsername || user?.name || user?.email?.split('@')[0] || 'atoplay_user';
 
     setVerifying(true);
     setFeedbackMessage(null);
@@ -324,21 +321,6 @@ export const RewardPopupModal: React.FC<RewardPopupModalProps> = ({
                     <div className="mt-1 p-1.5 rounded-lg bg-red-100 border border-red-200 text-[10px] text-red-800 font-bold leading-tight">
                       Restricted: Follow bonuses disabled due to 3 fake reports.
                     </div>
-                  ) : !user?.atoPlayUsername ? (
-                    <div className="space-y-1.5 mt-1">
-                      <div className="text-[10px] text-amber-800 font-semibold leading-tight">
-                        Link your AtoPlay handle first:
-                      </div>
-                      <button
-                        id="link-atoplay-username-reward-btn"
-                        type="button"
-                        onClick={() => setIsLinkModalOpen(true)}
-                        className="w-full py-1.5 px-2 rounded-lg bg-amber-600 hover:bg-amber-700 active:scale-95 text-white font-extrabold text-[11px] shadow-sm flex items-center justify-center space-x-1 transition-all cursor-pointer"
-                      >
-                        <UserCheck className="w-3.5 h-3.5" />
-                        <span>Link AtoPlay Username</span>
-                      </button>
-                    </div>
                   ) : (
                     <div className="space-y-1.5">
                       <div className="text-xs font-bold text-amber-700 flex items-center justify-between">
@@ -347,7 +329,7 @@ export const RewardPopupModal: React.FC<RewardPopupModalProps> = ({
                           <span>Pending Follow</span>
                         </span>
                         <span className="font-mono text-[10px] text-amber-900 truncate max-w-[120px]">
-                          @{user.atoPlayUsername}
+                          @{user?.atoPlayUsername || user?.name || 'user'}
                         </span>
                       </div>
                       {/* User's requested Verify button */}

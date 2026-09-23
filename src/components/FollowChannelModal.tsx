@@ -146,10 +146,7 @@ export const FollowChannelModal: React.FC<FollowChannelModalProps> = ({
       return;
     }
 
-    if (!user?.atoPlayUsername) {
-      setIsLinkModalOpen(true);
-      return;
-    }
+    const effectiveUsername = user?.atoPlayUsername || user?.name || user?.email?.split('@')[0] || 'atoplay_user';
 
     setVerifying(true);
     setStatusMessage('AtoPlay API se live check ho raha hai: Kya follower badha...?');
@@ -383,21 +380,7 @@ export const FollowChannelModal: React.FC<FollowChannelModalProps> = ({
             </button>
 
             {/* Step 2 Button: Verify Follow */}
-            {!user.atoPlayUsername ? (
-              <div className="p-3 bg-amber-50 rounded-2xl border border-amber-300 space-y-2 text-left">
-                <p className="text-xs text-amber-900 font-semibold leading-relaxed">
-                  ⚠️ <strong>AtoPlay Username Not Linked:</strong> Please link your exact AtoPlay username first to claim follow bonus coins.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setIsLinkModalOpen(true)}
-                  className="w-full py-2.5 px-4 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs flex items-center justify-center space-x-1.5 cursor-pointer shadow-sm transition-colors"
-                >
-                  <UserCheck className="w-4 h-4" />
-                  <span>Link AtoPlay Username Now</span>
-                </button>
-              </div>
-            ) : user.isFollowRestricted ? (
+            {user.isFollowRestricted ? (
               <div className="p-3 bg-red-50 rounded-2xl border border-red-300 text-red-900 text-xs font-semibold">
                 ⚠️ Account Restricted: Aapka account follow bonus ke liye restricted hai (3 fake follow strikes).
               </div>
