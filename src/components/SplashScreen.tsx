@@ -101,22 +101,22 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onLoginSuccess, onOp
       setGoogleLoading(true);
       setErrorMessage(null);
 
-      const firebaseResult = await signInWithGoogle();
-      if (firebaseResult && (firebaseResult as any).user) {
-        const u = (firebaseResult as any).user;
+      const firebaseUser = await signInWithGoogle();
+      if (firebaseUser && firebaseUser.email) {
         await completeGoogleLogin(
-          u.email || 'krja462@gmail.com', 
-          u.displayName || 'AtoPlay Creator', 
-          u.photoURL || undefined
+          firebaseUser.email, 
+          firebaseUser.displayName || firebaseUser.email.split('@')[0], 
+          firebaseUser.photoURL || undefined
         );
         return;
+      } else {
+        throw new Error('Could not retrieve email from Google account. Please try another account.');
       }
     } catch (err: any) {
-      console.warn('Firebase popup login error or fallback:', err);
+      console.warn('Google Sign-In failed or was cancelled:', err);
+      setErrorMessage(err?.message || 'Google Sign-In failed or was cancelled. Please try again.');
+      setGoogleLoading(false);
     }
-
-    // Default smooth fallback login
-    await completeGoogleLogin('krja462@gmail.com', 'KRJA Admin', 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80');
   };
 
   return (
