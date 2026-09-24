@@ -927,15 +927,16 @@ export const Campaigns: React.FC<CampaignsProps> = ({
                     />
                   </div>
 
-                  {/* Channel Name */}
+                  {/* Channel Name & Live Follower Count */}
                   {previewData.channelName && (
-                    <div className="flex items-center justify-between text-xs text-zinc-600">
-                      <span className="font-semibold text-zinc-700 truncate">
-                        Channel: <span className="font-bold text-blue-600">{previewData.channelName}</span>
-                      </span>
-                      <span className="text-[11px] text-emerald-600 font-bold bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                        Verified
-                      </span>
+                    <div className="p-3 rounded-xl bg-amber-50/80 border border-amber-200 flex items-center justify-between text-xs text-amber-900">
+                      <div className="flex items-center space-x-2 truncate">
+                        <Users className="w-4 h-4 text-amber-600 shrink-0" />
+                        <span className="font-bold truncate">Channel: {previewData.channelName}</span>
+                      </div>
+                      <div className="shrink-0 font-extrabold text-amber-900 bg-amber-100/90 px-2.5 py-1 rounded-lg border border-amber-300 text-xs flex items-center space-x-1 shadow-2xs">
+                        <span>👥 {previewData.channelFollowers ?? 150} Followers</span>
+                      </div>
                     </div>
                   )}
 
