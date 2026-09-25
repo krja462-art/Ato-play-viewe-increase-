@@ -131,8 +131,8 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onLoginSuccess, onOp
         
         {/* Brand Header */}
         <div className="text-center space-y-3">
-          <div className="inline-flex items-center justify-center w-20 h-20 rounded-3xl bg-gradient-to-tr from-blue-600 to-indigo-500 shadow-xl border border-white/30 relative">
-            <AtoPlayBadge size="lg" className="w-12 h-12" />
+          <div className="inline-flex items-center justify-center w-20 h-20 rounded-3xl bg-gradient-to-tr from-blue-600 to-indigo-500 shadow-xl border border-white/30 overflow-hidden relative">
+            <img src="/icon.png" alt="AtoViewer Icon" className="w-full h-full object-cover" />
           </div>
 
           <div className="space-y-1">
@@ -231,20 +231,6 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onLoginSuccess, onOp
             <span>Cloud Sync</span>
           </div>
         </div>
-
-        {/* Install PWA Button if available */}
-        {onOpenInstallScreen && (
-          <div className="pt-2">
-            <button
-              type="button"
-              onClick={onOpenInstallScreen}
-              className="w-full py-2.5 px-4 rounded-xl bg-white/10 hover:bg-white/15 text-blue-100 font-bold text-xs transition-colors flex items-center justify-center space-x-2 cursor-pointer border border-white/10"
-            >
-              <Download className="w-3.5 h-3.5 text-blue-300" />
-              <span>Install App on Home Screen</span>
-            </button>
-          </div>
-        )}
 
       </div>
 
