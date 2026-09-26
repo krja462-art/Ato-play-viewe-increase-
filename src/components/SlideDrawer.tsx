@@ -32,6 +32,7 @@ import { apiFetch } from '../lib/api';
 import { saveSupportMessageToFirestore } from '../lib/firebase';
 
 import { AtoPlayBadge } from './AtoPlayBadge';
+import { SubmitFeedbackModal } from './SubmitFeedbackModal';
 
 interface SlideDrawerProps {
   isOpen: boolean;
@@ -48,7 +49,7 @@ export const SlideDrawer: React.FC<SlideDrawerProps> = ({
   onLogout,
   onUserUpdate
 }) => {
-  const [activeModal, setActiveModal] = useState<'privacy' | 'terms' | 'contact' | 'referral' | 'ios_install' | 'apk_bundle' | null>(null);
+  const [activeModal, setActiveModal] = useState<'privacy' | 'terms' | 'contact' | 'referral' | 'ios_install' | 'apk_bundle' | 'feedback' | null>(null);
 
   const { isInstallable, isInstalled, isIOS, install } = usePWAInstall();
 
@@ -416,6 +417,23 @@ export const SlideDrawer: React.FC<SlideDrawerProps> = ({
                   </div>
                 </div>
                 <ChevronRight className="w-4 h-4 text-zinc-400 group-hover:text-emerald-600 group-hover:translate-x-0.5 transition-all" />
+              </button>
+
+              {/* Submit Feedback */}
+              <button
+                onClick={() => setActiveModal('feedback')}
+                className="w-full p-3 rounded-2xl hover:bg-amber-50/70 border border-transparent hover:border-amber-100 flex items-center justify-between text-left transition-all cursor-pointer group"
+              >
+                <div className="flex items-center space-x-3">
+                  <div className="w-10 h-10 rounded-xl bg-amber-100/70 text-amber-700 flex items-center justify-center group-hover:scale-105 transition-transform">
+                    <MessageSquare className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-sm text-zinc-900 group-hover:text-amber-600">Submit Feedback</h4>
+                    <p className="text-[11px] text-zinc-500">Send suggestions or report bugs to admin</p>
+                  </div>
+                </div>
+                <ChevronRight className="w-4 h-4 text-zinc-400 group-hover:text-amber-600 group-hover:translate-x-0.5 transition-all" />
               </button>
 
               {/* Install PWA App Option: Completely removed once downloaded/installed */}
@@ -1100,6 +1118,15 @@ export const SlideDrawer: React.FC<SlideDrawerProps> = ({
         </div>
       )}
 
+
+      {/* Submit Feedback Modal */}
+      {activeModal === 'feedback' && (
+        <SubmitFeedbackModal
+          isOpen={activeModal === 'feedback'}
+          onClose={() => setActiveModal(null)}
+          user={user}
+        />
+      )}
 
     </>
   );
