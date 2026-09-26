@@ -1824,9 +1824,8 @@ app.post("/api/follow/verify", async (req, res) => {
   const resultAfter = await fetchChannelFollowerCount(campaign, true);
   let countAfter = resultAfter.count;
 
-  // If in dev simulation or test mode, or if external API returns same count due to caching/limits,
-  // ensure valid follow verification increments the follower count (e.g. 15 -> 16) and awards coins.
-  if (simulateBump || countAfter <= countBefore) {
+  // If in dev simulation or test mode (simulateBump), increment countAfter
+  if (simulateBump) {
     countAfter = Math.max(countAfter, countBefore + 1);
     channelFollowerStore[channelKey] = countAfter;
   }
@@ -2139,19 +2138,12 @@ app.post("/api/watch/verify", async (req, res) => {
   let countAfter = countBefore;
 
   try {
-    const liveMeta = await extractVideoMetadata(campaign.videoUrl);
-    if (liveMeta && typeof liveMeta.channelFollowers === 'number') {
-      countAfter = liveMeta.channelFollowers;
+    const resCount = await fetchChannelFollowerCount(campaign, true);
+    if (typeof resCount.count === 'number') {
+      countAfter = resCount.count;
     }
   } catch (err) {
-    console.warn('Live follower verification error, falling back to store:', err);
-  }
-
-  // If live fetch didn't show increase, ensure successful follower increment for production reliability
-  if (countAfter <= countBefore) {
-    const cur = channelFollowerStore[channelKey] ?? countBefore;
-    channelFollowerStore[channelKey] = Math.max(cur + 1, countBefore + 1);
-    countAfter = channelFollowerStore[channelKey];
+    console.warn('Live follower verification error:', err);
   }
 
   // Strict Condition: Follow bonus is awarded ONLY if countAfter > countBefore (verified) OR user explicitly clicked Follow and verified
