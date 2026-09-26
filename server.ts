@@ -3,6 +3,16 @@ import path from "path";
 import fs from "fs";
 import crypto from "crypto";
 import type { User, Campaign, Transaction } from "./src/types.ts";
+import { GoogleGenAI } from "@google/genai";
+
+const ai = new GoogleGenAI({
+  apiKey: process.env.GEMINI_API_KEY,
+  httpOptions: {
+    headers: {
+      'User-Agent': 'aistudio-build',
+    }
+  }
+});
 
 const app = express();
 const PORT = 3000;
@@ -1956,6 +1966,142 @@ app.post("/api/follow/verify", async (req, res) => {
     user: activeUser,
     followLog: followLogEntry,
     message: `AtoPlay API Verified! Creator ke followers ${countBefore} se badhkar ${countAfter} ho gaye (+1 Follower). +30 Coins aapke wallet mein add kar diye gaye hain!`
+  });
+});
+
+// AI Screenshot Verification Endpoint for Follow Bonus using Gemini Multimodal
+app.post("/api/follow/verify-screenshot", async (req, res) => {
+  const activeUser = getActiveUser(req);
+  if (!activeUser) {
+    return res.status(401).json({ success: false, message: "Please log in to verify follow screenshot" });
+  }
+
+  const { campaignId, screenshotDataUrl } = req.body;
+  if (!campaignId || !screenshotDataUrl) {
+    return res.status(400).json({ success: false, message: "Campaign ID and screenshot are required" });
+  }
+
+  const campaign = campaigns.find(c => c.id === campaignId || c.displayId === campaignId);
+  if (!campaign) {
+    return res.status(404).json({ success: false, message: "Campaign not found" });
+  }
+
+  const alreadyFollowed = Boolean(
+    userFollowedCampaigns[activeUser.id]?.has(campaign.id) || 
+    campaign.followedUserIds?.includes(activeUser.id)
+  );
+
+  if (alreadyFollowed) {
+    return res.status(400).json({ success: false, message: "You have already claimed follow bonus for this campaign." });
+  }
+
+  let verifiedByAI = false;
+  let aiReason = "";
+
+  try {
+    const matches = screenshotDataUrl.match(/^data:(image\/[a-zA-Z+.-]+);base64,(.+)$/);
+    if (matches && matches.length === 3) {
+      const mimeType = matches[1];
+      const base64Data = matches[2];
+
+      const imagePart = {
+        inlineData: {
+          mimeType,
+          data: base64Data
+        }
+      };
+
+      const promptPart = {
+        text: `Analyze this screenshot from AtoPlay. Does this screenshot show that the user is following the creator channel or that the follower count / following status has successfully increased? Answer in JSON format with keys: { "success": true or false, "reason": "short explanation" }`
+      };
+
+      const response = await ai.models.generateContent({
+        model: "gemini-3.8-flash",
+        contents: { parts: [imagePart, promptPart] },
+        config: {
+          responseMimeType: "application/json"
+        }
+      });
+
+      const textRes = response.text || "{}";
+      const jsonRes = JSON.parse(textRes);
+      if (jsonRes.success === true) {
+        verifiedByAI = true;
+        aiReason = jsonRes.reason || "Screenshot verified successfully.";
+      } else {
+        aiReason = jsonRes.reason || "Screenshot does not clearly show following status.";
+      }
+    } else {
+      return res.status(400).json({ success: false, message: "Invalid image format." });
+    }
+  } catch (err) {
+    console.warn("Gemini screenshot verification error, falling back to live API check:", err);
+    const resultAfter = await fetchChannelFollowerCount(campaign, true);
+    if (resultAfter.count > (campaign.initialFollowers || 0)) {
+      verifiedByAI = true;
+      aiReason = "Verified via live channel follower count check.";
+    } else {
+      aiReason = "Could not verify follow from screenshot or live API check.";
+    }
+  }
+
+  if (!verifiedByAI) {
+    return res.json({
+      success: false,
+      verified: false,
+      message: `Screenshot verification failed: ${aiReason}. Please ensure the screenshot clearly shows you following the AtoPlay channel.`
+    });
+  }
+
+  const reward = 30;
+  activeUser.coins += reward;
+
+  if (!userFollowedCampaigns[activeUser.id]) {
+    userFollowedCampaigns[activeUser.id] = new Set<string>();
+  }
+  userFollowedCampaigns[activeUser.id].add(campaign.id);
+
+  if (!campaign.followedUserIds) {
+    campaign.followedUserIds = [];
+  }
+  if (!campaign.followedUserIds.includes(activeUser.id)) {
+    campaign.followedUserIds.push(activeUser.id);
+  }
+
+  // Record Follow Log
+  const resolvedFollowerUsername = activeUser.atoPlayUsername || activeUser.name || 'AtoPlay User';
+  const logId = `flog_${Date.now()}_${activeUser.id.slice(-4)}`;
+  const followLogEntry = {
+    id: logId,
+    campaignId: campaign.id,
+    creatorId: campaign.userId,
+    followerUserId: activeUser.id,
+    followerUsername: resolvedFollowerUsername,
+    followerEmail: activeUser.email,
+    followerAvatar: activeUser.avatar,
+    followerName: activeUser.name,
+    timestamp: new Date().toISOString(),
+    status: 'active' as const,
+    campaignTitle: campaign.title
+  };
+  followLogs.unshift(followLogEntry);
+
+  transactions.unshift({
+    id: `tx_${Date.now()}_follow_screenshot`,
+    userId: activeUser.id,
+    type: "earned_follow",
+    amount: reward,
+    description: `Followed channel with screenshot verification (+30 coins)`,
+    createdAt: new Date().toISOString()
+  });
+
+  res.json({
+    success: true,
+    verified: true,
+    earnedCoins: reward,
+    newBalance: activeUser.coins,
+    message: `Screenshot verified by AI successfully! +30 Bonus Coins credited to your wallet.`,
+    user: activeUser
   });
 });
 

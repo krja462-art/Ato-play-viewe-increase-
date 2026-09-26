@@ -12,7 +12,8 @@ import {
   AlertCircle, 
   UserPlus, 
   RefreshCw,
-  UserCheck
+  UserCheck,
+  Upload
 } from 'lucide-react';
 import { Campaign, User, format4CharId, FollowLog } from '../types';
 import { playCoinCelebrationSound } from '../utils/audio';
@@ -68,6 +69,70 @@ export const RewardPopupModal: React.FC<RewardPopupModalProps> = ({
   const [isLinkModalOpen, setIsLinkModalOpen] = useState<boolean>(false);
   const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
   const [feedbackType, setFeedbackType] = useState<'success' | 'error' | null>(null);
+  const [screenshotFile, setScreenshotFile] = useState<string | null>(null);
+
+  const handleVerifyWithScreenshot = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !campaign) return;
+
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const dataUrl = reader.result as string;
+      setScreenshotFile(dataUrl);
+
+      if (verifying) return;
+      setVerifying(true);
+      setFeedbackMessage(null);
+      setFeedbackType(null);
+
+      try {
+        const res = await apiFetch('/api/follow/verify-screenshot', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-user-id': user?.id || ''
+          },
+          body: JSON.stringify({
+            campaignId: campaign.id,
+            screenshotDataUrl: dataUrl
+          })
+        });
+
+        if (res?.verified || res?.success) {
+          const bonus = res.earnedCoins || 30;
+          const newTotal = baseCoins + bonus;
+          const updatedCoins = res.newBalance ?? (currentWalletBalance + bonus);
+
+          setIsClaimed(true);
+          setTotalEarned(newTotal);
+          setCurrentWalletBalance(updatedCoins);
+          setBonusAmount(bonus);
+
+          setFeedbackType('success');
+          setFeedbackMessage(res.message || 'Screenshot verified by AI successfully! +30 Coins added.');
+
+          playCoinCelebrationSound();
+          try {
+            confetti({ particleCount: 120, spread: 80, origin: { y: 0.6 } });
+          } catch {}
+
+          if (res.user && onCoinEarned) {
+            onCoinEarned(res.user);
+            saveUserCoinsToFirestore(res.user.id, res.user.coins, res.user.email).catch(() => {});
+          }
+        } else {
+          setFeedbackType('error');
+          setFeedbackMessage(res?.message || 'Screenshot verification failed. Please upload a clear follow screenshot.');
+        }
+      } catch (err: any) {
+        setFeedbackType('error');
+        setFeedbackMessage(err?.message || 'Network error during screenshot verification.');
+      } finally {
+        setVerifying(false);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
 
   useEffect(() => {
     if (isOpen) {
@@ -332,27 +397,48 @@ export const RewardPopupModal: React.FC<RewardPopupModalProps> = ({
                           @{user?.atoPlayUsername || user?.name || 'user'}
                         </span>
                       </div>
-                      {/* User's requested Verify button */}
-                      <button
-                        id="verify-follow-button-modal"
-                        type="button"
-                        onClick={() => handleVerifyFollow(false)}
-                        disabled={verifying}
-                        className="w-full py-1.5 px-2 rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 active:scale-95 text-white font-extrabold text-[11px] shadow-sm flex items-center justify-center space-x-1 transition-all cursor-pointer disabled:opacity-60"
-                        title="Check AtoPlay follower count via API"
-                      >
-                        {verifying ? (
-                          <>
-                            <Loader2 className="w-3 h-3 animate-spin shrink-0" />
-                            <span>Checking API...</span>
-                          </>
-                        ) : (
-                          <>
-                            <CheckCircle2 className="w-3 h-3 shrink-0" />
-                            <span>Verify Follow (+30)</span>
-                          </>
+                      {/* Upload Screenshot & Verify Section */}
+                      <div className="space-y-2 pt-1">
+                        <label className="block w-full py-1.5 px-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-white font-extrabold text-[11px] shadow-sm text-center cursor-pointer transition-all flex items-center justify-center space-x-1.5">
+                          <Upload className="w-3.5 h-3.5" />
+                          <span>Upload Follow Screenshot</span>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={handleVerifyWithScreenshot}
+                            className="hidden"
+                          />
+                        </label>
+
+                        {screenshotFile && (
+                          <div className="flex items-center space-x-2 p-1.5 rounded bg-zinc-50 border border-zinc-200">
+                            <img src={screenshotFile} alt="Screenshot Preview" className="w-8 h-8 rounded object-cover" />
+                            <span className="text-[10px] text-zinc-600 truncate">Screenshot uploaded</span>
+                          </div>
                         )}
-                      </button>
+
+                        {/* User's requested Verify button */}
+                        <button
+                          id="verify-follow-button-modal"
+                          type="button"
+                          onClick={() => handleVerifyFollow(false)}
+                          disabled={verifying}
+                          className="w-full py-1.5 px-2 rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 active:scale-95 text-white font-extrabold text-[11px] shadow-sm flex items-center justify-center space-x-1 transition-all cursor-pointer disabled:opacity-60"
+                          title="Check AtoPlay follower count via API"
+                        >
+                          {verifying ? (
+                            <>
+                              <Loader2 className="w-3 h-3 animate-spin shrink-0" />
+                              <span>Verifying...</span>
+                            </>
+                          ) : (
+                            <>
+                              <CheckCircle2 className="w-3 h-3 shrink-0" />
+                              <span>Verify Follow (+30)</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>
