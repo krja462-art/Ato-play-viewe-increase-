@@ -24,7 +24,8 @@ import {
   Share,
   PlusSquare,
   Info,
-  RefreshCw
+  RefreshCw,
+  MessageSquare
 } from 'lucide-react';
 import { User } from '../types';
 import { usePWAInstall } from '../hooks/usePWAInstall';

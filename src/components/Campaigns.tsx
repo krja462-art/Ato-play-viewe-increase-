@@ -665,16 +665,10 @@ export const Campaigns: React.FC<CampaignsProps> = ({
                       </span>
                     </div>
 
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedCampaignForLogs(camp);
-                      }}
-                      className="inline-flex items-center space-x-1 text-[11px] font-bold text-blue-600 hover:text-blue-800 transition-colors cursor-pointer"
-                    >
+                    <div className="inline-flex items-center space-x-1 text-[11px] font-bold text-emerald-700">
                       <Users className="w-3 h-3" />
-                      <span>Full Log ({camp.followLogs?.length || 0})</span>
-                    </button>
+                      <span>{camp.followLogs?.length || 0} Followers Verified</span>
+                    </div>
                   </div>
 
                   {camp.followLogs && camp.followLogs.length > 0 ? (
