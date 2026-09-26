@@ -412,27 +412,17 @@ export const RewardPopupModal: React.FC<RewardPopupModalProps> = ({
                 )}
                 <div className="flex-1 space-y-1.5">
                   <div>{feedbackMessage}</div>
-                  {feedbackType === 'error' && (
+                  {feedbackType === 'error' && channelUrl && (
                     <div className="flex items-center space-x-2 pt-0.5">
-                      {channelUrl && (
-                        <a
-                          href={channelUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-[11px] text-blue-700 font-bold underline flex items-center space-x-1"
-                        >
-                          <span>Open AtoPlay Channel</span>
-                          <ExternalLink className="w-3 h-3" />
-                        </a>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => handleVerifyFollow(true)}
-                        className="text-[10px] px-2 py-0.5 rounded bg-zinc-200 hover:bg-zinc-300 text-zinc-700 font-bold cursor-pointer"
-                        title="Demo / Test follower increase verification"
+                      <a
+                        href={channelUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[11px] text-blue-700 font-bold underline flex items-center space-x-1"
                       >
-                        Demo +1 Follower
-                      </button>
+                        <span>Open AtoPlay Channel to Follow</span>
+                        <ExternalLink className="w-3 h-3" />
+                      </a>
                     </div>
                   )}
                 </div>
@@ -440,13 +430,27 @@ export const RewardPopupModal: React.FC<RewardPopupModalProps> = ({
             </div>
           )}
 
-          {/* Channel Follower Status if available */}
-          {typeof followersBefore === 'number' && typeof followersAfter === 'number' && (
-            <div className="flex items-center justify-between text-[11px] px-2 text-zinc-500 bg-white/70 py-1.5 rounded-lg border border-amber-200/40">
-              <span>Channel Followers Count:</span>
-              <span className="font-bold text-zinc-700">
-                {followersBefore} → {followersAfter} {followersAfter > followersBefore ? "✅ (+1 Followed)" : ""}
-              </span>
+          {/* Real Channel Follower Status Comparison */}
+          {typeof followersBefore === 'number' && (
+            <div className="p-2.5 rounded-xl bg-white/90 border border-amber-200 text-xs text-left space-y-1">
+              <div className="font-bold text-zinc-800 flex items-center justify-between">
+                <span>Real AtoPlay Follower Verification:</span>
+                <span className={isClaimed ? "text-emerald-700 font-black" : "text-amber-700 font-bold"}>
+                  {isClaimed ? "Verified (+1 Follower ✓)" : "Pending Follow"}
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-[11px] pt-1">
+                <div className="p-1.5 rounded-lg bg-zinc-50 border border-zinc-200">
+                  <span className="text-zinc-500 block text-[10px]">Pehle Followers</span>
+                  <span className="font-black text-zinc-800 text-sm">{followersBefore}</span>
+                </div>
+                <div className="p-1.5 rounded-lg bg-emerald-50 border border-emerald-200">
+                  <span className="text-emerald-700 block text-[10px]">Abhi Followers</span>
+                  <span className="font-black text-emerald-800 text-sm">
+                    {typeof followersAfter === 'number' ? followersAfter : followersBefore}
+                  </span>
+                </div>
+              </div>
             </div>
           )}
 
