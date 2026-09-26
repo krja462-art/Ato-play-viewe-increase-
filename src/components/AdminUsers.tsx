@@ -18,6 +18,9 @@ export const AdminUsers: React.FC<AdminUsersProps> = ({ user, setActiveTab }) =>
   const [coinAmount, setCoinAmount] = useState<string>('100');
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [activeAdminTab, setActiveAdminTab] = useState<'users' | 'campaignLogs'>('users');
+  const [campaignLogs, setCampaignLogs] = useState<any[]>([]);
+  const [logsLoading, setLogsLoading] = useState(false);
 
   const fetchUsers = async () => {
     setLoading(true);
@@ -48,9 +51,29 @@ export const AdminUsers: React.FC<AdminUsersProps> = ({ user, setActiveTab }) =>
     }
   };
 
+  const fetchCampaignLogs = async () => {
+    setLogsLoading(true);
+    try {
+      const res = await apiFetch('/api/admin/campaign-logs');
+      if (res?.success && Array.isArray(res.logs)) {
+        setCampaignLogs(res.logs);
+      }
+    } catch (err) {
+      console.warn('Failed to fetch campaign creation logs:', err);
+    } finally {
+      setLogsLoading(false);
+    }
+  };
+
   useEffect(() => {
     fetchUsers();
   }, []);
+
+  useEffect(() => {
+    if (activeAdminTab === 'campaignLogs') {
+      fetchCampaignLogs();
+    }
+  }, [activeAdminTab]);
 
   const handleUpdateCoins = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -169,8 +192,90 @@ export const AdminUsers: React.FC<AdminUsersProps> = ({ user, setActiveTab }) =>
         </div>
       )}
 
-      {/* Search Bar & Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+      {/* Admin Navigation Tabs */}
+      <div className="flex items-center space-x-3 mb-6 border-b border-zinc-200 pb-3">
+        <button
+          onClick={() => setActiveAdminTab('users')}
+          className={`py-2 px-4 rounded-xl text-xs font-black uppercase transition-all cursor-pointer ${
+            activeAdminTab === 'users'
+              ? 'bg-blue-600 text-white shadow-md'
+              : 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200'
+          }`}
+        >
+          Google Users Directory ({usersList.length})
+        </button>
+        <button
+          onClick={() => setActiveAdminTab('campaignLogs')}
+          className={`py-2 px-4 rounded-xl text-xs font-black uppercase transition-all cursor-pointer ${
+            activeAdminTab === 'campaignLogs'
+              ? 'bg-blue-600 text-white shadow-md'
+              : 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200'
+          }`}
+        >
+          Campaign Follower Capture Logs (Debug)
+        </button>
+      </div>
+
+      {activeAdminTab === 'campaignLogs' ? (
+        <div className="bg-white rounded-3xl border border-zinc-200 shadow-xl overflow-hidden p-6 space-y-4">
+          <div className="flex items-center justify-between pb-4 border-b border-zinc-100">
+            <div>
+              <h3 className="font-black text-lg text-zinc-950">Campaign Creation Follower Capture Logs</h3>
+              <p className="text-xs text-zinc-500">Debug logs recorded at the exact moment each campaign was created before verification begins.</p>
+            </div>
+            <button
+              onClick={fetchCampaignLogs}
+              disabled={logsLoading}
+              className="px-4 py-2 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-bold text-xs flex items-center space-x-2 cursor-pointer transition-colors"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${logsLoading ? 'animate-spin' : ''}`} />
+              <span>Refresh Logs</span>
+            </button>
+          </div>
+
+          {logsLoading ? (
+            <div className="py-12 text-center text-zinc-500 font-medium">Loading capture logs...</div>
+          ) : campaignLogs.length === 0 ? (
+            <div className="py-12 text-center text-zinc-500 font-medium">No campaign creation follower capture logs recorded yet. Create a campaign to test!</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-zinc-50 text-zinc-500 font-extrabold uppercase border-b border-zinc-200">
+                  <tr>
+                    <th className="p-3">Campaign ID</th>
+                    <th className="p-3">Creator Name</th>
+                    <th className="p-3">Video URL</th>
+                    <th className="p-3">Channel ID</th>
+                    <th className="p-3">Captured Pre-Campaign Followers</th>
+                    <th className="p-3">Timestamp</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-100 font-medium text-zinc-800">
+                  {campaignLogs.map(log => (
+                    <tr key={log.id} className="hover:bg-zinc-50/80">
+                      <td className="p-3 font-mono font-bold text-blue-600">{log.campaignId}</td>
+                      <td className="p-3 font-bold">{log.userName}</td>
+                      <td className="p-3 truncate max-w-[200px]">
+                        <a href={log.videoUrl} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">
+                          {log.videoUrl}
+                        </a>
+                      </td>
+                      <td className="p-3 font-mono text-[11px] text-zinc-500">{log.channelId || 'N/A'}</td>
+                      <td className="p-3 font-black text-emerald-700 text-sm">
+                        {log.initialFollowers} Followers
+                      </td>
+                      <td className="p-3 text-zinc-500 text-[11px]">{new Date(log.timestamp).toLocaleString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      ) : (
+        <>
+          {/* Search Bar & Stats */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
         <div className="bg-white p-5 rounded-2xl border border-zinc-200 shadow-xs flex items-center space-x-4">
           <div className="w-12 h-12 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
             <UserCheck className="w-6 h-6" />
@@ -468,6 +573,9 @@ export const AdminUsers: React.FC<AdminUsersProps> = ({ user, setActiveTab }) =>
 
           </div>
         </div>
+      )}
+
+        </>
       )}
 
     </div>

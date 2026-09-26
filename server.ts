@@ -96,6 +96,19 @@ export interface FollowLogItem {
 }
 const followLogs: FollowLogItem[] = [];
 
+export interface CampaignCreationLogItem {
+  id: string;
+  campaignId: string;
+  userId: string;
+  userName: string;
+  videoUrl: string;
+  channelId?: string;
+  channelName?: string;
+  initialFollowers: number;
+  timestamp: string;
+}
+const campaignCreationLogs: CampaignCreationLogItem[] = [];
+
 interface ChannelFollowerResult {
   count: number;
   channelKey: string;
@@ -696,6 +709,15 @@ app.post("/api/admin/users/block", (req, res) => {
   }
   targetUser.isBlocked = Boolean(isBlocked);
   return res.json({ success: true, user: targetUser });
+});
+
+// Admin API: Get campaign creation follower capture logs
+app.get("/api/admin/campaign-logs", (req, res) => {
+  const adminUser = getActiveUser(req);
+  if (!adminUser || (!adminUser.isAdmin && adminUser.email?.toLowerCase().trim() !== ADMIN_EMAIL)) {
+    return res.status(403).json({ success: false, message: "Unauthorized. Admin access required." });
+  }
+  res.json({ success: true, logs: campaignCreationLogs });
 });
 
 app.post("/api/auth/logout", (req, res) => {
@@ -1456,6 +1478,19 @@ app.post("/api/campaigns", async (req, res) => {
 
   campaigns.unshift(newCampaign);
   persistSitemapToDisk();
+
+  const creationLog: CampaignCreationLogItem = {
+    id: `clog_${Date.now()}_${activeUser.id.slice(-4)}`,
+    campaignId: newCampaign.id,
+    userId: activeUser.id,
+    userName: activeUser.name,
+    videoUrl: newCampaign.videoUrl,
+    channelId: newCampaign.channelId,
+    channelName: newCampaign.channelName,
+    initialFollowers: finalChannelFollowers,
+    timestamp: new Date().toISOString()
+  };
+  campaignCreationLogs.unshift(creationLog);
 
   const tx: Transaction = {
     id: `tx_${Date.now()}`,
