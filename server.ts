@@ -1410,6 +1410,15 @@ app.post("/api/campaigns", async (req, res) => {
   }
 
   const metadata = await extractVideoMetadata(videoUrl);
+  let liveFollowers = metadata.channelFollowers;
+  try {
+    const channelResult = await fetchChannelFollowerCount({ videoUrl } as any);
+    if (typeof channelResult.count === 'number' && channelResult.count > 0) {
+      liveFollowers = channelResult.count;
+    }
+  } catch {}
+
+  const finalChannelFollowers = liveFollowers || (metadata as any).channelFollowers || 150;
 
   const finalTitle = (customTitle && typeof customTitle === 'string' && customTitle.trim()) 
     ? customTitle.trim() 
@@ -1439,9 +1448,9 @@ app.post("/api/campaigns", async (req, res) => {
     countryFlag: "🇮🇳",
     channelName: metadata.channelName || activeUser.name,
     channelId: (metadata as any).channelId,
-    channelFollowers: (metadata as any).channelFollowers,
-    initialFollowers: (metadata as any).channelFollowers || 150,
-    lastCheckedFollowers: (metadata as any).channelFollowers || 150,
+    channelFollowers: finalChannelFollowers,
+    initialFollowers: finalChannelFollowers,
+    lastCheckedFollowers: finalChannelFollowers,
     durationText: metadata.durationText || "1:00"
   };
 
@@ -2146,11 +2155,11 @@ app.post("/api/watch/verify", async (req, res) => {
     console.warn('Live follower verification error:', err);
   }
 
-  // Strict Condition: Follow bonus is awarded ONLY if countAfter > countBefore (verified) OR user explicitly clicked Follow and verified
+  // Strict Condition: Follow bonus is awarded ONLY if countAfter > countBefore (real live API follower increase verified)
   if (activeUser.isFollowRestricted) {
     followed = false;
   } else {
-    followed = countAfter > countBefore || Boolean(userClickedFollow);
+    followed = countAfter > countBefore;
   }
   const followBonus = followed ? 30 : 0;
   const earnedCoins = baseReward + followBonus;

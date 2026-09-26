@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Campaign, User, format4CharId } from '../types';
 import { Plus, MoreVertical, Clock, Trash2, Coins, AlertCircle, Sparkles, X, Video, ExternalLink, Check, Search, ShieldCheck, Clipboard, Image as ImageIcon, CheckCircle2, Users, Mail, UserCheck } from 'lucide-react';
 import { AtoPlayBadge } from './AtoPlayBadge';
-import { FollowersLogModal } from './FollowersLogModal';
 import { apiFetch, extractVideoMetadataClient, cleanVideoUrl } from '../lib/api';
 import { saveCampaignToFirestore, deleteCampaignInFirestore, saveUserCoinsToFirestore, getMyCampaignsFromFirestore, getFollowLogsFromFirestore, reportFakeFollowInFirestore } from '../lib/firebase';
 import confetti from 'canvas-confetti';
@@ -25,7 +24,6 @@ export const Campaigns: React.FC<CampaignsProps> = ({
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [selectedCampaignForLogs, setSelectedCampaignForLogs] = useState<Campaign | null>(null);
 
   useEffect(() => {
     if (isCreateModalOpen !== undefined) {
@@ -639,16 +637,6 @@ export const Campaigns: React.FC<CampaignsProps> = ({
                           <button
                             onClick={() => {
                               setActiveMenuId(null);
-                              setSelectedCampaignForLogs(camp);
-                            }}
-                            className="w-full px-4 py-2.5 text-left text-xs text-zinc-700 hover:bg-zinc-50 flex items-center space-x-2.5 font-bold cursor-pointer transition-colors border-b border-zinc-100"
-                          >
-                            <Users className="w-4 h-4 text-blue-600 shrink-0" />
-                            <span>View Followers Log</span>
-                          </button>
-                          <button
-                            onClick={() => {
-                              setActiveMenuId(null);
                               handleDeleteCampaign(camp.id);
                             }}
                             className="w-full px-4 py-2.5 text-left text-xs text-red-600 hover:bg-red-50 flex items-center space-x-2.5 font-bold cursor-pointer transition-colors"
@@ -1112,16 +1100,6 @@ export const Campaigns: React.FC<CampaignsProps> = ({
 
           </div>
         </div>
-      )}
-
-      {/* Followers Verification & Anti-Fraud Log Modal */}
-      {selectedCampaignForLogs && (
-        <FollowersLogModal
-          isOpen={Boolean(selectedCampaignForLogs)}
-          onClose={() => setSelectedCampaignForLogs(null)}
-          campaign={selectedCampaignForLogs}
-          user={user}
-        />
       )}
 
     </div>
