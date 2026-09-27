@@ -2012,7 +2012,17 @@ app.post("/api/follow/verify-screenshot", async (req, res) => {
       };
 
       const promptPart = {
-        text: `Analyze this screenshot from AtoPlay. Does this screenshot show that the user is following the creator channel or that the follower count / following status has successfully increased? Answer in JSON format with keys: { "success": true or false, "reason": "short explanation" }`
+        text: `You are an AI auditor for AtoPlay channel follower verification. 
+Examine this screenshot carefully.
+Determine if the user has successfully followed the channel or if they are still seeing a blue Follow button.
+- Rule 1: If the screenshot shows a BLUE color FOLLOW button (meaning the user has NOT followed yet, and the follow button is still blue), then you MUST set "success": false with reason "Aapne abhi channel follow nahi kiya hai. Screenshot mein Follow button blue color ka dikh raha hai! Kripya follow karke sahi screenshot upload karein."
+- Rule 2: If the screenshot shows "Following", a checkmark, or a state indicating the user is already following the channel, then you MUST set "success": true with reason "Gemini AI ne verify kiya ki aapne channel follow kar liya hai! Following state confirmed."
+
+Respond strictly in JSON format with keys:
+{
+  "success": boolean,
+  "reason": string
+}`
       };
 
       const response = await ai.models.generateContent({
