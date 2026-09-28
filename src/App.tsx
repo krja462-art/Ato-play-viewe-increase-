@@ -4,6 +4,7 @@ import { Navbar } from './components/Navbar';
 import { HomeWatchFeed } from './components/HomeWatchFeed';
 import { Campaigns } from './components/Campaigns';
 import { AdminUsers } from './components/AdminUsers';
+import { LinkAtoPlayModal } from './components/LinkAtoPlayModal';
 import { SplashScreen } from './components/SplashScreen';
 import { PreLoginInstallScreen } from './components/PreLoginInstallScreen';
 import { PWAInstallBanner } from './components/PWAInstallBanner';
@@ -421,6 +422,20 @@ export default function App() {
 
       {/* In-App PWA Install Banner */}
       <PWAInstallBanner />
+
+      {/* First-time Google Login AtoPlay Username Prompt */}
+      {user && !user.atoPlayUsername && (
+        <LinkAtoPlayModal
+          isOpen={true}
+          onClose={() => {}}
+          user={user}
+          onSuccess={(updated) => {
+            handleUpdateUser(updated);
+          }}
+          title="Welcome! Enter Your AtoPlay Username"
+          description="Aapke Google login ke baad kripya apna exact AtoPlay channel username / name enter karein taaki dusre creators aapke follow ko verify kar sakein."
+        />
+      )}
 
     </div>
   );

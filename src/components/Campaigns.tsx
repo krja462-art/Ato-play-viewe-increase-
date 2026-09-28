@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Campaign, User, format4CharId } from '../types';
 import { Plus, MoreVertical, Clock, Trash2, Coins, AlertCircle, Sparkles, X, Video, ExternalLink, Check, Search, ShieldCheck, Clipboard, Image as ImageIcon, CheckCircle2, Users, Mail, UserCheck } from 'lucide-react';
 import { AtoPlayBadge } from './AtoPlayBadge';
+import { CreateFollowerCampaignModal } from './CreateFollowerCampaignModal';
 import { apiFetch, extractVideoMetadataClient, cleanVideoUrl } from '../lib/api';
 import { saveCampaignToFirestore, deleteCampaignInFirestore, saveUserCoinsToFirestore, getMyCampaignsFromFirestore, getFollowLogsFromFirestore, reportFakeFollowInFirestore } from '../lib/firebase';
 import confetti from 'canvas-confetti';
@@ -775,8 +776,19 @@ export const Campaigns: React.FC<CampaignsProps> = ({
         </div>
       )}
 
-      {/* Modal Popup for Creating Campaign */}
-      {isModalOpen && (
+      {/* Dedicated Follower Campaign Creation Modal */}
+      {isModalOpen && newCampaignType === 'follower' && (
+        <CreateFollowerCampaignModal
+          isOpen={isModalOpen && newCampaignType === 'follower'}
+          onClose={handleCloseModal}
+          user={user}
+          onCampaignCreated={onCampaignCreated}
+          fetchMyCampaigns={fetchMyCampaigns}
+        />
+      )}
+
+      {/* Modal Popup for Creating Video Campaign or Selecting Type */}
+      {isModalOpen && newCampaignType !== 'follower' && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
           <div className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-8 space-y-5 shadow-2xl relative my-8 max-h-[90vh] overflow-y-auto">
             
@@ -784,7 +796,7 @@ export const Campaigns: React.FC<CampaignsProps> = ({
               <div className="flex items-center space-x-2">
                 <Sparkles className="w-5 h-5 text-blue-600" />
                 <h3 className="font-extrabold text-lg text-zinc-900">
-                  {newCampaignType === null ? "Select Campaign Type" : newCampaignType === 'follower' ? "Create Follower Campaign" : "Create Video Campaign"}
+                  {newCampaignType === null ? "Select Campaign Type" : "Create Video Campaign"}
                 </h3>
               </div>
               <button
@@ -854,10 +866,8 @@ export const Campaigns: React.FC<CampaignsProps> = ({
                   >
                     ← Back to campaign type selection
                   </button>
-                  <span className={`text-[10px] px-2 py-0.5 rounded font-black uppercase ${
-                    newCampaignType === 'follower' ? 'bg-emerald-100 text-emerald-800' : 'bg-blue-100 text-blue-800'
-                  }`}>
-                    {newCampaignType === 'follower' ? '👥 Follower Campaign' : '🎬 Video Campaign'}
+                  <span className="text-[10px] px-2 py-0.5 rounded font-black uppercase bg-blue-100 text-blue-800">
+                    🎬 Video Campaign
                   </span>
                 </div>
               
