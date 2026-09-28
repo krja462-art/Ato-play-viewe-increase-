@@ -26,9 +26,9 @@ export const CreateFollowerCampaignModal: React.FC<CreateFollowerCampaignModalPr
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [fetchingInfo, setFetchingInfo] = useState(false);
-  const [channelName, setChannelName] = useState(user.atoPlayUsername || user.name || 'My AtoPlay Channel');
-  const [currentFollowers, setCurrentFollowers] = useState<number>(120);
-  const [bannerUrl, setBannerUrl] = useState<string>('https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80');
+  const [channelName, setChannelName] = useState('');
+  const [currentFollowers, setCurrentFollowers] = useState<number>(0);
+  const [bannerUrl, setBannerUrl] = useState<string>('');
 
   if (!isOpen) return null;
 
@@ -217,24 +217,33 @@ export const CreateFollowerCampaignModal: React.FC<CreateFollowerCampaignModalPr
           <div className="p-3.5 rounded-2xl bg-zinc-50 border border-zinc-200 space-y-2.5">
             <div className="flex items-center justify-between text-xs font-bold text-zinc-700">
               <span>Channel Preview & Live Stats</span>
-              <span className="text-emerald-700 font-black">👥 {currentFollowers} Followers</span>
+              <span className="text-emerald-700 font-black">👥 {currentFollowers > 0 ? `${currentFollowers} Followers` : '0 Followers'}</span>
             </div>
-            <div className="relative w-full aspect-[21/9] rounded-xl overflow-hidden bg-zinc-950 border border-zinc-200 shadow-2xs">
-              <img
-                src={bannerUrl}
-                alt="Channel Banner"
-                referrerPolicy="no-referrer"
-                crossOrigin="anonymous"
-                onError={(e) => {
-                  (e.currentTarget as HTMLImageElement).src = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80";
-                }}
-                className="w-full h-full object-cover"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent flex items-end p-2.5">
-                <div className="text-white text-xs font-extrabold truncate">
-                  {channelName}
+            <div className="relative w-full aspect-[21/9] rounded-xl overflow-hidden bg-zinc-950 border border-zinc-200 shadow-2xs flex items-center justify-center">
+              {bannerUrl ? (
+                <>
+                  <img
+                    src={bannerUrl}
+                    alt="Channel Banner"
+                    referrerPolicy="no-referrer"
+                    crossOrigin="anonymous"
+                    onError={(e) => {
+                      (e.currentTarget as HTMLImageElement).src = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80";
+                    }}
+                    className="w-full h-full object-cover"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent flex items-end p-2.5">
+                    <div className="text-white text-xs font-extrabold truncate">
+                      {channelName}
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div className="text-center p-4 text-zinc-400 text-xs">
+                  <p className="font-bold text-zinc-300">No channel fetched yet</p>
+                  <p className="text-[11px] text-zinc-500 mt-0.5">Enter your AtoPlay channel URL above and tap Fetch</p>
                 </div>
-              </div>
+              )}
             </div>
           </div>
 

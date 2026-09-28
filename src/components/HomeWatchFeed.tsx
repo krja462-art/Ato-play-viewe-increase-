@@ -1410,11 +1410,34 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
                   key={camp.id}
                   className="bg-white rounded-2xl border border-emerald-200 shadow-xs hover:shadow-md transition-all p-4 space-y-3"
                 >
+                  {/* Channel Banner Preview */}
+                  {camp.thumbnailUrl && (
+                    <div className="relative w-full aspect-[21/9] rounded-xl overflow-hidden bg-zinc-950 border border-zinc-200 shadow-2xs">
+                      <img
+                        src={camp.thumbnailUrl}
+                        alt="Channel Banner"
+                        referrerPolicy="no-referrer"
+                        crossOrigin="anonymous"
+                        onError={(e) => {
+                          (e.currentTarget as HTMLImageElement).src = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80";
+                        }}
+                        className="w-full h-full object-cover"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent flex items-end p-2.5">
+                        <div className="text-white text-xs font-extrabold truncate">
+                          {camp.channelName || camp.userName || 'AtoPlay Creator'}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   <div className="flex items-center justify-between">
                     <div className="flex items-center space-x-3">
-                      <div className="w-12 h-12 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold">
-                        👥
-                      </div>
+                      {!camp.thumbnailUrl && (
+                        <div className="w-12 h-12 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold">
+                          👥
+                        </div>
+                      )}
                       <div>
                         <h3 className="font-extrabold text-sm sm:text-base text-zinc-900">{camp.channelName || camp.userName || 'AtoPlay Creator'}</h3>
                         <p className="text-xs text-zinc-500">{camp.title || 'Grow Channel Followers'}</p>
