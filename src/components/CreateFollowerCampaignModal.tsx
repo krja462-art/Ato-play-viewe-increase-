@@ -36,15 +36,26 @@ export const CreateFollowerCampaignModal: React.FC<CreateFollowerCampaignModalPr
   const totalCost = Number(targetFollowers) * COST_PER_FOLLOWER;
   const isUserAdmin = Boolean(user.isAdmin || user.email?.toLowerCase().trim() === 'krja462@gmail.com');
 
+  // Regex-based URL cleaner to strip unnecessary query parameters and standardize AtoPlay channel link format
+  const cleanAtoPlayUrl = (rawUrl: string): string => {
+    if (!rawUrl || typeof rawUrl !== 'string') return '';
+    let s = rawUrl.trim().replace(/^["']|["']$/g, '');
+    // Standardize domain and remove query parameters / hashes
+    s = s.replace(/^(?:https?:\/\/)?(?:www\.)?(?:atoplay\.com|atoplay\.in)/i, 'https://atoplay.com');
+    s = s.replace(/[?#].*$/, '');
+    s = s.replace(/([^:]\/)\/+/g, '$1');
+    return s;
+  };
+
   const handleFetchChannelInfo = async () => {
     const rawUrl = channelUrl.trim();
     if (!rawUrl) return;
+    const cleanedUrl = cleanAtoPlayUrl(rawUrl);
     try {
       setFetchingInfo(true);
       setErrorMsg(null);
       setSuccessMsg(null);
-      const res = await apiFetch(`/api/campaigns/extract-metadata?url=${encodeURIComponent(rawUrl)}`);
-      const data = await res.json();
+      const data = await apiFetch(`/api/campaigns/extract-metadata?url=${encodeURIComponent(cleanedUrl)}`);
       if (data?.success && data?.metadata) {
         const meta = data.metadata;
         const resolvedName = meta.channelName && meta.channelName !== 'AtoPlay Creator' ? meta.channelName : (meta.title || user.atoPlayUsername || user.name || 'AtoPlay Channel');
@@ -99,7 +110,7 @@ export const CreateFollowerCampaignModal: React.FC<CreateFollowerCampaignModalPr
           'x-user-id': user.id
         },
         body: JSON.stringify({
-          videoUrl: cleanVideoUrl(channelUrl.trim()),
+          videoUrl: cleanAtoPlayUrl(channelUrl.trim()),
           targetViews: followersCount,
           viewsRequired: followersCount,
           rewardPerView: 30,
