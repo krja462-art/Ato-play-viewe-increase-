@@ -1406,7 +1406,7 @@ app.post("/api/campaigns", async (req, res) => {
     return res.status(401).json({ success: false, message: "Please log in with Google to create a campaign." });
   }
 
-  const { videoUrl, targetViews, viewsRequired, durationSeconds, title: customTitle, thumbnailUrl: customThumbnail } = req.body;
+  const { videoUrl, targetViews, viewsRequired, durationSeconds, title: customTitle, thumbnailUrl: customThumbnail, campaignType } = req.body;
   
   if (!videoUrl || (!targetViews && !viewsRequired)) {
     return res.status(400).json({ success: false, message: "Missing required campaign fields" });
@@ -1483,7 +1483,8 @@ app.post("/api/campaigns", async (req, res) => {
     channelFollowers: finalChannelFollowers,
     initialFollowers: finalChannelFollowers,
     lastCheckedFollowers: finalChannelFollowers,
-    durationText: metadata.durationText || "1:00"
+    durationText: metadata.durationText || "1:00",
+    campaignType: campaignType === 'follower' ? 'follower' : 'video'
   };
 
   campaigns.unshift(newCampaign);

@@ -37,6 +37,7 @@ export const Campaigns: React.FC<CampaignsProps> = ({
 
   const handleCloseModal = () => {
     setIsModalOpen(false);
+    setNewCampaignType(null);
     if (onCloseCreateModal) onCloseCreateModal();
   };
 
@@ -47,6 +48,7 @@ export const Campaigns: React.FC<CampaignsProps> = ({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
+  const [newCampaignType, setNewCampaignType] = useState<'video' | 'follower' | null>(null);
 
   // Video metadata preview state
   const [fetchingPreview, setFetchingPreview] = useState(false);
@@ -378,7 +380,8 @@ export const Campaigns: React.FC<CampaignsProps> = ({
           rewardPerView: 60,
           durationSeconds: 60,
           title: customTitle || previewData?.title,
-          thumbnailUrl: customThumbnailUrl || previewData?.thumbnailUrl
+          thumbnailUrl: customThumbnailUrl || previewData?.thumbnailUrl,
+          campaignType: newCampaignType || 'video'
         })
       });
 
@@ -780,7 +783,9 @@ export const Campaigns: React.FC<CampaignsProps> = ({
             <div className="flex items-center justify-between pb-2 border-b border-zinc-100">
               <div className="flex items-center space-x-2">
                 <Sparkles className="w-5 h-5 text-blue-600" />
-                <h3 className="font-extrabold text-lg text-zinc-900">Create Video Campaign</h3>
+                <h3 className="font-extrabold text-lg text-zinc-900">
+                  {newCampaignType === null ? "Select Campaign Type" : newCampaignType === 'follower' ? "Create Follower Campaign" : "Create Video Campaign"}
+                </h3>
               </div>
               <button
                 onClick={handleCloseModal}
@@ -803,7 +808,58 @@ export const Campaigns: React.FC<CampaignsProps> = ({
               </div>
             )}
 
-            <form onSubmit={handleCreateCampaign} className="space-y-5">
+            {newCampaignType === null ? (
+              <div className="space-y-4 py-2">
+                <p className="text-xs text-zinc-600 font-medium text-center">
+                  Aap kis tarah ka campaign launch karna chahte hain? Niche option select karein:
+                </p>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                  <button
+                    type="button"
+                    onClick={() => setNewCampaignType('video')}
+                    className="p-5 rounded-2xl bg-gradient-to-br from-blue-50 to-indigo-50 border-2 border-blue-200 hover:border-blue-500 text-left space-y-2 transition-all cursor-pointer group shadow-xs"
+                  >
+                    <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold shadow-sm group-hover:scale-105 transition-transform text-lg">
+                      🎬
+                    </div>
+                    <h4 className="font-extrabold text-sm text-zinc-900 group-hover:text-blue-600">Video Views Campaign</h4>
+                    <p className="text-[11px] text-zinc-500 leading-relaxed">
+                      Boost watch time and views for your AtoPlay videos (60s watch per view).
+                    </p>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setNewCampaignType('follower')}
+                    className="p-5 rounded-2xl bg-gradient-to-br from-emerald-50 to-teal-50 border-2 border-emerald-200 hover:border-emerald-500 text-left space-y-2 transition-all cursor-pointer group shadow-xs"
+                  >
+                    <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-bold shadow-sm group-hover:scale-105 transition-transform text-lg">
+                      👥
+                    </div>
+                    <h4 className="font-extrabold text-sm text-zinc-900 group-hover:text-emerald-600">Follower Campaign</h4>
+                    <p className="text-[11px] text-zinc-500 leading-relaxed">
+                      Grow real subscribers and followers for your AtoPlay channel.
+                    </p>
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <form onSubmit={handleCreateCampaign} className="space-y-5">
+                <div className="flex items-center justify-between">
+                  <button
+                    type="button"
+                    onClick={() => setNewCampaignType(null)}
+                    className="text-xs font-bold text-blue-600 hover:underline flex items-center space-x-1 cursor-pointer"
+                  >
+                    ← Back to campaign type selection
+                  </button>
+                  <span className={`text-[10px] px-2 py-0.5 rounded font-black uppercase ${
+                    newCampaignType === 'follower' ? 'bg-emerald-100 text-emerald-800' : 'bg-blue-100 text-blue-800'
+                  }`}>
+                    {newCampaignType === 'follower' ? '👥 Follower Campaign' : '🎬 Video Campaign'}
+                  </span>
+                </div>
               
               {/* URL Input with Live Extract */}
               <div className="space-y-2">
@@ -1091,6 +1147,7 @@ export const Campaigns: React.FC<CampaignsProps> = ({
               </div>
 
             </form>
+            )}
 
           </div>
         </div>

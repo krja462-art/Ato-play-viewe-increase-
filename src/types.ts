@@ -64,6 +64,7 @@ export interface Campaign {
   lastCheckedFollowers?: number;
   channelId?: string;
   followLogs?: FollowLog[];
+  campaignType?: 'video' | 'follower';
 }
 
 export interface Transaction {

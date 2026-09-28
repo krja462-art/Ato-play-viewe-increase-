@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { User, Campaign, format4CharId, ActiveWatchState } from '../types';
-import { Play, CheckCircle2, Clock, ArrowLeft, Video, ExternalLink, RefreshCw, Award, Coins, AlertCircle, ShieldCheck, Key, UserPlus, Sparkles } from 'lucide-react';
+import { Play, CheckCircle2, Clock, ArrowLeft, Video, ExternalLink, RefreshCw, Award, Coins, AlertCircle, ShieldCheck, Key, UserPlus, Sparkles, Users } from 'lucide-react';
 import { RewardPopupModal } from './RewardPopupModal';
 import { SessionExpiredModal } from './SessionExpiredModal';
 import { FollowChannelModal } from './FollowChannelModal';
-import { AtoPlayBadge } from './AtoPlayBadge';
+import { FollowerRewardModal } from './FollowerRewardModal';
+import { Warning4SecModal } from './Warning4SecModal';
 import { playCoinCelebrationSound } from '../utils/audio';
 import { apiFetch, getWatchedIds, addWatchedId, cleanVideoUrl } from '../lib/api';
 import { 
@@ -76,6 +77,42 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
   const [showExpiredModal, setShowExpiredModal] = useState(false);
   const [expiredElapsed, setExpiredElapsed] = useState(0);
   const [expiredCampaign, setExpiredCampaign] = useState<Campaign | null>(null);
+
+  // Home Section (Video Views vs Followers) & 4-second Anti-Cheat Follower State
+  const [homeSection, setHomeSection] = useState<'video' | 'follower'>('video');
+  const [selectedFollowCampaign, setSelectedFollowCampaign] = useState<Campaign | null>(null);
+  const [showFollowerRewardModal, setShowFollowerRewardModal] = useState(false);
+  const [showWarning4SecModal, setShowWarning4SecModal] = useState(false);
+  const [warningElapsed, setWarningElapsed] = useState(2);
+  const followLeftTimeRef = useRef<number | null>(null);
+  const activeFollowTargetRef = useRef<Campaign | null>(null);
+
+  useEffect(() => {
+    const handleFocus = () => {
+      if (followLeftTimeRef.current && activeFollowTargetRef.current) {
+        const elapsed = Date.now() - followLeftTimeRef.current;
+        followLeftTimeRef.current = null;
+        const camp = activeFollowTargetRef.current;
+        activeFollowTargetRef.current = null;
+
+        if (elapsed < 4000) {
+          setWarningElapsed(Math.round(elapsed / 1000));
+          setShowWarning4SecModal(true);
+        } else {
+          setSelectedFollowCampaign(camp);
+          setShowFollowerRewardModal(true);
+        }
+      }
+    };
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, []);
+
+  const handleStartFollowTask = (camp: Campaign) => {
+    activeFollowTargetRef.current = camp;
+    followLeftTimeRef.current = Date.now();
+    window.open(camp.videoUrl || 'https://atoplay.com', '_blank', 'noopener,noreferrer');
+  };
 
   const isVerifyingRef = useRef(false);
   isVerifyingRef.current = verifying;
@@ -1292,29 +1329,121 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
     );
   }
 
+  const videoCampaigns = campaigns.filter(c => c.campaignType !== 'follower');
+  const followerCampaigns = campaigns.filter(c => c.campaignType === 'follower' || campaigns.length === 0);
+
   // Main Home Feed Listing
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6 mb-20 bg-white min-h-screen">
       
+      {/* Home Section Tabs: Video Views vs Followers */}
+      <div className="flex rounded-2xl bg-zinc-100 p-1.5 border border-zinc-200">
+        <button
+          onClick={() => setHomeSection('video')}
+          className={`flex-1 py-2.5 px-4 rounded-xl font-extrabold text-xs sm:text-sm flex items-center justify-center space-x-2 transition-all cursor-pointer ${
+            homeSection === 'video'
+              ? 'bg-blue-600 text-white shadow-md'
+              : 'text-zinc-600 hover:text-zinc-900'
+          }`}
+        >
+          <Video className="w-4 h-4" />
+          <span>🎬 Video Views Feed</span>
+        </button>
+
+        <button
+          onClick={() => setHomeSection('follower')}
+          className={`flex-1 py-2.5 px-4 rounded-xl font-extrabold text-xs sm:text-sm flex items-center justify-center space-x-2 transition-all cursor-pointer ${
+            homeSection === 'follower'
+              ? 'bg-emerald-600 text-white shadow-md'
+              : 'text-zinc-600 hover:text-zinc-900'
+          }`}
+        >
+          <Users className="w-4 h-4" />
+          <span>👥 Followers Campaigns</span>
+        </button>
+      </div>
+
       {/* Section Header */}
-      <div className="flex items-center justify-between px-1 pt-2">
+      <div className="flex items-center justify-between px-1 pt-1">
         <div>
           <h2 className="text-base sm:text-lg font-extrabold text-zinc-900">
-            Active Campaign Videos
+            {homeSection === 'video' ? "Active Video View Campaigns" : "Active AtoPlay Channel Follower Campaigns"}
           </h2>
           <p className="text-xs text-zinc-500">
-            Watch any video for 60 seconds in external browser to earn 60 coins
+            {homeSection === 'video' 
+              ? "Watch any video for 60 seconds in external browser to earn 60 coins" 
+              : "Visit channel URL, spend 4+ seconds, follow the channel & earn +30 follower reward coins"}
           </p>
         </div>
         <button
           onClick={() => setActiveTab('campaigns')}
           className="px-3.5 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-600 font-bold text-xs transition-colors cursor-pointer"
         >
-          + Promote Video
+          + Promote Campaign
         </button>
       </div>
 
-      {campaigns.length === 0 ? (
+      {homeSection === 'follower' ? (
+        <div className="space-y-3.5">
+          {campaigns.length === 0 ? (
+            <div className="text-center py-16 bg-white rounded-2xl border border-zinc-200 p-8 space-y-3 shadow-xs">
+              <div className="w-16 h-16 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto mb-2">
+                <Users className="w-8 h-8" />
+              </div>
+              <h3 className="text-base font-bold text-zinc-800">No Follower Campaigns in Feed</h3>
+              <p className="text-xs text-zinc-500 max-w-sm mx-auto">
+                Filhal koi follower campaign uplabdh nahi hai. Aap apna khud ka channel follower campaign launch kar sakte hain.
+              </p>
+              <button
+                onClick={() => setActiveTab('campaigns')}
+                className="inline-flex items-center space-x-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm transition-colors cursor-pointer"
+              >
+                <span>+ Create Follower Campaign</span>
+              </button>
+            </div>
+          ) : (
+            campaigns.map((camp) => {
+              const shortId = format4CharId(camp.displayId, camp.id);
+              return (
+                <div
+                  key={camp.id}
+                  className="bg-white rounded-2xl border border-emerald-200 shadow-xs hover:shadow-md transition-all p-4 space-y-3"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-3">
+                      <div className="w-12 h-12 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold">
+                        👥
+                      </div>
+                      <div>
+                        <h3 className="font-extrabold text-sm sm:text-base text-zinc-900">{camp.channelName || camp.userName || 'AtoPlay Creator'}</h3>
+                        <p className="text-xs text-zinc-500">{camp.title || 'Grow Channel Followers'}</p>
+                      </div>
+                    </div>
+                    <span className="px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-800 font-black text-xs">
+                      +30 Coins Reward
+                    </span>
+                  </div>
+
+                  <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-between text-xs text-emerald-900">
+                    <div className="flex items-center space-x-1 font-bold">
+                      <span>👥 Current Followers: {camp.channelFollowers ?? 120}</span>
+                    </div>
+                    <span className="font-mono text-zinc-500">ID: #{shortId}</span>
+                  </div>
+
+                  <button
+                    onClick={() => handleStartFollowTask(camp)}
+                    className="w-full py-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-black text-xs sm:text-sm shadow-md flex items-center justify-center space-x-2 cursor-pointer transition-transform active:scale-98"
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                    <span>Follow Channel & Earn (+30 Coins)</span>
+                  </button>
+                </div>
+              );
+            })
+          )}
+        </div>
+      ) : campaigns.length === 0 ? (
         <div className="text-center py-16 bg-white rounded-2xl border border-zinc-200 p-8 space-y-3 shadow-xs">
           <div className="w-16 h-16 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center mx-auto mb-2">
             <Video className="w-8 h-8" />
@@ -1567,6 +1696,31 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
         onFollowSuccess={handleFollowSuccess}
         apiFetch={apiFetch}
       />
+
+      {/* Follower Reward Modal */}
+      {showFollowerRewardModal && selectedFollowCampaign && (
+        <FollowerRewardModal
+          isOpen={showFollowerRewardModal}
+          onClose={() => {
+            setShowFollowerRewardModal(false);
+            setSelectedFollowCampaign(null);
+            fetchCampaigns();
+          }}
+          campaign={selectedFollowCampaign}
+          user={user}
+          countBefore={selectedFollowCampaign.initialFollowers || selectedFollowCampaign.channelFollowers || 120}
+          onCoinEarned={onCoinEarned}
+        />
+      )}
+
+      {/* 4-Second Rule Warning Notice Modal */}
+      {showWarning4SecModal && (
+        <Warning4SecModal
+          isOpen={showWarning4SecModal}
+          onClose={() => setShowWarning4SecModal(false)}
+          elapsedSeconds={warningElapsed}
+        />
+      )}
 
     </div>
   );
