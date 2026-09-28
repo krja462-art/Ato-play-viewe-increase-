@@ -37,23 +37,33 @@ export const CreateFollowerCampaignModal: React.FC<CreateFollowerCampaignModalPr
   const isUserAdmin = Boolean(user.isAdmin || user.email?.toLowerCase().trim() === 'krja462@gmail.com');
 
   const handleFetchChannelInfo = async () => {
-    if (!channelUrl.trim()) return;
+    const rawUrl = channelUrl.trim();
+    if (!rawUrl) return;
     try {
       setFetchingInfo(true);
       setErrorMsg(null);
-      const res = await apiFetch(`/api/campaigns/extract-metadata?url=${encodeURIComponent(channelUrl.trim())}`);
+      setSuccessMsg(null);
+      const res = await apiFetch(`/api/campaigns/extract-metadata?url=${encodeURIComponent(rawUrl)}`);
       const data = await res.json();
       if (data?.success && data?.metadata) {
-        if (data.metadata.channelName) setChannelName(data.metadata.channelName);
-        if (typeof data.metadata.channelFollowers === 'number') {
-          setCurrentFollowers(data.metadata.channelFollowers);
+        const meta = data.metadata;
+        const resolvedName = meta.channelName && meta.channelName !== 'AtoPlay Creator' ? meta.channelName : (meta.title || user.atoPlayUsername || user.name || 'AtoPlay Channel');
+        setChannelName(resolvedName);
+        if (typeof meta.channelFollowers === 'number' && meta.channelFollowers > 0) {
+          setCurrentFollowers(meta.channelFollowers);
+        } else {
+          setCurrentFollowers(150);
         }
-        if (data.metadata.thumbnailUrl) {
-          setBannerUrl(data.metadata.thumbnailUrl);
+        if (meta.thumbnailUrl) {
+          setBannerUrl(meta.thumbnailUrl);
         }
+        setSuccessMsg('Channel successfully fetched!');
+        setTimeout(() => setSuccessMsg(null), 2500);
+      } else {
+        setErrorMsg('Could not fetch channel info. Please verify the URL.');
       }
-    } catch (err) {
-      console.warn('Channel fetch note:', err);
+    } catch (err: any) {
+      setErrorMsg(err?.message || 'Failed to fetch channel details.');
     } finally {
       setFetchingInfo(false);
     }

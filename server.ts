@@ -1034,20 +1034,28 @@ async function extractVideoMetadata(videoUrl: string) {
     const isValidHostname = /^[a-zA-Z0-9-]+(\.[a-zA-Z0-9-]+)*\.[a-zA-Z]{2,}$/.test(hostname) || hostname === 'localhost';
 
     // Channel URL check
-    const channelUrlMatch = trimmedUrl.match(/(?:channel\/|c\/|user\/)([a-zA-Z0-9_-]+)/i);
-    if (channelUrlMatch) {
-      const chIdOrSlug = channelUrlMatch[1];
+    const channelUrlMatch = trimmedUrl.match(/(?:channel\/|c\/|user\/|@)([a-zA-Z0-9_-]+)/i);
+    if (channelUrlMatch || trimmedUrl.includes('channel') || trimmedUrl.includes('atoplay.com')) {
+      const chIdOrSlug = channelUrlMatch ? channelUrlMatch[1] : (urlObj.pathname.split('/').filter(Boolean).pop() || 'channel');
       try {
-        const cRes = await fetch(`https://api.atoplay.com/api/channels/${chIdOrSlug}`, {
+        let cRes = await fetch(`https://api.atoplay.com/api/channels/${chIdOrSlug}`, {
           headers: {
             'Accept': 'application/json',
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
           }
         });
+        if (!cRes.ok) {
+          cRes = await fetch(`https://api.atoplay.com/api/channels/username/${chIdOrSlug}`, {
+            headers: {
+              'Accept': 'application/json',
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
+          });
+        }
         if (cRes.ok) {
           const cData = await cRes.json();
-          const channelObj = cData?.channel || cData;
-          const chName = channelObj?.name || channelObj?.username || "AtoPlay Channel";
+          const channelObj = cData?.channel || cData?.data || cData;
+          const chName = channelObj?.name || channelObj?.username || chIdOrSlug;
           const chFollowers = parseFollowersCount(channelObj?.followersCount ?? channelObj?.followers ?? channelObj?.subscribersCount) ?? 150;
           const chBanner = channelObj?.bannerUrl || channelObj?.banner || channelObj?.avatar || channelObj?.image || "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80";
           return {
