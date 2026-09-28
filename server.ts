@@ -15,7 +15,7 @@ const ai = new GoogleGenAI({
 });
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
 app.use(express.json());
 
@@ -1033,6 +1033,38 @@ async function extractVideoMetadata(videoUrl: string) {
     const hostname = urlObj.hostname.toLowerCase();
     const isValidHostname = /^[a-zA-Z0-9-]+(\.[a-zA-Z0-9-]+)*\.[a-zA-Z]{2,}$/.test(hostname) || hostname === 'localhost';
 
+    // Channel URL check
+    const channelUrlMatch = trimmedUrl.match(/(?:channel\/|c\/|user\/)([a-zA-Z0-9_-]+)/i);
+    if (channelUrlMatch) {
+      const chIdOrSlug = channelUrlMatch[1];
+      try {
+        const cRes = await fetch(`https://api.atoplay.com/api/channels/${chIdOrSlug}`, {
+          headers: {
+            'Accept': 'application/json',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+          }
+        });
+        if (cRes.ok) {
+          const cData = await cRes.json();
+          const channelObj = cData?.channel || cData;
+          const chName = channelObj?.name || channelObj?.username || "AtoPlay Channel";
+          const chFollowers = parseFollowersCount(channelObj?.followersCount ?? channelObj?.followers ?? channelObj?.subscribersCount) ?? 150;
+          const chBanner = channelObj?.bannerUrl || channelObj?.banner || channelObj?.avatar || channelObj?.image || "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80";
+          return {
+            displayId: generate4CharId(chIdOrSlug),
+            title: `AtoPlay Channel: ${chName}`,
+            thumbnailUrl: chBanner,
+            channelName: chName,
+            channelId: channelObj?.id || chIdOrSlug,
+            channelFollowers: chFollowers,
+            durationSeconds: 60,
+            durationText: "1:00",
+            isRealVideo: true
+          };
+        }
+      } catch {}
+    }
+
     // 1. Direct AtoPlay Official Platform API Integration
     const isAtoPlay = isValidHostname && (hostname.includes('atoplay.com') || hostname.includes('atoplay.in'));
     const uuidMatch = trimmedUrl.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i) ||
@@ -1970,151 +2002,6 @@ app.post("/api/follow/verify", async (req, res) => {
   });
 });
 
-// AI Screenshot Verification Endpoint for Follow Bonus using Gemini Multimodal
-app.post("/api/follow/verify-screenshot", async (req, res) => {
-  const activeUser = getActiveUser(req);
-  if (!activeUser) {
-    return res.status(401).json({ success: false, message: "Please log in to verify follow screenshot" });
-  }
-
-  const { campaignId, screenshotDataUrl } = req.body;
-  if (!campaignId || !screenshotDataUrl) {
-    return res.status(400).json({ success: false, message: "Campaign ID and screenshot are required" });
-  }
-
-  const campaign = campaigns.find(c => c.id === campaignId || c.displayId === campaignId);
-  if (!campaign) {
-    return res.status(404).json({ success: false, message: "Campaign not found" });
-  }
-
-  const alreadyFollowed = Boolean(
-    userFollowedCampaigns[activeUser.id]?.has(campaign.id) || 
-    campaign.followedUserIds?.includes(activeUser.id)
-  );
-
-  if (alreadyFollowed) {
-    return res.status(400).json({ success: false, message: "You have already claimed follow bonus for this campaign." });
-  }
-
-  let verifiedByAI = false;
-  let aiReason = "";
-
-  try {
-    const matches = screenshotDataUrl.match(/^data:(image\/[a-zA-Z+.-]+);base64,(.+)$/);
-    if (matches && matches.length === 3) {
-      const mimeType = matches[1];
-      const base64Data = matches[2];
-
-      const imagePart = {
-        inlineData: {
-          mimeType,
-          data: base64Data
-        }
-      };
-
-      const promptPart = {
-        text: `You are an AI auditor for AtoPlay channel follower verification. 
-Examine this screenshot carefully.
-Determine if the user has successfully followed the channel or if they are still seeing a blue Follow button.
-- Rule 1: If the screenshot shows a BLUE color FOLLOW button (meaning the user has NOT followed yet, and the follow button is still blue), then you MUST set "success": false with reason "Aapne abhi channel follow nahi kiya hai. Screenshot mein Follow button blue color ka dikh raha hai! Kripya follow karke sahi screenshot upload karein."
-- Rule 2: If the screenshot shows "Following", a checkmark, or a state indicating the user is already following the channel, then you MUST set "success": true with reason "Gemini AI ne verify kiya ki aapne channel follow kar liya hai! Following state confirmed."
-
-Respond strictly in JSON format with keys:
-{
-  "success": boolean,
-  "reason": string
-}`
-      };
-
-      const response = await ai.models.generateContent({
-        model: "gemini-3.8-flash",
-        contents: { parts: [imagePart, promptPart] },
-        config: {
-          responseMimeType: "application/json"
-        }
-      });
-
-      const textRes = response.text || "{}";
-      const jsonRes = JSON.parse(textRes);
-      if (jsonRes.success === true) {
-        verifiedByAI = true;
-        aiReason = jsonRes.reason || "Screenshot verified successfully.";
-      } else {
-        aiReason = jsonRes.reason || "Screenshot does not clearly show following status.";
-      }
-    } else {
-      return res.status(400).json({ success: false, message: "Invalid image format." });
-    }
-  } catch (err) {
-    console.warn("Gemini screenshot verification error, falling back to live API check:", err);
-    const resultAfter = await fetchChannelFollowerCount(campaign, true);
-    if (resultAfter.count > (campaign.initialFollowers || 0)) {
-      verifiedByAI = true;
-      aiReason = "Verified via live channel follower count check.";
-    } else {
-      aiReason = "Could not verify follow from screenshot or live API check.";
-    }
-  }
-
-  if (!verifiedByAI) {
-    return res.json({
-      success: false,
-      verified: false,
-      message: `Screenshot verification failed: ${aiReason}. Please ensure the screenshot clearly shows you following the AtoPlay channel.`
-    });
-  }
-
-  const reward = 30;
-  activeUser.coins += reward;
-
-  if (!userFollowedCampaigns[activeUser.id]) {
-    userFollowedCampaigns[activeUser.id] = new Set<string>();
-  }
-  userFollowedCampaigns[activeUser.id].add(campaign.id);
-
-  if (!campaign.followedUserIds) {
-    campaign.followedUserIds = [];
-  }
-  if (!campaign.followedUserIds.includes(activeUser.id)) {
-    campaign.followedUserIds.push(activeUser.id);
-  }
-
-  // Record Follow Log
-  const resolvedFollowerUsername = activeUser.atoPlayUsername || activeUser.name || 'AtoPlay User';
-  const logId = `flog_${Date.now()}_${activeUser.id.slice(-4)}`;
-  const followLogEntry = {
-    id: logId,
-    campaignId: campaign.id,
-    creatorId: campaign.userId,
-    followerUserId: activeUser.id,
-    followerUsername: resolvedFollowerUsername,
-    followerEmail: activeUser.email,
-    followerAvatar: activeUser.avatar,
-    followerName: activeUser.name,
-    timestamp: new Date().toISOString(),
-    status: 'active' as const,
-    campaignTitle: campaign.title
-  };
-  followLogs.unshift(followLogEntry);
-
-  transactions.unshift({
-    id: `tx_${Date.now()}_follow_screenshot`,
-    userId: activeUser.id,
-    type: "earned_follow",
-    amount: reward,
-    description: `Followed channel with screenshot verification (+30 coins)`,
-    createdAt: new Date().toISOString()
-  });
-
-  res.json({
-    success: true,
-    verified: true,
-    earnedCoins: reward,
-    newBalance: activeUser.coins,
-    message: `Screenshot verified by AI successfully! +30 Bonus Coins credited to your wallet.`,
-    user: activeUser
-  });
-});
 
 // Endpoint to update user's linked AtoPlay Channel Name / Username
 app.post("/api/user/atoplay-username", (req, res) => {

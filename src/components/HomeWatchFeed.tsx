@@ -6,6 +6,7 @@ import { SessionExpiredModal } from './SessionExpiredModal';
 import { FollowChannelModal } from './FollowChannelModal';
 import { FollowerRewardModal } from './FollowerRewardModal';
 import { Warning4SecModal } from './Warning4SecModal';
+import { AtoPlayBadge } from './AtoPlayBadge';
 import { playCoinCelebrationSound } from '../utils/audio';
 import { apiFetch, getWatchedIds, addWatchedId, cleanVideoUrl } from '../lib/api';
 import { 

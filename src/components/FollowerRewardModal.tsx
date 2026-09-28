@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Coins, CheckCircle2, Award, Sparkles, X, Play, Loader2, ExternalLink, AlertCircle, UserPlus, Upload } from 'lucide-react';
+import { Coins, CheckCircle2, Award, Sparkles, X, Play, Loader2, ExternalLink, AlertCircle, UserPlus, UserCheck } from 'lucide-react';
 import { Campaign, User, format4CharId, FollowLog } from '../types';
 import { playCoinCelebrationSound } from '../utils/audio';
 import { apiFetch } from '../lib/api';
@@ -31,7 +31,6 @@ export const FollowerRewardModal: React.FC<FollowerRewardModalProps> = ({
   const [feedbackType, setFeedbackType] = useState<'success' | 'error' | null>(null);
   const [followersBefore, setFollowersBefore] = useState<number | undefined>(countBefore);
   const [followersAfter, setFollowersAfter] = useState<number | undefined>(countAfter);
-  const [screenshotFile, setScreenshotFile] = useState<string | null>(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -40,7 +39,6 @@ export const FollowerRewardModal: React.FC<FollowerRewardModalProps> = ({
       setFollowersAfter(countAfter);
       setFeedbackMessage(null);
       setFeedbackType(null);
-      setScreenshotFile(null);
 
       playCoinCelebrationSound();
       try {
@@ -121,54 +119,6 @@ export const FollowerRewardModal: React.FC<FollowerRewardModalProps> = ({
     }
   };
 
-  const handleScreenshotVerify = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = async () => {
-      const dataUrl = reader.result as string;
-      setScreenshotFile(dataUrl);
-      setVerifying(true);
-
-      try {
-        const res = await apiFetch('/api/follow/verify-screenshot', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-user-id': user.id
-          },
-          body: JSON.stringify({
-            campaignId: campaign.id,
-            screenshotDataUrl: dataUrl
-          })
-        });
-
-        if (res?.verified || res?.success) {
-          setIsClaimed(true);
-          setFeedbackType('success');
-          setFeedbackMessage(res.message || 'Gemini AI verified follow screenshot! +30 Coins added.');
-          playCoinCelebrationSound();
-          try { confetti({ particleCount: 120, spread: 80, origin: { y: 0.6 } }); } catch {}
-
-          if (res.user) {
-            onCoinEarned(res.user);
-            saveUserCoinsToFirestore(res.user.id, res.user.coins, res.user.email).catch(() => {});
-          }
-        } else {
-          setFeedbackType('error');
-          setFeedbackMessage(res?.message || 'Screenshot verification failed. Please make sure the follow state is clear.');
-        }
-      } catch (err: any) {
-        setFeedbackType('error');
-        setFeedbackMessage(err?.message || 'Network error during screenshot verification.');
-      } finally {
-        setVerifying(false);
-      }
-    };
-    reader.readAsDataURL(file);
-  };
-
   return (
     <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-200">
       <div className="bg-white rounded-3xl max-w-md w-full p-6 sm:p-7 space-y-5 shadow-2xl relative border border-emerald-200 text-center overflow-hidden">
@@ -206,7 +156,7 @@ export const FollowerRewardModal: React.FC<FollowerRewardModalProps> = ({
           <div className="p-3 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs sm:text-sm font-semibold">
             {isClaimed 
               ? "Awesome! Follower verified successfully. +30 Coins credited to your wallet!"
-              : "Aapne channel visit kar liya hai! Niche 'Verify Follow (+30)' par click karein ya screenshot upload karein."
+              : "Aapne channel visit kar liya hai! Niche 'Verify Follow (+30 Coins)' par click karein."
             }
           </div>
         </div>
@@ -235,24 +185,6 @@ export const FollowerRewardModal: React.FC<FollowerRewardModalProps> = ({
 
           {!isClaimed && (
             <div className="space-y-2 pt-1">
-              <label className="block w-full py-2 px-3 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-extrabold text-xs shadow-sm text-center cursor-pointer transition-all flex items-center justify-center space-x-1.5">
-                <Upload className="w-4 h-4" />
-                <span>Upload Follow Screenshot</span>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleScreenshotVerify}
-                  className="hidden"
-                />
-              </label>
-
-              {screenshotFile && (
-                <div className="flex items-center space-x-2 p-1.5 rounded-lg bg-white border border-zinc-200">
-                  <img src={screenshotFile} alt="Preview" className="w-8 h-8 rounded object-cover" />
-                  <span className="text-xs text-zinc-600 font-medium truncate">Screenshot uploaded</span>
-                </div>
-              )}
-
               <button
                 type="button"
                 onClick={() => handleVerifyFollow(false)}

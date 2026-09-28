@@ -28,6 +28,7 @@ export const CreateFollowerCampaignModal: React.FC<CreateFollowerCampaignModalPr
   const [fetchingInfo, setFetchingInfo] = useState(false);
   const [channelName, setChannelName] = useState(user.atoPlayUsername || user.name || 'My AtoPlay Channel');
   const [currentFollowers, setCurrentFollowers] = useState<number>(120);
+  const [bannerUrl, setBannerUrl] = useState<string>('https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80');
 
   if (!isOpen) return null;
 
@@ -46,6 +47,9 @@ export const CreateFollowerCampaignModal: React.FC<CreateFollowerCampaignModalPr
         if (data.metadata.channelName) setChannelName(data.metadata.channelName);
         if (typeof data.metadata.channelFollowers === 'number') {
           setCurrentFollowers(data.metadata.channelFollowers);
+        }
+        if (data.metadata.thumbnailUrl) {
+          setBannerUrl(data.metadata.thumbnailUrl);
         }
       }
     } catch (err) {
@@ -91,7 +95,7 @@ export const CreateFollowerCampaignModal: React.FC<CreateFollowerCampaignModalPr
           rewardPerView: 30,
           durationSeconds: 60,
           title: `Follow AtoPlay Channel: @${user.atoPlayUsername || channelName}`,
-          thumbnailUrl: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80',
+          thumbnailUrl: bannerUrl,
           campaignType: 'follower'
         })
       });
@@ -99,7 +103,6 @@ export const CreateFollowerCampaignModal: React.FC<CreateFollowerCampaignModalPr
       if (data?.success) {
         setSuccessMsg(`Follower campaign launched successfully! ${totalCost} coins deducted.`);
         setChannelUrl('');
-        setIsUserAdmin(false);
 
         try {
           confetti({
@@ -206,8 +209,33 @@ export const CreateFollowerCampaignModal: React.FC<CreateFollowerCampaignModalPr
               </button>
             </div>
             <p className="text-[11px] text-zinc-400">
-              Paste your AtoPlay channel link so other creators can visit and follow you.
+              Paste your AtoPlay channel link so we fetch your real channel banner and live follower count.
             </p>
+          </div>
+
+          {/* Fetched Channel Banner & Live Followers Preview Card */}
+          <div className="p-3.5 rounded-2xl bg-zinc-50 border border-zinc-200 space-y-2.5">
+            <div className="flex items-center justify-between text-xs font-bold text-zinc-700">
+              <span>Channel Preview & Live Stats</span>
+              <span className="text-emerald-700 font-black">👥 {currentFollowers} Followers</span>
+            </div>
+            <div className="relative w-full aspect-[21/9] rounded-xl overflow-hidden bg-zinc-950 border border-zinc-200 shadow-2xs">
+              <img
+                src={bannerUrl}
+                alt="Channel Banner"
+                referrerPolicy="no-referrer"
+                crossOrigin="anonymous"
+                onError={(e) => {
+                  (e.currentTarget as HTMLImageElement).src = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80";
+                }}
+                className="w-full h-full object-cover"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent flex items-end p-2.5">
+                <div className="text-white text-xs font-extrabold truncate">
+                  {channelName}
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* Select Number of Followers Required */}
