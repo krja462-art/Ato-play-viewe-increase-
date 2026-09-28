@@ -58,23 +58,42 @@ export const CreateFollowerCampaignModal: React.FC<CreateFollowerCampaignModalPr
       const data = await apiFetch(`/api/campaigns/extract-metadata?url=${encodeURIComponent(cleanedUrl)}`);
       if (data?.success && data?.metadata) {
         const meta = data.metadata;
-        const resolvedName = meta.channelName && meta.channelName !== 'AtoPlay Creator' ? meta.channelName : (meta.title || user.atoPlayUsername || user.name || 'AtoPlay Channel');
-        setChannelName(resolvedName);
+        const resolvedName = meta.channelName && meta.channelName !== 'AtoPlay Creator' ? meta.channelName : '';
+        if (resolvedName) {
+          setChannelName(resolvedName);
+        } else {
+          setChannelName('AtoPlay Channel');
+        }
+
         if (typeof meta.channelFollowers === 'number' && meta.channelFollowers > 0) {
           setCurrentFollowers(meta.channelFollowers);
         } else {
-          setCurrentFollowers(150);
+          setCurrentFollowers(0);
         }
-        if (meta.thumbnailUrl) {
+
+        if (meta.thumbnailUrl && meta.thumbnailUrl.startsWith('http')) {
           setBannerUrl(meta.thumbnailUrl);
+        } else {
+          setBannerUrl('');
         }
-        setSuccessMsg('Channel successfully fetched!');
-        setTimeout(() => setSuccessMsg(null), 2500);
+
+        if (resolvedName || meta.thumbnailUrl) {
+          setSuccessMsg('Channel successfully fetched!');
+          setTimeout(() => setSuccessMsg(null), 2500);
+        } else {
+          setErrorMsg('Channel details could not be found from this URL. Please enter a valid AtoPlay channel link.');
+          setBannerUrl('');
+          setCurrentFollowers(0);
+        }
       } else {
         setErrorMsg('Could not fetch channel info. Please verify the URL.');
+        setBannerUrl('');
+        setCurrentFollowers(0);
       }
     } catch (err: any) {
       setErrorMsg(err?.message || 'Failed to fetch channel details.');
+      setBannerUrl('');
+      setCurrentFollowers(0);
     } finally {
       setFetchingInfo(false);
     }
