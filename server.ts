@@ -1034,12 +1034,20 @@ async function extractVideoMetadata(videoUrl: string) {
     const isValidHostname = /^[a-zA-Z0-9-]+(\.[a-zA-Z0-9-]+)*\.[a-zA-Z]{2,}$/.test(hostname) || hostname === 'localhost';
 
     // Determine if URL is specifically a channel link vs video link
-    const isExplicitChannel = /(?:channel\/|c\/|user\/|@)/i.test(trimmedUrl);
+    const isExplicitChannel = /(?:channels?\/|c\/|user\/|@)/i.test(trimmedUrl);
     
     // 1. Try Channel Lookup first if explicit channel or path has slug
-    const channelUrlMatch = trimmedUrl.match(/(?:channel\/|c\/|user\/|@)([a-zA-Z0-9_-]+)/i);
+    const channelUrlMatch = trimmedUrl.match(/(?:channels?\/|c\/|user\/|@)([a-zA-Z0-9_-]+)/i);
     const pathSegments = urlObj.pathname.split('/').filter(Boolean);
-    const potentialSlug = channelUrlMatch ? channelUrlMatch[1] : (pathSegments.length > 0 && !pathSegments.includes('video') && !pathSegments.includes('watch') && !pathSegments.includes('v') ? pathSegments[pathSegments.length - 1] : '');
+    let potentialSlug = channelUrlMatch ? channelUrlMatch[1] : '';
+    if ((!potentialSlug || potentialSlug === 'channel' || potentialSlug === 'channels') && pathSegments.length > 0) {
+      const idx = pathSegments.findIndex(p => p.toLowerCase() === 'channel' || p.toLowerCase() === 'channels');
+      if (idx !== -1 && pathSegments[idx + 1]) {
+        potentialSlug = pathSegments[idx + 1];
+      } else {
+        potentialSlug = pathSegments[pathSegments.length - 1];
+      }
+    }
 
     let chName = "AtoPlay Creator";
     let chBanner = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80";
@@ -1047,43 +1055,73 @@ async function extractVideoMetadata(videoUrl: string) {
     let chId: string | undefined = undefined;
     let channelFetched = false;
 
-    if (potentialSlug && potentialSlug !== 'channel') {
+    if (potentialSlug && potentialSlug !== 'channel' && potentialSlug !== 'channels') {
       try {
-        let cRes = await fetch(`https://api.atoplay.com/api/channels/${potentialSlug}`, {
-          headers: {
-            'Accept': 'application/json',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-          }
-        });
-        if (!cRes.ok) {
-          cRes = await fetch(`https://api.atoplay.com/api/channels/username/${potentialSlug}`, {
-            headers: {
-              'Accept': 'application/json',
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        const endpoints = [
+          `https://api.atoplay.com/api/channels/${potentialSlug}`,
+          `https://api.atoplay.com/api/channels/id/${potentialSlug}`,
+          `https://api.atoplay.com/api/channels/username/${potentialSlug}`,
+          `https://api.atoplay.com/api/users/${potentialSlug}`
+        ];
+        for (const ep of endpoints) {
+          try {
+            const cRes = await fetch(ep, {
+              headers: {
+                'Accept': 'application/json',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+              }
+            });
+            if (cRes.ok) {
+              const cData = await cRes.json();
+              const channelObj = cData?.channel || cData?.data || cData;
+              if (channelObj?.name || channelObj?.username) {
+                chName = channelObj.name || channelObj.username;
+                channelFetched = true;
+              }
+              const liveF = parseFollowersCount(channelObj?.followersCount ?? channelObj?.followers ?? channelObj?.subscribersCount);
+              if (typeof liveF === 'number' && !isNaN(liveF)) {
+                chFollowers = liveF;
+                channelFetched = true;
+              }
+              if (channelObj?.bannerUrl || channelObj?.banner || channelObj?.avatar || channelObj?.image) {
+                chBanner = channelObj.bannerUrl || channelObj.banner || channelObj.avatar || channelObj.image;
+                channelFetched = true;
+              }
+              if (channelObj?.id || potentialSlug.includes('-')) {
+                chId = channelObj?.id || potentialSlug;
+              }
+              if (channelFetched) break;
             }
-          });
+          } catch {}
         }
-        if (cRes.ok) {
-          const cData = await cRes.json();
-          const channelObj = cData?.channel || cData?.data || cData;
-          if (channelObj?.name || channelObj?.username) {
-            chName = channelObj.name || channelObj.username;
-            channelFetched = true;
-          }
-          const liveF = parseFollowersCount(channelObj?.followersCount ?? channelObj?.followers ?? channelObj?.subscribersCount);
-          if (typeof liveF === 'number' && !isNaN(liveF)) {
-            chFollowers = liveF;
-            channelFetched = true;
-          }
-          if (channelObj?.bannerUrl || channelObj?.banner || channelObj?.avatar || channelObj?.image) {
-            chBanner = channelObj.bannerUrl || channelObj.banner || channelObj.avatar || channelObj.image;
-            channelFetched = true;
-          }
-          if (channelObj?.id) {
-            chId = channelObj.id;
-          }
+
+        // If not fetched yet, try fetching videos by channelId
+        if (!channelFetched && potentialSlug.length > 5) {
+          try {
+            const vRes = await fetch(`https://api.atoplay.com/api/videos?channelId=${potentialSlug}`, {
+              headers: { 'Accept': 'application/json', 'User-Agent': 'Mozilla/5.0' }
+            });
+            if (vRes.ok) {
+              const vList = await vRes.json();
+              const firstVid = Array.isArray(vList) ? vList[0] : (vList?.videos?.[0] || vList?.data?.[0]);
+              if (firstVid?.channel) {
+                if (firstVid.channel.name) { chName = firstVid.channel.name; channelFetched = true; }
+                if (firstVid.channel.bannerUrl || firstVid.channel.avatar) { chBanner = firstVid.channel.bannerUrl || firstVid.channel.avatar; channelFetched = true; }
+                const fCount = parseFollowersCount(firstVid.channel.followersCount ?? firstVid.channel.followers);
+                if (fCount) { chFollowers = fCount; }
+                chId = firstVid.channel.id || potentialSlug;
+              }
+            }
+          } catch {}
         }
       } catch {}
+    }
+
+    if (!channelFetched && potentialSlug) {
+      chName = `AtoPlay Channel #${potentialSlug.slice(0, 6)}`;
+      chBanner = "https://cdn.atoplay.in/atoplay-thumbnails/58d4d4aa-c235-48a1-8423-57fbeefa914e/thumbnails/61f8d5c2-3b2b-4789-8581-c6727ce0388a.webp";
+      chId = potentialSlug;
+      channelFetched = true;
     }
 
     // 2. Direct AtoPlay Official Video API Integration (if not explicit channel or channel fetch didn't succeed)
