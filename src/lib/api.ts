@@ -684,3 +684,43 @@ async function handleClientFallback<T>(endpoint: string, options?: RequestInit, 
   // Default fallback response
   return { success: true, message: 'Action completed' } as any;
 }
+
+/**
+ * Smart App / Browser Opener:
+ * Tries to open the AtoPlay app directly (if installed on Android or Desktop PWA).
+ * If the app is not installed, falls back to opening in Chrome / external browser.
+ */
+export function openAtoPlayUrl(url: string) {
+  if (!url) return;
+  const cleaned = cleanVideoUrl(url) || url;
+
+  // If already running inside standalone PWA mode
+  if (window.matchMedia('(display-mode: standalone)').matches || (navigator as any).standalone) {
+    window.location.href = cleaned;
+    return;
+  }
+
+  const isAndroid = /android/i.test(navigator.userAgent);
+
+  if (isAndroid) {
+    try {
+      const parsed = new URL(cleaned);
+      const intentUrl = `intent://${parsed.host}${parsed.pathname}${parsed.search}#Intent;scheme=${parsed.protocol.replace(':', '')};package=com.atoplay.app;S.browser_fallback_url=${encodeURIComponent(cleaned)};end;`;
+      
+      const iframe = document.createElement('iframe');
+      iframe.style.display = 'none';
+      iframe.src = intentUrl;
+      document.body.appendChild(iframe);
+      setTimeout(() => {
+        try { document.body.removeChild(iframe); } catch {}
+        window.open(cleaned, '_blank', 'noopener,noreferrer');
+      }, 1200);
+      return;
+    } catch {
+      window.open(cleaned, '_blank', 'noopener,noreferrer');
+    }
+  } else {
+    window.open(cleaned, '_blank', 'noopener,noreferrer');
+  }
+}
+

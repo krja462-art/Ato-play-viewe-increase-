@@ -8,7 +8,7 @@ import { FollowerRewardModal } from './FollowerRewardModal';
 import { Warning4SecModal } from './Warning4SecModal';
 import { AtoPlayBadge } from './AtoPlayBadge';
 import { playCoinCelebrationSound } from '../utils/audio';
-import { apiFetch, getWatchedIds, addWatchedId, cleanVideoUrl } from '../lib/api';
+import { apiFetch, getWatchedIds, addWatchedId, cleanVideoUrl, openAtoPlayUrl } from '../lib/api';
 import { 
   updateCampaignViewsInFirestore, 
   saveUserCoinsToFirestore,
@@ -112,7 +112,7 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
   const handleStartFollowTask = (camp: Campaign) => {
     activeFollowTargetRef.current = camp;
     followLeftTimeRef.current = Date.now();
-    window.open(camp.videoUrl || 'https://atoplay.com', '_blank', 'noopener,noreferrer');
+    openAtoPlayUrl(camp.videoUrl || 'https://atoplay.com');
   };
 
   const isVerifyingRef = useRef(false);
@@ -218,10 +218,19 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
       // Sort newest first
       publicFiltered.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
-      const cleanedPublic = publicFiltered.map(c => ({
-        ...c,
-        videoUrl: cleanVideoUrl(c.videoUrl || '')
-      }));
+      const cleanedPublic = publicFiltered.map(c => {
+        let type = c.campaignType;
+        const url = (c.videoUrl || '').toLowerCase();
+        const title = (c.title || '').toLowerCase();
+        if (type !== 'follower' && (url.includes('/channel') || url.includes('/channels/') || url.includes('/@') || title.includes('follow'))) {
+          type = 'follower';
+        }
+        return {
+          ...c,
+          campaignType: type || 'video',
+          videoUrl: cleanVideoUrl(c.videoUrl || '')
+        };
+      });
 
       setCampaigns(cleanedPublic);
 

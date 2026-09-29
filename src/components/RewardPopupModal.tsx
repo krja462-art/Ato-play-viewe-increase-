@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 import { Campaign, User, format4CharId, FollowLog } from '../types';
 import { playCoinCelebrationSound } from '../utils/audio';
-import { apiFetch } from '../lib/api';
+import { apiFetch, openAtoPlayUrl } from '../lib/api';
 import { saveUserCoinsToFirestore, saveFollowLogToFirestore } from '../lib/firebase';
 import confetti from 'canvas-confetti';
 import { LinkAtoPlayModal } from './LinkAtoPlayModal';
@@ -361,6 +361,10 @@ export const RewardPopupModal: React.FC<RewardPopupModalProps> = ({
                     href={channelUrl}
                     target="_blank"
                     rel="noopener noreferrer"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      openAtoPlayUrl(channelUrl);
+                    }}
                     className="font-extrabold text-blue-700 hover:text-blue-900 underline flex items-center space-x-0.5 text-[11px] cursor-pointer"
                   >
                     <span>Open Channel</span>

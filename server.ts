@@ -1061,7 +1061,14 @@ async function extractVideoMetadata(videoUrl: string) {
           `https://api.atoplay.com/api/channels/${potentialSlug}`,
           `https://api.atoplay.com/api/channels/id/${potentialSlug}`,
           `https://api.atoplay.com/api/channels/username/${potentialSlug}`,
-          `https://api.atoplay.com/api/users/${potentialSlug}`
+          `https://api.atoplay.com/api/channels/public/${potentialSlug}`,
+          `https://api.atoplay.com/api/channels/detail/${potentialSlug}`,
+          `https://api.atoplay.com/api/channels/v2/${potentialSlug}`,
+          `https://api.atoplay.com/api/creators/${potentialSlug}`,
+          `https://api.atoplay.com/api/v1/channels/${potentialSlug}`,
+          `https://api.atoplay.com/api/users/${potentialSlug}`,
+          `https://api.atoplay.com/api/search/channels?query=${potentialSlug}`,
+          `https://api.atoplay.com/api/search/search?query=${potentialSlug}`
         ];
         for (const ep of endpoints) {
           try {
@@ -1073,18 +1080,19 @@ async function extractVideoMetadata(videoUrl: string) {
             });
             if (cRes.ok) {
               const cData = await cRes.json();
-              const channelObj = cData?.channel || cData?.data || cData;
-              if (channelObj?.name || channelObj?.username) {
-                chName = channelObj.name || channelObj.username;
+              const channelObj = cData?.channel || cData?.data || (Array.isArray(cData) ? cData[0] : cData);
+              if (channelObj?.name || channelObj?.username || channelObj?.title || channelObj?.channelName || channelObj?.fullName) {
+                chName = channelObj.name || channelObj.username || channelObj.title || channelObj.channelName || channelObj.fullName;
                 channelFetched = true;
               }
-              const liveF = parseFollowersCount(channelObj?.followersCount ?? channelObj?.followers ?? channelObj?.subscribersCount);
+              const liveF = parseFollowersCount(channelObj?.followersCount ?? channelObj?.followers ?? channelObj?.subscribersCount ?? channelObj?.subscribers ?? channelObj?.followers_count);
               if (typeof liveF === 'number' && !isNaN(liveF)) {
                 chFollowers = liveF;
                 channelFetched = true;
               }
-              if (channelObj?.bannerUrl || channelObj?.banner || channelObj?.avatar || channelObj?.image) {
-                chBanner = channelObj.bannerUrl || channelObj.banner || channelObj.avatar || channelObj.image;
+              const banner = channelObj?.bannerUrl || channelObj?.banner || channelObj?.avatar || channelObj?.image || channelObj?.thumbnailUrl || channelObj?.logo;
+              if (banner) {
+                chBanner = banner.startsWith('http') ? banner : (banner.startsWith('/') ? `https://cdn.atoplay.in${banner}` : `https://cdn.atoplay.in/${banner}`);
                 channelFetched = true;
               }
               if (channelObj?.id || potentialSlug.includes('-')) {
@@ -1557,7 +1565,7 @@ app.post("/api/campaigns", async (req, res) => {
     thumbnailUrl: finalThumbnail,
     viewsRequired: views,
     viewsCompleted: 0,
-    rewardPerView: 60,
+    rewardPerView: (campaignType === 'follower' || req.body.campaignType === 'follower' || String(finalTitle || '').toLowerCase().includes('follow') || String(videoUrl || '').toLowerCase().includes('/channels/') || String(videoUrl || '').toLowerCase().includes('/channel/')) ? 30 : 60,
     targetViews: views,
     completedViews: 0,
     durationSeconds: 60,
@@ -1572,7 +1580,7 @@ app.post("/api/campaigns", async (req, res) => {
     initialFollowers: finalChannelFollowers,
     lastCheckedFollowers: finalChannelFollowers,
     durationText: metadata.durationText || "1:00",
-    campaignType: campaignType === 'follower' ? 'follower' : 'video'
+    campaignType: (campaignType === 'follower' || req.body.campaignType === 'follower' || String(finalTitle || '').toLowerCase().includes('follow') || String(videoUrl || '').toLowerCase().includes('/channels/') || String(videoUrl || '').toLowerCase().includes('/channel/')) ? 'follower' : 'video'
   };
 
   campaigns.unshift(newCampaign);

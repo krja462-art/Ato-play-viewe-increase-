@@ -17,6 +17,7 @@ import { playCoinCelebrationSound } from '../utils/audio';
 import { AtoPlayBadge } from './AtoPlayBadge';
 import { LinkAtoPlayModal } from './LinkAtoPlayModal';
 import { saveFollowLogToFirestore } from '../lib/firebase';
+import { openAtoPlayUrl } from '../lib/api';
 
 interface FollowChannelModalProps {
   isOpen: boolean;
@@ -127,11 +128,11 @@ export const FollowChannelModal: React.FC<FollowChannelModalProps> = ({
     setHasOpenedLink(true);
     const targetUrl = channelUrl || campaign.videoUrl;
     try {
-      window.open(targetUrl, '_blank', 'noopener,noreferrer');
+      openAtoPlayUrl(targetUrl);
       setStatusMessage('AtoPlay par creator channel khul gaya hai. "Follow" dabane ke baad yahan wapas aakar "Verify Follow (+30 Coins)" par click karein.');
       setStatusType('info');
     } catch (e) {
-      console.error('Failed to open external window:', e);
+      console.error('Failed to open app/browser:', e);
       window.location.href = targetUrl;
     }
   };
