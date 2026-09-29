@@ -1386,7 +1386,7 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
 
       {homeSection === 'follower' ? (
         <div className="space-y-3.5">
-          {campaigns.length === 0 ? (
+          {campaigns.filter(c => c.campaignType === 'follower').length === 0 ? (
             <div className="text-center py-16 bg-white rounded-2xl border border-zinc-200 p-8 space-y-3 shadow-xs">
               <div className="w-16 h-16 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto mb-2">
                 <Users className="w-8 h-8" />
@@ -1403,7 +1403,7 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
               </button>
             </div>
           ) : (
-            campaigns.map((camp) => {
+            campaigns.filter(c => c.campaignType === 'follower').map((camp) => {
               const shortId = format4CharId(camp.displayId, camp.id);
               return (
                 <div
@@ -1467,7 +1467,7 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
             })
           )}
         </div>
-      ) : campaigns.length === 0 ? (
+      ) : campaigns.filter(c => c.campaignType !== 'follower').length === 0 ? (
         <div className="text-center py-16 bg-white rounded-2xl border border-zinc-200 p-8 space-y-3 shadow-xs">
           <div className="w-16 h-16 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center mx-auto mb-2">
             <Video className="w-8 h-8" />
@@ -1494,7 +1494,7 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
         </div>
       ) : (
         <div className="space-y-3.5">
-          {campaigns.map((camp) => {
+          {campaigns.filter(c => c.campaignType !== 'follower').map((camp) => {
             const shortId = format4CharId(camp.displayId, camp.id);
             const isFollowed = followedCampaignIds.has(camp.id) || Boolean(camp.followedUserIds?.includes(user.id));
 

@@ -1081,6 +1081,29 @@ async function extractVideoMetadata(videoUrl: string) {
         } catch {}
       }
 
+      // Fallback HTML scrape if banner or name needs enrichment
+      try {
+        const scrapeRes = await fetch(trimmedUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Accept': 'text/html'
+          }
+        });
+        if (scrapeRes.ok) {
+          const html = await scrapeRes.text();
+          const ogImage = html.match(/<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']+)["']/i)?.[1];
+          if (ogImage && chBanner.includes('unsplash.com')) chBanner = ogImage;
+          const ogTitle = html.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)["']/i)?.[1];
+          if (ogTitle) chName = ogTitle.replace(/\s*\|\s*AtoPlay.*$/i, '').trim();
+          const followMatch = html.match(/(?:([0-9.,]+[KkMmBb]?)\s*(?:Followers|followers|subscribers|Subscribers))/i) ||
+                              html.match(/"(?:followersCount|subscribersCount|followers)"\s*:\s*([0-9]+)/i);
+          if (followMatch && followMatch[1]) {
+            const parsedF = parseFollowersCount(followMatch[1]);
+            if (parsedF !== undefined) chFollowers = parsedF;
+          }
+        }
+      } catch {}
+
       return {
         displayId: generate4CharId(chIdOrSlug),
         title: `AtoPlay Channel: ${chName}`,
