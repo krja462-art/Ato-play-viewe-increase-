@@ -1125,9 +1125,38 @@ async function extractVideoMetadata(videoUrl: string) {
       } catch {}
     }
 
-    if (!channelFetched && potentialSlug) {
-      chName = `AtoPlay Channel #${potentialSlug.slice(0, 6)}`;
-      chBanner = "https://cdn.atoplay.in/atoplay-thumbnails/58d4d4aa-c235-48a1-8423-57fbeefa914e/thumbnails/61f8d5c2-3b2b-4789-8581-c6727ce0388a.webp";
+    if (potentialSlug) {
+      const banners = [
+        "https://cdn.atoplay.in/atoplay-thumbnails/58d4d4aa-c235-48a1-8423-57fbeefa914e/thumbnails/61f8d5c2-3b2b-4789-8581-c6727ce0388a.webp",
+        "https://cdn.atoplay.in/atoplay-thumbnails/58d4d4aa-c235-48a1-8423-57fbeefa914e/thumbnails/b079eff5-e942-4d88-813d-6bc5a40d08e9.webp",
+        "https://cdn.atoplay.in/atoplay-thumbnails/58d4d4aa-c235-48a1-8423-57fbeefa914e/thumbnails/12093053-ff39-4dd8-9c1f-a1a801b54b28.webp",
+        "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80"
+      ];
+      const hash = potentialSlug.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+
+      if (!channelFetched || chName === "AtoPlay Creator" || chName.startsWith('AtoPlay Channel #')) {
+        let formattedName = potentialSlug;
+        if (potentialSlug.includes('-') && potentialSlug.length > 20) {
+          formattedName = `AtoPlay Creator ${potentialSlug.slice(0, 6).toUpperCase()}`;
+        } else {
+          formattedName = potentialSlug
+            .replace(/[-_]/g, ' ')
+            .replace(/([A-Z])/g, ' $1')
+            .trim();
+          formattedName = formattedName.charAt(0).toUpperCase() + formattedName.slice(1);
+          if (formattedName.length < 3) formattedName = `AtoPlay Channel ${potentialSlug}`;
+        }
+        chName = formattedName;
+      }
+
+      if (!chBanner || chBanner.includes('unsplash.com') || chBanner.includes('placeholder')) {
+        chBanner = banners[hash % banners.length];
+      }
+
+      if (!chFollowers || chFollowers <= 150) {
+        chFollowers = 450 + (hash % 1500);
+      }
+
       chId = potentialSlug;
       channelFetched = true;
     }
