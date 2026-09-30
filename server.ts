@@ -970,9 +970,21 @@ function cleanVideoUrl(rawUrl: string): string {
     }
   }
 
+  // Check if it is a channel URL (contains channels/, channel/, c/, user/, @)
+  const isChannelUrl = /(?:channels?\/|c\/|user\/|@)/i.test(s);
+  if (isChannelUrl) {
+    if (!s.startsWith('http://') && !s.startsWith('https://')) {
+      s = `https://${s}`;
+    }
+    s = s.replace(/^(?:https?:\/\/)?(?:www\.)?(?:atoplay\.com|atoplay\.in)/i, 'https://atoplay.com');
+    s = s.replace(/[?#].*$/, '');
+    s = s.replace(/([^:]\/)\/+/g, '$1');
+    return s;
+  }
+
   // 2. Check if there is an AtoPlay UUID inside the string
   const uuidMatch = s.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
-  if (uuidMatch) {
+  if (uuidMatch && !isChannelUrl) {
     const videoId = uuidMatch[0].toLowerCase();
     if (s.toLowerCase().includes('atoplay') || (!s.includes('youtube') && !s.includes('youtu.be'))) {
       return `https://atoplay.com/video/${videoId}`;
@@ -981,7 +993,7 @@ function cleanVideoUrl(rawUrl: string): string {
 
   // 3. Check for 32-character hex ID (UUID without dashes)
   const hex32Match = s.match(/[0-9a-f]{32}/i);
-  if (hex32Match && (s.toLowerCase().includes('atoplay') || !s.includes('youtube'))) {
+  if (hex32Match && !isChannelUrl && (s.toLowerCase().includes('atoplay') || !s.includes('youtube'))) {
     const h = hex32Match[0].toLowerCase();
     const formatted = `${h.slice(0,8)}-${h.slice(8,12)}-${h.slice(12,16)}-${h.slice(16,20)}-${h.slice(20,32)}`;
     return `https://atoplay.com/video/${formatted}`;
