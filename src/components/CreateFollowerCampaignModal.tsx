@@ -86,7 +86,7 @@ export const CreateFollowerCampaignModal: React.FC<CreateFollowerCampaignModalPr
             if (!isNaN(f) && f > 0) {
               fetchedFollowers = f;
             }
-            const b = obj?.bannerUrl || obj?.banner || obj?.avatar || obj?.image || obj?.thumbnailUrl || obj?.logo;
+            const b = obj?.bannerUrl || obj?.banner || obj?.avatarUrl || obj?.avatar || obj?.image || obj?.thumbnailUrl || obj?.logo || obj?.profilePicture || obj?.profileImage || obj?.coverUrl || obj?.cover;
             if (b) {
               fetchedBanner = b.startsWith('http') ? b : (b.startsWith('/') ? `https://cdn.atoplay.in${b}` : `https://cdn.atoplay.in/${b}`);
             }
@@ -128,7 +128,7 @@ export const CreateFollowerCampaignModal: React.FC<CreateFollowerCampaignModalPr
         "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80"
       ];
       let finalBanner = fetchedBanner;
-      if (!finalBanner || finalBanner.includes('unsplash.com') || finalBanner.includes('placeholder')) {
+      if (!finalBanner || finalBanner.includes('placeholder')) {
         finalBanner = banners[hash % banners.length];
       }
 
