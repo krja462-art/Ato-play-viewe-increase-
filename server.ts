@@ -1609,15 +1609,15 @@ app.post("/api/campaigns", async (req, res) => {
   }
 
   const metadata = await extractVideoMetadata(videoUrl);
-  let liveFollowers = metadata.channelFollowers;
+  let liveFollowers = req.body.channelFollowers || metadata.channelFollowers;
   try {
     const channelResult = await fetchChannelFollowerCount({ videoUrl } as any);
-    if (typeof channelResult.count === 'number' && channelResult.count > 0) {
+    if (typeof channelResult.count === 'number' && channelResult.count > 0 && channelResult.count > 5) {
       liveFollowers = channelResult.count;
     }
   } catch {}
 
-  const finalChannelFollowers = liveFollowers || (metadata as any).channelFollowers || 150;
+  const finalChannelFollowers = req.body.channelFollowers || liveFollowers || (metadata as any).channelFollowers || 150;
 
   const finalTitle = (customTitle && typeof customTitle === 'string' && customTitle.trim()) 
     ? customTitle.trim() 
@@ -1626,6 +1626,8 @@ app.post("/api/campaigns", async (req, res) => {
   const finalThumbnail = (customThumbnail && typeof customThumbnail === 'string' && customThumbnail.trim() && !customThumbnail.includes('placeholder')) 
     ? customThumbnail.trim() 
     : metadata.thumbnailUrl;
+
+  const finalChannelName = req.body.channelName || metadata.channelName || activeUser.name;
 
   const newCampaign: Campaign = {
     id: `camp_${Date.now()}`,
@@ -1645,7 +1647,7 @@ app.post("/api/campaigns", async (req, res) => {
     createdAt: new Date().toISOString(),
     displayId: generate4CharId(metadata.displayId),
     countryFlag: "🇮🇳",
-    channelName: metadata.channelName || activeUser.name,
+    channelName: finalChannelName,
     channelId: (metadata as any).channelId,
     channelFollowers: finalChannelFollowers,
     initialFollowers: finalChannelFollowers,
