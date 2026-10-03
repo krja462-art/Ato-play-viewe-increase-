@@ -66,6 +66,7 @@ export const Campaigns: React.FC<CampaignsProps> = ({
   const [customThumbnailUrl, setCustomThumbnailUrl] = useState('');
   const [showCustomThumbInput, setShowCustomThumbInput] = useState(false);
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const metadataCacheRef = useRef<Map<string, any>>(new Map());
 
   // Coin Economics: 80 coins/view (60 reward + 20 fee)
   const COST_PER_VIEW = 80;
@@ -235,13 +236,21 @@ export const Campaigns: React.FC<CampaignsProps> = ({
     };
   }, [user.id]);
 
-  // Fetch real video metadata on demand
+  // Fetch real video metadata on demand with client-side memoized cache ref
   const handleFetchMetadata = async (urlToFetch?: string) => {
     const raw = (urlToFetch !== undefined ? urlToFetch : videoUrl).trim().replace(/^["']|["']$/g, '');
     if (!raw) return;
 
     if (!isValidVideoUrl(raw)) {
       setErrorMsg('Please enter a valid video URL (e.g. https://atoplay.com/video/...)');
+      return;
+    }
+
+    const cleanedKey = cleanVideoUrl(raw);
+    if (metadataCacheRef.current.has(cleanedKey)) {
+      const cachedMeta = metadataCacheRef.current.get(cleanedKey);
+      setPreviewData(cachedMeta);
+      if (!customTitle) setCustomTitle(cachedMeta.title);
       return;
     }
 
@@ -266,6 +275,7 @@ export const Campaigns: React.FC<CampaignsProps> = ({
       }
 
       if (meta) {
+        metadataCacheRef.current.set(cleanedKey, meta);
         setPreviewData(meta);
         setCustomTitle(meta.title);
         setCustomThumbnailUrl('');
