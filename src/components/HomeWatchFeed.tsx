@@ -112,7 +112,7 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
   const handleStartFollowTask = (camp: Campaign) => {
     activeFollowTargetRef.current = camp;
     followLeftTimeRef.current = Date.now();
-    openAtoPlayUrl(camp.videoUrl || 'https://atoplay.com');
+    openAtoPlayUrl(camp.videoUrl || 'https://atoplay.com', true);
   };
 
   const isVerifyingRef = useRef(false);
@@ -1089,7 +1089,6 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
               src={selectedCampaign.thumbnailUrl}
               alt={selectedCampaign.title}
               referrerPolicy="no-referrer"
-              crossOrigin="anonymous"
               onError={(e) => {
                 const target = e.currentTarget;
                 if (!target.src.includes('unsplash.com')) {
@@ -1426,7 +1425,6 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
                         src={camp.thumbnailUrl}
                         alt="Channel Banner"
                         referrerPolicy="no-referrer"
-                        crossOrigin="anonymous"
                         onError={(e) => {
                           (e.currentTarget as HTMLImageElement).src = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80";
                         }}
@@ -1524,7 +1522,6 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
                       src={camp.thumbnailUrl}
                       alt={camp.title}
                       referrerPolicy="no-referrer"
-                      crossOrigin="anonymous"
                       onError={(e) => {
                         const target = e.currentTarget;
                         if (!target.src.includes('unsplash.com')) {

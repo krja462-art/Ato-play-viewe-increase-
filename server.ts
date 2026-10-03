@@ -1102,7 +1102,7 @@ async function extractVideoMetadata(videoUrl: string) {
                 chFollowers = liveF;
                 channelFetched = true;
               }
-              const banner = channelObj?.bannerUrl || channelObj?.banner || channelObj?.avatar || channelObj?.image || channelObj?.thumbnailUrl || channelObj?.logo;
+              const banner = channelObj?.channelBanner || channelObj?.channelImage || channelObj?.bannerUrl || channelObj?.banner || channelObj?.avatar || channelObj?.image || channelObj?.thumbnailUrl || channelObj?.logo || (Array.isArray(channelObj?.videos) && channelObj?.videos[0]?.thumbnailUrl);
               if (banner) {
                 chBanner = banner.startsWith('http') ? banner : (banner.startsWith('/') ? `https://cdn.atoplay.in${banner}` : `https://cdn.atoplay.in/${banner}`);
                 channelFetched = true;
@@ -1126,15 +1126,37 @@ async function extractVideoMetadata(videoUrl: string) {
               const firstVid = Array.isArray(vList) ? vList[0] : (vList?.videos?.[0] || vList?.data?.[0]);
               if (firstVid?.channel) {
                 if (firstVid.channel.name) { chName = firstVid.channel.name; channelFetched = true; }
-                if (firstVid.channel.bannerUrl || firstVid.channel.avatar) { chBanner = firstVid.channel.bannerUrl || firstVid.channel.avatar; channelFetched = true; }
+                if (firstVid.channel.channelBanner || firstVid.channel.channelImage || firstVid.channel.bannerUrl || firstVid.channel.avatar) {
+                  chBanner = firstVid.channel.channelBanner || firstVid.channel.channelImage || firstVid.channel.bannerUrl || firstVid.channel.avatar;
+                  channelFetched = true;
+                }
                 const fCount = parseFollowersCount(firstVid.channel.followersCount ?? firstVid.channel.followers);
-                if (fCount) { chFollowers = fCount; }
+                if (fCount !== undefined) { chFollowers = fCount; channelFetched = true; }
                 chId = firstVid.channel.id || potentialSlug;
+              }
+              if (!chBanner && firstVid?.thumbnailUrl) {
+                chBanner = firstVid.thumbnailUrl;
+                channelFetched = true;
               }
             }
           } catch {}
         }
       } catch {}
+    }
+
+    // If explicit channel and real channel was fetched from official AtoPlay API, return immediately!
+    if (isExplicitChannel && channelFetched && chName !== "AtoPlay Creator") {
+      return {
+        displayId: generate4CharId(potentialSlug || 'channel'),
+        title: `AtoPlay Channel: ${chName}`,
+        thumbnailUrl: chBanner,
+        channelName: chName,
+        channelId: chId || potentialSlug,
+        channelFollowers: chFollowers,
+        durationSeconds: 60,
+        durationText: "1:00",
+        isRealVideo: true
+      };
     }
 
     if (potentialSlug) {
@@ -1165,7 +1187,7 @@ async function extractVideoMetadata(videoUrl: string) {
         chBanner = banners[hash % banners.length];
       }
 
-      if (!chFollowers || chFollowers <= 150) {
+      if (!channelFetched && (!chFollowers || chFollowers <= 150)) {
         chFollowers = 450 + (hash % 1500);
       }
 
@@ -1226,8 +1248,9 @@ async function extractVideoMetadata(videoUrl: string) {
             if (videoChFollowers !== undefined) {
               chFollowers = videoChFollowers;
             }
-            if (vData?.channel?.bannerUrl || vData?.channel?.banner || vData?.channel?.avatar) {
-              chBanner = vData.channel?.bannerUrl || vData.channel?.banner || vData.channel?.avatar;
+            const vChannelBanner = vData?.channel?.channelBanner || vData?.channel?.channelImage || vData?.channel?.bannerUrl || vData?.channel?.banner || vData?.channel?.avatar;
+            if (vChannelBanner) {
+              chBanner = vChannelBanner;
             }
 
             if (channelId && (chFollowers === 150 || !chBanner)) {
@@ -1244,8 +1267,9 @@ async function extractVideoMetadata(videoUrl: string) {
                   if (cObj?.name) chName = cObj.name;
                   const liveF = parseFollowersCount(cObj?.followersCount ?? cObj?.followers);
                   if (liveF !== undefined) chFollowers = liveF;
-                  if (cObj?.bannerUrl || cObj?.banner || cObj?.avatar) {
-                    chBanner = cObj.bannerUrl || cObj.banner || cObj.avatar;
+                  const cChannelBanner = cObj?.channelBanner || cObj?.channelImage || cObj?.bannerUrl || cObj?.banner || cObj?.avatar;
+                  if (cChannelBanner) {
+                    chBanner = cChannelBanner;
                   }
                 }
               } catch {}
@@ -1279,29 +1303,35 @@ async function extractVideoMetadata(videoUrl: string) {
       if (scrapeRes.ok) {
         const html = await scrapeRes.text();
         const ogImage = html.match(/<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']+)["']/i)?.[1];
-        if (ogImage) chBanner = ogImage;
+        if (ogImage && !ogImage.includes('atoplay-social-banner') && (!chBanner || chBanner.includes('unsplash') || chBanner.includes('placeholder'))) {
+          chBanner = ogImage;
+        }
         const ogTitle = html.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)["']/i)?.[1];
-        if (ogTitle) chName = ogTitle.replace(/\s*\|\s*AtoPlay.*$/i, '').trim();
+        if (ogTitle && (!chName || chName === 'AtoPlay Creator')) {
+          chName = ogTitle.replace(/\s*\|\s*AtoPlay.*$/i, '').trim();
+        }
         const followMatch = html.match(/(?:([0-9.,]+[KkMmBb]?)\s*(?:Followers|followers|subscribers|Subscribers))/i) ||
                             html.match(/"(?:followersCount|subscribersCount|followers)"\s*:\s*([0-9]+)/i);
-        if (followMatch && followMatch[1]) {
+        if (followMatch && followMatch[1] && (!chFollowers || chFollowers === 150)) {
           const parsedF = parseFollowersCount(followMatch[1]);
           if (parsedF !== undefined) chFollowers = parsedF;
         }
       }
     } catch {}
 
-    return {
-      displayId: generate4CharId(potentialSlug || 'channel'),
-      title: `AtoPlay Channel: ${chName}`,
-      thumbnailUrl: chBanner,
-      channelName: chName,
-      channelId: chId,
-      channelFollowers: chFollowers,
-      durationSeconds: 60,
-      durationText: "1:00",
-      isRealVideo: true
-    };
+    if (isExplicitChannel) {
+      return {
+        displayId: generate4CharId(potentialSlug || 'channel'),
+        title: `AtoPlay Channel: ${chName}`,
+        thumbnailUrl: chBanner,
+        channelName: chName,
+        channelId: chId,
+        channelFollowers: chFollowers,
+        durationSeconds: 60,
+        durationText: "1:00",
+        isRealVideo: true
+      };
+    }
 
     // 2. Check for YouTube URLs (including shorts, youtu.be, etc.)
     if (isValidHostname && (hostname.includes('youtube.com') || hostname.includes('youtu.be'))) {

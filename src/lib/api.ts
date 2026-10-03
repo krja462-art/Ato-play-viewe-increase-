@@ -690,13 +690,21 @@ async function handleClientFallback<T>(endpoint: string, options?: RequestInit, 
  * Tries to open the AtoPlay app directly (if installed on Android or Desktop PWA).
  * If the app is not installed, falls back to opening in Chrome / external browser.
  */
-export function openAtoPlayUrl(url: string) {
+export function openAtoPlayUrl(url: string, preferBrowser = false) {
   if (!url) return;
   const cleaned = cleanVideoUrl(url) || url;
+  const isChannelUrl = /(?:channels?\/|c\/|user\/|@)/i.test(cleaned);
 
   // If already running inside standalone PWA mode
   if (window.matchMedia('(display-mode: standalone)').matches || (navigator as any).standalone) {
     window.location.href = cleaned;
+    return;
+  }
+
+  // Channels should ALWAYS open in external browser (Chrome) so AtoPlay web displays
+  // the full channel page, subscribe button, and banner without native app "could not find video" error
+  if (preferBrowser || isChannelUrl) {
+    window.open(cleaned, '_blank', 'noopener,noreferrer');
     return;
   }
 
@@ -714,7 +722,7 @@ export function openAtoPlayUrl(url: string) {
       setTimeout(() => {
         try { document.body.removeChild(iframe); } catch {}
         window.open(cleaned, '_blank', 'noopener,noreferrer');
-      }, 1200);
+      }, 1000);
       return;
     } catch {
       window.open(cleaned, '_blank', 'noopener,noreferrer');

@@ -207,7 +207,6 @@ export const WatchEarn: React.FC<WatchEarnProps> = ({ user, onCoinEarned }) => {
             src={currentCampaign.thumbnailUrl} 
             alt={currentCampaign.title}
             referrerPolicy="no-referrer"
-            crossOrigin="anonymous"
             onError={(e) => {
               const target = e.currentTarget;
               if (!target.src.includes('unsplash.com')) {

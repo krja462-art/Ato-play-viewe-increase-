@@ -564,7 +564,6 @@ export const Campaigns: React.FC<CampaignsProps> = ({
                       src={camp.thumbnailUrl} 
                       alt={camp.title} 
                       referrerPolicy="no-referrer"
-                      crossOrigin="anonymous"
                       onError={(e) => {
                         const target = e.currentTarget;
                         if (!target.src.includes('unsplash.com')) {
@@ -699,7 +698,6 @@ export const Campaigns: React.FC<CampaignsProps> = ({
                                   src={followerAvatar}
                                   alt={followerName}
                                   referrerPolicy="no-referrer"
-                                  crossOrigin="anonymous"
                                   className="w-9 h-9 rounded-full object-cover border border-white shadow-xs bg-zinc-100"
                                   onError={(e) => {
                                     (e.currentTarget as HTMLImageElement).src = 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80';
@@ -964,7 +962,6 @@ export const Campaigns: React.FC<CampaignsProps> = ({
                       src={customThumbnailUrl || previewData.thumbnailUrl} 
                       alt={previewData.title} 
                       referrerPolicy="no-referrer"
-                      crossOrigin="anonymous"
                       onError={(e) => {
                         const target = e.currentTarget;
                         if (!target.src.includes('unsplash.com')) {

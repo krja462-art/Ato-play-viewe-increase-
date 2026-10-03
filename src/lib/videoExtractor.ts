@@ -10,6 +10,8 @@ export interface VideoMetadata {
   channelName: string;
   channelId?: string;
   channelFollowers?: number;
+  channelBanner?: string;
+  channelImage?: string;
   durationSeconds: number;
   durationText: string;
   isRealVideo: boolean;
@@ -146,9 +148,69 @@ export async function extractVideoMetadata(rawUrl: string): Promise<VideoMetadat
   const isYouTube = hostname.includes('youtube.com') || hostname.includes('youtu.be');
 
   // -------------------------------------------------------------
-  // 1. ATOPLAY VIDEO EXTRACTION
+  // 1. ATOPLAY CHANNEL & VIDEO EXTRACTION
   // -------------------------------------------------------------
   if (isAtoPlay) {
+    // Check if URL is explicitly a channel URL (channels/, channel/, c/, user/, @)
+    const isChannelUrl = /(?:channels?\/|c\/|user\/|@)/i.test(trimmed);
+    if (isChannelUrl) {
+      const channelUrlMatch = trimmed.match(/(?:channels?\/|c\/|user\/|@)([a-zA-Z0-9_-]+)/i);
+      const pathSegments = urlObj.pathname.split('/').filter(Boolean);
+      let slug = channelUrlMatch ? channelUrlMatch[1] : '';
+      if ((!slug || slug === 'channel' || slug === 'channels') && pathSegments.length > 0) {
+        const idx = pathSegments.findIndex(p => p.toLowerCase() === 'channel' || p.toLowerCase() === 'channels');
+        if (idx !== -1 && pathSegments[idx + 1]) {
+          slug = pathSegments[idx + 1];
+        } else {
+          slug = pathSegments[pathSegments.length - 1];
+        }
+      }
+
+      if (slug && slug !== 'channel' && slug !== 'channels') {
+        const endpoints = [
+          `https://api.atoplay.com/api/channels/${slug}`,
+          `https://api.atoplay.com/api/channels/id/${slug}`,
+          `https://api.atoplay.com/api/channels/username/${slug}`,
+          `https://api.atoplay.com/api/channels/public/${slug}`
+        ];
+
+        for (const ep of endpoints) {
+          try {
+            const cRes = await fetch(ep, {
+              headers: { 'Accept': 'application/json' }
+            });
+            if (cRes.ok) {
+              const cData = await cRes.json();
+              const cObj = cData?.channel || cData?.data || (Array.isArray(cData) ? cData[0] : cData);
+              if (cObj) {
+                const name = cObj.name || cObj.username || cObj.title || 'AtoPlay Channel';
+                const fCount = parseFollowersNumber(cObj.followersCount ?? cObj.followers ?? cObj.subscribersCount) ?? 0;
+                const cBanner = cObj.channelBanner ? (cObj.channelBanner.startsWith('http') ? cObj.channelBanner : `https://cdn.atoplay.in/${cObj.channelBanner.replace(/^\//, '')}`) : undefined;
+                const cImage = cObj.channelImage ? (cObj.channelImage.startsWith('http') ? cObj.channelImage : `https://cdn.atoplay.in/${cObj.channelImage.replace(/^\//, '')}`) : undefined;
+                const firstVidThumb = (Array.isArray(cObj.videos) && cObj.videos[0]?.thumbnailUrl) || undefined;
+                const rawBanner = cBanner || cImage || firstVidThumb || cObj.bannerUrl || cObj.banner || cObj.avatar || cObj.image || cObj.thumbnailUrl || cObj.logo;
+                const finalBannerUrl = rawBanner ? (rawBanner.startsWith('http') ? rawBanner : `https://cdn.atoplay.in/${rawBanner.replace(/^\//, '')}`) : ATOPLAY_FALLBACK_THUMBNAILS[0];
+                return {
+                  displayId: generate4CharId(cObj.id || slug),
+                  title: name,
+                  thumbnailUrl: finalBannerUrl,
+                  channelName: name,
+                  channelId: cObj.id || slug,
+                  channelFollowers: fCount,
+                  channelBanner: cBanner,
+                  channelImage: cImage,
+                  durationSeconds: 60,
+                  durationText: '1:00',
+                  isRealVideo: true,
+                  platform: 'atoplay'
+                };
+              }
+            }
+          } catch {}
+        }
+      }
+    }
+
     // Extract potential UUID from path
     const uuidMatch = urlObj.pathname.match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i) ||
                       urlObj.pathname.match(/(?:video\/|v\/|watch\/|post\/)?([0-9a-f]{32})/i);

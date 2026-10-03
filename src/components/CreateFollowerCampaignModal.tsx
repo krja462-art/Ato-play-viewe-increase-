@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
-import { X, Users, Sparkles, Coins, CheckCircle2, AlertCircle, ExternalLink, Link as LinkIcon, Search, Loader2 } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { X, Users, Sparkles, Coins, CheckCircle2, AlertCircle, ExternalLink, Link as LinkIcon, Search, Loader2, Clipboard } from 'lucide-react';
 import { User, Campaign } from '../types';
-import { apiFetch, cleanVideoUrl, openAtoPlayUrl } from '../lib/api';
+import { apiFetch, cleanVideoUrl, openAtoPlayUrl, extractVideoMetadata } from '../lib/api';
 import { saveCampaignToFirestore, saveUserCoinsToFirestore } from '../lib/firebase';
 import confetti from 'canvas-confetti';
 
@@ -29,6 +29,16 @@ export const CreateFollowerCampaignModal: React.FC<CreateFollowerCampaignModalPr
   const [channelName, setChannelName] = useState('');
   const [currentFollowers, setCurrentFollowers] = useState<number>(0);
   const [bannerUrl, setBannerUrl] = useState<string>('');
+  const [channelAvatarUrl, setChannelAvatarUrl] = useState<string>('');
+  const debounceRef = useRef<any>(null);
+
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+      }
+    };
+  }, []);
 
   if (!isOpen) return null;
 
@@ -36,19 +46,18 @@ export const CreateFollowerCampaignModal: React.FC<CreateFollowerCampaignModalPr
   const totalCost = Number(targetFollowers) * COST_PER_FOLLOWER;
   const isUserAdmin = Boolean(user.isAdmin || user.email?.toLowerCase().trim() === 'krja462@gmail.com');
 
-  // Regex-based URL cleaner to strip unnecessary query parameters and standardize AtoPlay channel link format
+  // Regex-based URL cleaner to strip query parameters and normalize AtoPlay channel link format
   const cleanAtoPlayUrl = (rawUrl: string): string => {
     if (!rawUrl || typeof rawUrl !== 'string') return '';
     let s = rawUrl.trim().replace(/^["']|["']$/g, '');
-    // Standardize domain and remove query parameters / hashes
     s = s.replace(/^(?:https?:\/\/)?(?:www\.)?(?:atoplay\.com|atoplay\.in)/i, 'https://atoplay.com');
     s = s.replace(/[?#].*$/, '');
     s = s.replace(/([^:]\/)\/+/g, '$1');
     return s;
   };
 
-  const handleFetchChannelInfo = async () => {
-    const rawUrl = channelUrl.trim();
+  const handleFetchChannelInfo = async (overrideUrl?: string) => {
+    const rawUrl = (overrideUrl !== undefined ? overrideUrl : channelUrl).trim();
     if (!rawUrl) return;
     const cleanedUrl = cleanAtoPlayUrl(rawUrl);
     try {
@@ -56,63 +65,102 @@ export const CreateFollowerCampaignModal: React.FC<CreateFollowerCampaignModalPr
       setErrorMsg(null);
       setSuccessMsg(null);
 
-      const parts = cleanedUrl.split('/').filter(Boolean);
-      const slug = parts[parts.length - 1] || 'Channel';
-
       let fetchedName = '';
       let fetchedBanner = '';
+      let fetchedAvatar = '';
       let fetchedFollowers = 0;
 
-      const endpoints = [
-        `https://api.atoplay.com/api/channels/${slug}`,
-        `https://api.atoplay.com/api/channels/id/${slug}`,
-        `https://api.atoplay.com/api/channels/username/${slug}`,
-        `https://api.atoplay.com/api/channels/public/${slug}`,
-        `https://api.atoplay.com/api/channels/detail/${slug}`,
-        `https://api.atoplay.com/api/creators/${slug}`,
-        `https://api.atoplay.com/api/users/${slug}`
-      ];
-
-      for (const ep of endpoints) {
-        try {
-          const res = await fetch(ep, { headers: { 'Accept': 'application/json' } });
-          if (res.ok) {
-            const json = await res.json();
-            const obj = json?.channel || json?.data || (Array.isArray(json) ? json[0] : json);
-            if (obj?.name || obj?.username || obj?.title || obj?.channelName) {
-              fetchedName = obj.name || obj.username || obj.title || obj.channelName;
-            }
-            const f = Number(obj?.followersCount ?? obj?.followers ?? obj?.subscribersCount ?? obj?.subscribers);
-            if (!isNaN(f) && f > 0) {
-              fetchedFollowers = f;
-            }
-            const b = obj?.bannerUrl || obj?.banner || obj?.avatarUrl || obj?.avatar || obj?.image || obj?.thumbnailUrl || obj?.logo || obj?.profilePicture || obj?.profileImage || obj?.coverUrl || obj?.cover;
-            if (b) {
-              fetchedBanner = b.startsWith('http') ? b : (b.startsWith('/') ? `https://cdn.atoplay.in${b}` : `https://cdn.atoplay.in/${b}`);
-            }
-            if (fetchedName || fetchedBanner) break;
+      // 1. Try Vercel Serverless Function & Backend API first (bypasses browser CORS & uses server proxy)
+      try {
+        const serverData = await apiFetch(`/api/campaigns/extract-metadata?url=${encodeURIComponent(cleanedUrl)}`);
+        if (serverData?.success && serverData?.metadata) {
+          const m = serverData.metadata;
+          if (m.channelName || m.title) {
+            fetchedName = m.channelName || m.title;
           }
-        } catch {}
+          if (m.thumbnailUrl && !m.thumbnailUrl.includes('placeholder')) {
+            fetchedBanner = m.thumbnailUrl;
+          }
+          if (m.channelBanner) {
+            fetchedBanner = m.channelBanner;
+          }
+          if (m.channelImage) {
+            fetchedAvatar = m.channelImage;
+          }
+          if (typeof m.channelFollowers === 'number' && !isNaN(m.channelFollowers)) {
+            fetchedFollowers = m.channelFollowers;
+          }
+        }
+      } catch (srvErr) {
+        console.warn('Server extract-metadata note:', srvErr);
       }
 
+      // 2. Direct client metadata extractor fallback (unified browser extractor)
       if (!fetchedName || !fetchedBanner) {
         try {
-          const vRes = await fetch(`https://api.atoplay.com/api/videos?channelId=${slug}`, { headers: { 'Accept': 'application/json' } });
-          if (vRes.ok) {
-            const vList = await vRes.json();
-            const first = Array.isArray(vList) ? vList[0] : (vList?.videos?.[0] || vList?.data?.[0]);
-            if (first?.channel) {
-              if (first.channel.name) fetchedName = first.channel.name;
-              if (first.channel.bannerUrl || first.channel.avatar) fetchedBanner = first.channel.bannerUrl || first.channel.avatar;
-              const f = Number(first.channel.followersCount ?? first.channel.followers);
-              if (f) fetchedFollowers = f;
+          const meta = await extractVideoMetadata(cleanedUrl);
+          if (meta) {
+            if (meta.channelName || meta.title) {
+              fetchedName = meta.channelName || meta.title;
+            }
+            if (meta.thumbnailUrl && !meta.thumbnailUrl.includes('placeholder')) {
+              fetchedBanner = meta.thumbnailUrl;
+            }
+            if (meta.channelBanner) {
+              fetchedBanner = meta.channelBanner;
+            }
+            if (meta.channelImage) {
+              fetchedAvatar = meta.channelImage;
+            }
+            if (typeof meta.channelFollowers === 'number') {
+              fetchedFollowers = meta.channelFollowers;
             }
           }
-        } catch {}
+        } catch (clientExtErr) {
+          console.warn('Client extractor note:', clientExtErr);
+        }
+      }
+
+      // 3. Direct AtoPlay API probe as ultimate guarantee
+      if (!fetchedName || !fetchedBanner) {
+        const parts = cleanedUrl.split('/').filter(Boolean);
+        const slug = parts[parts.length - 1] || 'Channel';
+        const endpoints = [
+          `https://api.atoplay.com/api/channels/${slug}`,
+          `https://api.atoplay.com/api/channels/id/${slug}`,
+          `https://api.atoplay.com/api/channels/public/${slug}`,
+          `https://api.atoplay.com/api/creators/${slug}`
+        ];
+
+        for (const ep of endpoints) {
+          try {
+            const res = await fetch(ep, { headers: { 'Accept': 'application/json' } });
+            if (res.ok) {
+              const json = await res.json();
+              const obj = json?.channel || json?.data || (Array.isArray(json) ? json[0] : json);
+              if (obj?.name || obj?.username || obj?.title || obj?.channelName) {
+                fetchedName = obj.name || obj.username || obj.title || obj.channelName;
+              }
+              const f = Number(obj?.followersCount ?? obj?.followers ?? obj?.subscribersCount ?? obj?.subscribers);
+              if (!isNaN(f) && f >= 0) {
+                fetchedFollowers = f;
+              }
+              const b = obj?.channelBanner || obj?.channelImage || obj?.bannerUrl || obj?.banner || obj?.avatarUrl || obj?.avatar || obj?.image || obj?.thumbnailUrl || obj?.logo || (Array.isArray(obj?.videos) && obj?.videos[0]?.thumbnailUrl);
+              if (b) {
+                fetchedBanner = b.startsWith('http') ? b : (b.startsWith('/') ? `https://cdn.atoplay.in${b}` : `https://cdn.atoplay.in/${b}`);
+              }
+              if (obj?.channelImage) {
+                fetchedAvatar = obj.channelImage.startsWith('http') ? obj.channelImage : `https://cdn.atoplay.in/${obj.channelImage.replace(/^\//, '')}`;
+              }
+              if (fetchedName && fetchedBanner) break;
+            }
+          } catch {}
+        }
       }
 
       let finalName = fetchedName;
       if (!finalName || finalName === 'AtoPlay Creator' || finalName.startsWith('AtoPlay Channel #')) {
+        const slug = cleanedUrl.split('/').filter(Boolean).pop() || '';
         finalName = slug.includes('-') && slug.length > 20 ? `AtoPlay Creator ${slug.slice(0, 6).toUpperCase()}` : slug.replace(/[-_]/g, ' ');
         finalName = finalName.charAt(0).toUpperCase() + finalName.slice(1);
         if (finalName.toLowerCase() === 'channel' || finalName.toLowerCase() === 'channels') {
@@ -120,33 +168,62 @@ export const CreateFollowerCampaignModal: React.FC<CreateFollowerCampaignModalPr
         }
       }
 
-      const hash = slug.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-      const banners = [
-        "https://cdn.atoplay.in/atoplay-thumbnails/58d4d4aa-c235-48a1-8423-57fbeefa914e/thumbnails/61f8d5c2-3b2b-4789-8581-c6727ce0388a.webp",
-        "https://cdn.atoplay.in/atoplay-thumbnails/58d4d4aa-c235-48a1-8423-57fbeefa914e/thumbnails/b079eff5-e942-4d88-813d-6bc5a40d08e9.webp",
-        "https://cdn.atoplay.in/atoplay-thumbnails/58d4d4aa-c235-48a1-8423-57fbeefa914e/thumbnails/12093053-ff39-4dd8-9c1f-a1a801b54b28.webp",
-        "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80"
-      ];
-      let finalBanner = fetchedBanner;
+      let finalBanner = fetchedBanner || fetchedAvatar;
       if (!finalBanner || finalBanner.includes('placeholder')) {
-        finalBanner = banners[hash % banners.length];
+        finalBanner = "https://cdn.atoplay.in/atoplay-thumbnails/58d4d4aa-c235-48a1-8423-57fbeefa914e/thumbnails/61f8d5c2-3b2b-4789-8581-c6727ce0388a.webp";
       }
 
-      let finalFollowers = fetchedFollowers > 0 ? fetchedFollowers : (450 + (hash % 1500));
-
       setChannelName(finalName);
-      setCurrentFollowers(finalFollowers);
+      setCurrentFollowers(fetchedFollowers);
       setBannerUrl(finalBanner);
-      setSuccessMsg('Real channel banner & name fetched successfully!');
-      setTimeout(() => setSuccessMsg(null), 2500);
+      if (fetchedAvatar) setChannelAvatarUrl(fetchedAvatar);
+      setSuccessMsg('Real channel banner & details fetched successfully!');
+      setTimeout(() => setSuccessMsg(null), 3000);
     } catch (err: any) {
       setChannelName('AtoPlay Channel');
-      setCurrentFollowers(750);
       setBannerUrl("https://cdn.atoplay.in/atoplay-thumbnails/58d4d4aa-c235-48a1-8423-57fbeefa914e/thumbnails/61f8d5c2-3b2b-4789-8581-c6727ce0388a.webp");
-      setSuccessMsg('Channel banner loaded!');
-      setTimeout(() => setSuccessMsg(null), 2500);
     } finally {
       setFetchingInfo(false);
+    }
+  };
+
+  const handleUrlInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    setChannelUrl(val);
+
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+    }
+
+    const clean = cleanAtoPlayUrl(val);
+    if (clean && clean.includes('atoplay.com') && clean.length > 22) {
+      debounceRef.current = setTimeout(() => {
+        handleFetchChannelInfo(clean);
+      }, 400);
+    }
+  };
+
+  const handlePasteInput = (e: React.ClipboardEvent<HTMLInputElement>) => {
+    const pasted = e.clipboardData.getData('text').trim();
+    if (pasted) {
+      const clean = cleanAtoPlayUrl(pasted);
+      setChannelUrl(clean);
+      handleFetchChannelInfo(clean);
+    }
+  };
+
+  const handlePasteFromClipboard = async () => {
+    try {
+      if (navigator?.clipboard?.readText) {
+        const text = (await navigator.clipboard.readText()).trim();
+        if (text) {
+          const clean = cleanAtoPlayUrl(text);
+          setChannelUrl(clean);
+          handleFetchChannelInfo(clean);
+        }
+      }
+    } catch {
+      // clipboard access unsupported
     }
   };
 
@@ -185,8 +262,10 @@ export const CreateFollowerCampaignModal: React.FC<CreateFollowerCampaignModalPr
           viewsRequired: followersCount,
           rewardPerView: 30,
           durationSeconds: 60,
-          title: `Follow AtoPlay Channel: @${user.atoPlayUsername || channelName}`,
+          title: channelName ? `Follow AtoPlay Channel: ${channelName}` : `Follow AtoPlay Channel`,
           thumbnailUrl: bannerUrl,
+          channelName: channelName || user.atoPlayUsername || 'AtoPlay Creator',
+          channelFollowers: currentFollowers,
           campaignType: 'follower'
         })
       });
@@ -272,10 +351,19 @@ export const CreateFollowerCampaignModal: React.FC<CreateFollowerCampaignModalPr
 
           {/* Your Channel URL Input */}
           <div className="space-y-1.5">
-            <label className="text-xs font-bold text-zinc-700 uppercase tracking-wider flex items-center justify-between">
-              <span>Your Channel URL</span>
-              <span className="text-[11px] text-emerald-600 font-bold">AtoPlay Channel Link</span>
-            </label>
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold text-zinc-700 uppercase tracking-wider">
+                Your Channel URL
+              </label>
+              <button
+                type="button"
+                onClick={handlePasteFromClipboard}
+                className="text-[11px] text-emerald-600 hover:text-emerald-700 font-bold flex items-center space-x-1 cursor-pointer"
+              >
+                <Clipboard className="w-3 h-3" />
+                <span>Paste & Auto-Fetch</span>
+              </button>
+            </div>
             <div className="relative flex items-center">
               <div className="absolute left-3.5 text-zinc-400">
                 <LinkIcon className="w-4 h-4" />
@@ -283,15 +371,16 @@ export const CreateFollowerCampaignModal: React.FC<CreateFollowerCampaignModalPr
               <input
                 type="text"
                 required
-                placeholder="https://atoplay.com/channel/your-channel-name"
+                placeholder="https://atoplay.com/channels/your-channel-id"
                 value={channelUrl}
-                onChange={e => setChannelUrl(e.target.value)}
-                onBlur={handleFetchChannelInfo}
+                onChange={handleUrlInputChange}
+                onPaste={handlePasteInput}
+                onBlur={() => handleFetchChannelInfo()}
                 className="w-full pl-10 pr-24 py-3.5 rounded-2xl bg-zinc-50 border border-zinc-200 text-xs sm:text-sm text-zinc-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
               />
               <button
                 type="button"
-                onClick={handleFetchChannelInfo}
+                onClick={() => handleFetchChannelInfo()}
                 disabled={fetchingInfo || !channelUrl}
                 className="absolute right-2 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:bg-zinc-200 text-white font-bold text-xs shadow-xs transition-colors cursor-pointer flex items-center space-x-1"
               >
@@ -300,7 +389,7 @@ export const CreateFollowerCampaignModal: React.FC<CreateFollowerCampaignModalPr
               </button>
             </div>
             <p className="text-[11px] text-zinc-400">
-              Paste your AtoPlay channel link so we fetch your real channel banner and live follower count.
+              URL paste karte hi automatic channel banner, real name aur followers fetch ho jayenge.
             </p>
           </div>
 
@@ -317,9 +406,12 @@ export const CreateFollowerCampaignModal: React.FC<CreateFollowerCampaignModalPr
                     src={bannerUrl}
                     alt="Channel Banner"
                     referrerPolicy="no-referrer"
-                    crossOrigin="anonymous"
                     onError={(e) => {
-                      (e.currentTarget as HTMLImageElement).src = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80";
+                      if (channelAvatarUrl && (e.currentTarget as HTMLImageElement).src !== channelAvatarUrl) {
+                        (e.currentTarget as HTMLImageElement).src = channelAvatarUrl;
+                      } else {
+                        (e.currentTarget as HTMLImageElement).src = "https://cdn.atoplay.in/atoplay-thumbnails/58d4d4aa-c235-48a1-8423-57fbeefa914e/thumbnails/61f8d5c2-3b2b-4789-8581-c6727ce0388a.webp";
+                      }
                     }}
                     className="w-full h-full object-cover"
                   />
@@ -339,7 +431,7 @@ export const CreateFollowerCampaignModal: React.FC<CreateFollowerCampaignModalPr
             {channelUrl && (
               <button
                 type="button"
-                onClick={() => openAtoPlayUrl(channelUrl)}
+                onClick={() => openAtoPlayUrl(channelUrl, true)}
                 className="w-full py-2.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 font-extrabold text-xs flex items-center justify-center space-x-1.5 transition-colors cursor-pointer"
               >
                 <ExternalLink className="w-3.5 h-3.5" />
@@ -374,59 +466,64 @@ export const CreateFollowerCampaignModal: React.FC<CreateFollowerCampaignModalPr
 
             <input
               type="range"
-              min={5}
-              max={500}
-              step={5}
+              min="5"
+              max="500"
+              step="5"
               value={targetFollowers}
               onChange={e => setTargetFollowers(Number(e.target.value))}
-              className="w-full h-2 bg-zinc-200 rounded-lg appearance-none cursor-pointer accent-emerald-600 mt-2"
+              className="w-full accent-emerald-600 cursor-pointer"
             />
           </div>
 
-          {/* Cost Summary Box */}
-          <div className="p-4 rounded-2xl bg-emerald-50/70 border border-emerald-200 space-y-2.5">
-            <div className="flex items-center justify-between text-xs font-semibold text-zinc-600">
-              <span>Follower Reward (30 coins × {targetFollowers})</span>
-              <span className="font-bold text-zinc-900">{(targetFollowers * 30).toLocaleString()} Coins</span>
+          {/* Pricing Summary Card */}
+          <div className="p-4 rounded-2xl bg-emerald-50/60 border border-emerald-200 space-y-2">
+            <div className="flex items-center justify-between text-xs text-zinc-600">
+              <span>Target Followers</span>
+              <span className="font-bold text-zinc-900">{targetFollowers} Subscribers</span>
             </div>
-            <div className="flex items-center justify-between text-xs font-semibold text-zinc-600">
-              <span>Platform Fee (70 coins × {targetFollowers})</span>
-              <span className="font-bold text-zinc-900">{(targetFollowers * 70).toLocaleString()} Coins</span>
+            <div className="flex items-center justify-between text-xs text-zinc-600">
+              <span>Follower Reward (+30 coins each)</span>
+              <span className="font-bold text-emerald-700">30 Coins / Follower</span>
             </div>
-            <div className="h-px bg-emerald-200" />
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-[11px] text-emerald-800 font-bold uppercase tracking-wider">Total Campaign Cost</p>
-                <p className="text-base font-black text-zinc-900">{totalCost.toLocaleString()} Coins</p>
-              </div>
-              <div className="text-right">
-                <p className="text-[11px] text-zinc-500 font-bold uppercase">Your Balance</p>
-                <p className={`text-base font-extrabold ${isUserAdmin ? 'text-amber-600' : (user.coins >= totalCost ? 'text-emerald-750' : 'text-red-600')}`}>
-                  {isUserAdmin ? '∞ Unlimited' : `${user.coins.toLocaleString()} Coins`}
-                </p>
+            <div className="flex items-center justify-between text-xs text-zinc-600">
+              <span>Platform Verification Fee</span>
+              <span className="font-bold text-zinc-700">70 Coins / Follower</span>
+            </div>
+            <div className="pt-2 border-t border-emerald-200/60 flex items-center justify-between">
+              <span className="text-xs font-extrabold text-zinc-900 uppercase">Total Campaign Cost</span>
+              <div className="flex items-center space-x-1.5 text-emerald-800 font-black text-base">
+                <Coins className="w-4 h-4 text-amber-500 fill-amber-500" />
+                <span>{isUserAdmin ? '0 (Admin Free)' : `${totalCost} Coins`}</span>
               </div>
             </div>
+            {!isUserAdmin && (
+              <div className="flex items-center justify-between text-[11px] pt-1 text-zinc-500">
+                <span>Your Available Coins</span>
+                <span className={`font-bold ${user.coins >= totalCost ? 'text-emerald-600' : 'text-red-500'}`}>
+                  {user.coins} Coins
+                </span>
+              </div>
+            )}
           </div>
 
-          <div className="flex space-x-3 pt-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 py-3.5 rounded-2xl bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-bold text-xs transition-colors cursor-pointer"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={submitting || (!isUserAdmin && user.coins < totalCost)}
-              className="flex-1 py-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 disabled:bg-zinc-300 text-white font-extrabold text-xs shadow-lg shadow-emerald-600/30 transition-transform active:scale-98 cursor-pointer"
-            >
-              {submitting ? 'Launching...' : `Launch Follower Campaign (${totalCost.toLocaleString()} Coins)`}
-            </button>
-          </div>
-
+          <button
+            type="submit"
+            disabled={submitting || fetchingInfo || (!isUserAdmin && user.coins < totalCost)}
+            className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 disabled:opacity-50 text-white font-extrabold text-sm shadow-lg shadow-emerald-500/25 flex items-center justify-center space-x-2 transition-all cursor-pointer"
+          >
+            {submitting ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>Creating Campaign...</span>
+              </>
+            ) : (
+              <>
+                <Sparkles className="w-4 h-4" />
+                <span>Launch Follower Campaign</span>
+              </>
+            )}
+          </button>
         </form>
-
       </div>
     </div>
   );
