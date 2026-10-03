@@ -176,9 +176,10 @@ export async function extractVideoMetadata(rawUrl: string): Promise<VideoMetadat
 
         for (const ep of endpoints) {
           try {
-            const cRes = await fetch(ep, {
-              headers: { 'Accept': 'application/json' }
-            });
+            let cRes = await fetch(ep, { headers: { 'Accept': 'application/json' } });
+            if (!cRes.ok) {
+              cRes = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(ep)}`, { headers: { 'Accept': 'application/json' } });
+            }
             if (cRes.ok) {
               const cData = await cRes.json();
               const cObj = cData?.channel || cData?.data || (Array.isArray(cData) ? cData[0] : cData);
