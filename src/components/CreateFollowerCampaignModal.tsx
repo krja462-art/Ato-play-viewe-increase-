@@ -31,6 +31,7 @@ export const CreateFollowerCampaignModal: React.FC<CreateFollowerCampaignModalPr
   const [bannerUrl, setBannerUrl] = useState<string>('');
   const [channelAvatarUrl, setChannelAvatarUrl] = useState<string>('');
   const debounceRef = useRef<any>(null);
+  const channelCacheRef = useRef<Map<string, { name: string; banner: string; avatar: string; followers: number }>>(new Map());
 
   useEffect(() => {
     return () => {
@@ -60,6 +61,16 @@ export const CreateFollowerCampaignModal: React.FC<CreateFollowerCampaignModalPr
     const rawUrl = (overrideUrl !== undefined ? overrideUrl : channelUrl).trim();
     if (!rawUrl) return;
     const cleanedUrl = cleanAtoPlayUrl(rawUrl);
+
+    if (channelCacheRef.current.has(cleanedUrl)) {
+      const cached = channelCacheRef.current.get(cleanedUrl)!;
+      setChannelName(cached.name);
+      setCurrentFollowers(cached.followers);
+      setBannerUrl(cached.banner);
+      if (cached.avatar) setChannelAvatarUrl(cached.avatar);
+      return;
+    }
+
     try {
       setFetchingInfo(true);
       setErrorMsg(null);
@@ -172,6 +183,13 @@ export const CreateFollowerCampaignModal: React.FC<CreateFollowerCampaignModalPr
       if (!finalBanner || finalBanner.includes('placeholder')) {
         finalBanner = "https://cdn.atoplay.in/atoplay-thumbnails/58d4d4aa-c235-48a1-8423-57fbeefa914e/thumbnails/61f8d5c2-3b2b-4789-8581-c6727ce0388a.webp";
       }
+
+      channelCacheRef.current.set(cleanedUrl, {
+        name: finalName,
+        banner: finalBanner,
+        avatar: fetchedAvatar,
+        followers: fetchedFollowers
+      });
 
       setChannelName(finalName);
       setCurrentFollowers(fetchedFollowers);
@@ -375,7 +393,6 @@ export const CreateFollowerCampaignModal: React.FC<CreateFollowerCampaignModalPr
                 value={channelUrl}
                 onChange={handleUrlInputChange}
                 onPaste={handlePasteInput}
-                onBlur={() => handleFetchChannelInfo()}
                 className="w-full pl-10 pr-24 py-3.5 rounded-2xl bg-zinc-50 border border-zinc-200 text-xs sm:text-sm text-zinc-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
               />
               <button
