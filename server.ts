@@ -431,13 +431,19 @@ app.post("/api/auth/firebase-login", async (req, res) => {
 
   const cleanEmail = String(email).trim().toLowerCase();
   const isAdmin = cleanEmail === ADMIN_EMAIL || String(uid || '').includes('krja462');
-  const effectiveUid = uid || `g_${cleanEmail.replace(/[^a-zA-Z0-9]/g, '_')}`;
+  
+  // Find existing user by email to prevent duplicate accounts when logging out and logging back in
+  let existingKey = Object.keys(users).find(key => {
+    const u = users[key];
+    return u && u.email && u.email.toLowerCase().trim() === cleanEmail;
+  });
 
-  let user = users[effectiveUid];
+  let user = existingKey ? users[existingKey] : null;
   let isNewUser = false;
 
   if (!user) {
     isNewUser = true;
+    const effectiveUid = uid || `g_${cleanEmail.replace(/[^a-zA-Z0-9]/g, '_')}`;
     user = {
       id: effectiveUid,
       name: name || (isAdmin ? "Admin (KRJA)" : cleanEmail.split('@')[0]),
@@ -662,7 +668,18 @@ app.get("/api/admin/users", (req, res) => {
   if (!user || (!user.isAdmin && user.email?.toLowerCase().trim() !== ADMIN_EMAIL)) {
     return res.status(403).json({ success: false, message: "Unauthorized. Admin access required." });
   }
-  return res.json({ success: true, users: Object.values(users) });
+  const uniqueUsersMap = new Map<string, any>();
+  Object.values(users).forEach(u => {
+    const emailKey = (u.email || '').toLowerCase().trim();
+    if (emailKey) {
+      if (!uniqueUsersMap.has(emailKey) || (u.coins > uniqueUsersMap.get(emailKey).coins)) {
+        uniqueUsersMap.set(emailKey, u);
+      }
+    } else {
+      uniqueUsersMap.set(u.id, u);
+    }
+  });
+  return res.json({ success: true, users: Array.from(uniqueUsersMap.values()) });
 });
 
 // Admin API: Edit user coins (add, subtract, set)

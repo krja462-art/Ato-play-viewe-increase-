@@ -99,14 +99,29 @@ export const ADMIN_UNLIMITED_COINS = 999999999;
  * Grants Unlimited Coins (999,999,999) to Admin Account (krja462@gmail.com).
  */
 export const syncFirebaseUserWithFirestore = async (fbUser: FirebaseUser, pendingReferralCode?: string): Promise<User> => {
-  const userRef = doc(db, 'users', fbUser.uid);
-  const now = new Date().toISOString();
-  const today = now.split('T')[0];
   const cleanEmail = (fbUser.email || '').toLowerCase().trim();
   const isAdmin = cleanEmail === ADMIN_EMAIL || fbUser.uid.includes('krja462');
+  const now = new Date().toISOString();
+  const today = now.split('T')[0];
+
+  let userRef = doc(db, 'users', fbUser.uid);
+  let docSnap: any = null;
 
   try {
-    const docSnap = await getDoc(userRef);
+    docSnap = await getDoc(userRef).catch(() => null);
+
+    // If not found by uid, query by email to prevent duplicate accounts when logging out and logging back in
+    if (!docSnap || !docSnap.exists()) {
+      try {
+        const q = query(collection(db, 'users'), where('email', '==', cleanEmail), limit(1));
+        const querySnap = await getDocs(q);
+        if (!querySnap.empty) {
+          const existingDoc = querySnap.docs[0];
+          userRef = existingDoc.ref;
+          docSnap = existingDoc;
+        }
+      } catch {}
+    }
     
     // Check if client had higher local coins before refresh
     let localSavedCoins: number | null = null;
