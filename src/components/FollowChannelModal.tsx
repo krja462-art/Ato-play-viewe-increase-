@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   UserPlus, 
   Coins, 
@@ -47,7 +47,11 @@ export const FollowChannelModal: React.FC<FollowChannelModalProps> = ({
   const [statusType, setStatusType] = useState<'info' | 'success' | 'warning' | 'error'>('info');
   const [alreadyFollowed, setAlreadyFollowed] = useState(false);
   const [verifiedSuccess, setVerifiedSuccess] = useState(false);
-  const [isLinkModalOpen, setIsLinkModalOpen] = useState(false);
+
+  const [countdown, setCountdown] = useState<number>(4);
+  const [isWaitingFollow, setIsWaitingFollow] = useState<boolean>(false);
+  const followStartTimeRef = useRef<number | null>(null);
+  const timerRef = useRef<any>(null);
 
   // Initialize and fetch baseline follower count from AtoPlay API when modal opens
   useEffect(() => {
@@ -122,19 +126,61 @@ export const FollowChannelModal: React.FC<FollowChannelModalProps> = ({
   const shortId = format4CharId(campaign.displayId, campaign.id);
   const creatorDisplay = channelName || campaign.userName || 'AtoPlay Creator';
 
-  // Step 1: Open Channel / Video on AtoPlay in external tab
+  // Step 1: Open Channel / Video on AtoPlay in external tab with 4-sec countdown
   const handleOpenAtoPlayChannel = () => {
     setHasOpenedLink(true);
+    followStartTimeRef.current = Date.now();
+    setIsWaitingFollow(true);
+    setCountdown(4);
+    setStatusMessage('⏱️ 4-second countdown started... Please stay on the AtoPlay channel for at least 4 seconds to follow.');
+    setStatusType('info');
+
     const targetUrl = channelUrl || campaign.videoUrl;
     try {
       openAtoPlayUrl(targetUrl);
-      setStatusMessage('AtoPlay par creator channel khul gaya hai. "Follow" dabane ke baad yahan wapas aakar "Verify Follow (+30 Coins)" par click karein.');
-      setStatusType('info');
     } catch (e) {
       console.error('Failed to open app/browser:', e);
       window.location.href = targetUrl;
     }
+
+    if (timerRef.current) clearInterval(timerRef.current);
+    timerRef.current = setInterval(() => {
+      setCountdown((prev) => {
+        if (prev <= 1) {
+          if (timerRef.current) clearInterval(timerRef.current);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
   };
+
+  useEffect(() => {
+    const handleReturnToApp = () => {
+      if (!isWaitingFollow || !followStartTimeRef.current) return;
+      if (document.hidden || document.visibilityState === 'hidden') return;
+
+      const elapsed = Date.now() - followStartTimeRef.current;
+      setIsWaitingFollow(false);
+      if (timerRef.current) clearInterval(timerRef.current);
+
+      if (elapsed < 4000) {
+        setStatusMessage('⚠️ You did not follow the channel or returned too early (< 4 seconds)! Please stay on the AtoPlay channel for at least 4 seconds and click Follow.');
+        setStatusType('warning');
+      } else {
+        handleVerifyFollow();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleReturnToApp);
+    window.addEventListener('focus', handleReturnToApp);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleReturnToApp);
+      window.removeEventListener('focus', handleReturnToApp);
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [isWaitingFollow, countBefore]);
 
   // Step 2: Verify Follow with AtoPlay API ("ager user ek bhi follow badhe to coin mile")
   const handleVerifyFollow = async (simulateBump: boolean = false) => {
