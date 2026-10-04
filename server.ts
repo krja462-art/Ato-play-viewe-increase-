@@ -1986,14 +1986,6 @@ app.post("/api/follow/verify", async (req, res) => {
     activeUser.atoPlayUsername = clientUsername.trim().replace(/^@+/, '');
   }
 
-  if (!activeUser.atoPlayUsername) {
-    return res.status(400).json({
-      success: false,
-      needsUsername: true,
-      message: "Please link your AtoPlay username first to claim follow bonus coins."
-    });
-  }
-
   let campaign = campaigns.find(c => c.id === campaignId || c.displayId === campaignId);
   if (!campaign && req.body.videoUrl) {
     campaign = {

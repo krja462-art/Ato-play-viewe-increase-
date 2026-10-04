@@ -19,7 +19,6 @@ import { playCoinCelebrationSound } from '../utils/audio';
 import { apiFetch, openAtoPlayUrl } from '../lib/api';
 import { saveUserCoinsToFirestore, saveFollowLogToFirestore } from '../lib/firebase';
 import confetti from 'canvas-confetti';
-import { LinkAtoPlayModal } from './LinkAtoPlayModal';
 
 interface RewardPopupModalProps {
   isOpen: boolean;
@@ -499,17 +498,6 @@ export const RewardPopupModal: React.FC<RewardPopupModalProps> = ({
 
       </div>
 
-      {/* Link AtoPlay Username Modal */}
-      {user && isLinkModalOpen && (
-        <LinkAtoPlayModal
-          isOpen={isLinkModalOpen}
-          onClose={() => setIsLinkModalOpen(false)}
-          user={user}
-          onSuccess={(updated) => {
-            if (onCoinEarned) onCoinEarned(updated);
-          }}
-        />
-      )}
     </div>
   );
 };

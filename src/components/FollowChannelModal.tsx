@@ -15,7 +15,6 @@ import {
 import { Campaign, format4CharId, User, FollowLog } from '../types';
 import { playCoinCelebrationSound } from '../utils/audio';
 import { AtoPlayBadge } from './AtoPlayBadge';
-import { LinkAtoPlayModal } from './LinkAtoPlayModal';
 import { saveFollowLogToFirestore } from '../lib/firebase';
 import { openAtoPlayUrl } from '../lib/api';
 
@@ -456,17 +455,6 @@ export const FollowChannelModal: React.FC<FollowChannelModalProps> = ({
 
       </div>
 
-      {/* Link AtoPlay Username Modal */}
-      {user && isLinkModalOpen && (
-        <LinkAtoPlayModal
-          isOpen={isLinkModalOpen}
-          onClose={() => setIsLinkModalOpen(false)}
-          user={user}
-          onSuccess={(updated) => {
-            onFollowSuccess(campaign.id, 0, updated);
-          }}
-        />
-      )}
     </div>
   );
 };
