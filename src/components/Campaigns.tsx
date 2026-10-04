@@ -555,19 +555,20 @@ export const Campaigns: React.FC<CampaignsProps> = ({
       ) : (
         <div className="bg-white rounded-2xl border border-zinc-200 divide-y divide-zinc-100 shadow-sm overflow-hidden">
           {campaigns.map(camp => {
+            const isFollowerCamp = camp.campaignType === 'follower' || String(camp.title || '').toLowerCase().includes('follow') || String(camp.videoUrl || '').toLowerCase().includes('/channels/') || String(camp.videoUrl || '').toLowerCase().includes('/channel/');
             const reqViews = camp.viewsRequired ?? camp.targetViews ?? 10;
             const compViews = camp.viewsCompleted ?? camp.completedViews ?? 0;
             const progress = Math.min(100, Math.round((compViews / reqViews) * 100));
             const isCompleted = compViews >= reqViews || camp.status === 'completed';
 
             return (
-              <div key={camp.id} className="p-4 sm:p-5 flex flex-col space-y-3.5 relative hover:bg-zinc-50/50 transition-colors">
+              <div key={camp.id} className={`p-4 sm:p-5 flex flex-col space-y-3.5 relative hover:bg-zinc-50/50 transition-colors ${isFollowerCamp ? 'border-l-4 border-l-emerald-500' : 'border-l-4 border-l-blue-500'}`}>
                 
                 {/* Top Row: Video Thumbnail + Meta + Actions */}
                 <div className="flex items-start sm:items-center space-x-3.5 sm:space-x-4">
                   {/* Stretched Thumbnail on left */}
                   <div className="w-24 sm:w-36 aspect-video rounded-xl bg-zinc-950 overflow-hidden shrink-0 border border-zinc-200 shadow-xs relative">
-                    {/* AtoPlay Official Video Thumbnail Badge */}
+                    {/* AtoPlay Official Badge */}
                     <AtoPlayBadge size="sm" className="absolute top-1 left-1 z-10" />
 
                     <img 
@@ -582,15 +583,22 @@ export const Campaigns: React.FC<CampaignsProps> = ({
                       }}
                       className="w-full h-full object-cover" 
                     />
-                    <div className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-black/80 text-white text-[9px] font-bold">
-                      {camp.durationText || '60s'}
-                    </div>
+                    {!isFollowerCamp && (
+                      <div className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-black/80 text-white text-[9px] font-bold">
+                        {camp.durationText || '60s'}
+                      </div>
+                    )}
+                    {isFollowerCamp && (
+                      <div className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-emerald-600 text-white text-[9px] font-bold uppercase tracking-wide">
+                        Channel
+                      </div>
+                    )}
                   </div>
 
-                  {/* Info section: Title in blue, ID below, Progress bar */}
+                  {/* Info section: Title, ID below, Progress bar */}
                   <div className="flex-1 min-w-0 space-y-1">
                     <div className="flex items-center justify-between">
-                      <h3 className="font-bold text-sm sm:text-base text-blue-600 truncate">
+                      <h3 className={`font-bold text-sm sm:text-base truncate ${isFollowerCamp ? 'text-emerald-700' : 'text-blue-600'}`}>
                         {camp.title}
                       </h3>
                     </div>
@@ -604,23 +612,27 @@ export const Campaigns: React.FC<CampaignsProps> = ({
                     <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-500 font-mono">
                       <span>ID: <span className="font-extrabold text-zinc-700">{format4CharId(camp.displayId, camp.id)}</span></span>
                       <span className="text-zinc-300">•</span>
-                      <span className="text-emerald-700 font-sans font-bold bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
-                        Reward: 60 Coins/view
+                      <span className={`font-sans font-bold px-2 py-0.5 rounded-md border ${
+                        isFollowerCamp 
+                          ? 'text-emerald-700 bg-emerald-50 border-emerald-200' 
+                          : 'text-blue-700 bg-blue-50 border-blue-200'
+                      }`}>
+                        {isFollowerCamp ? 'Reward: 30 Coins/follower' : 'Reward: 60 Coins/view'}
                       </span>
                     </div>
 
                     <div className="space-y-1 pt-1">
                       <div className="flex items-center justify-between text-xs text-zinc-700 font-semibold">
                         <div className="flex items-center space-x-1.5">
-                          <Clock className="w-3.5 h-3.5 text-blue-600" />
-                          <span>{compViews}/{reqViews} {isCompleted ? 'views (Completed ✓)' : 'views'}</span>
+                          {isFollowerCamp ? <Users className="w-3.5 h-3.5 text-emerald-600" /> : <Clock className="w-3.5 h-3.5 text-blue-600" />}
+                          <span>{compViews}/{reqViews} {isCompleted ? (isFollowerCamp ? 'followers (Completed ✓)' : 'views (Completed ✓)') : (isFollowerCamp ? 'followers' : 'views')}</span>
                         </div>
                         <span className="text-[11px] text-zinc-400">{progress}%</span>
                       </div>
 
                       <div className="w-full h-2 bg-zinc-100 rounded-full overflow-hidden">
                         <div 
-                          className={`h-full transition-all duration-500 ${isCompleted ? 'bg-emerald-500' : 'bg-blue-600'}`} 
+                          className={`h-full transition-all duration-500 ${isCompleted ? 'bg-emerald-500' : (isFollowerCamp ? 'bg-emerald-600' : 'bg-blue-600')}`} 
                           style={{ width: `${progress}%` }} 
                         />
                       </div>
@@ -663,120 +675,122 @@ export const Campaigns: React.FC<CampaignsProps> = ({
                   </div>
                 </div>
 
-                {/* Followers Section Directly Under This Campaign */}
-                <div className="w-full pt-3 border-t border-zinc-100">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center space-x-2">
-                      <div className="w-5 h-5 rounded-md bg-blue-100 text-blue-700 flex items-center justify-center">
-                        <UserCheck className="w-3 h-3" />
+                {/* Followers Section Directly Under This Campaign (ONLY rendered for Follower Campaigns) */}
+                {isFollowerCamp && (
+                  <div className="w-full pt-3 border-t border-zinc-100">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center space-x-2">
+                        <div className="w-5 h-5 rounded-md bg-emerald-100 text-emerald-700 flex items-center justify-center">
+                          <UserCheck className="w-3 h-3" />
+                        </div>
+                        <span className="text-xs font-extrabold text-zinc-800">
+                          Followers from this Channel
+                        </span>
+                        <span className="px-1.5 py-0.2 rounded-full bg-emerald-50 text-emerald-700 font-extrabold text-[10px] border border-emerald-200">
+                          {camp.followLogs?.length || 0}
+                        </span>
                       </div>
-                      <span className="text-xs font-extrabold text-zinc-800">
-                        Followers from this Video
-                      </span>
-                      <span className="px-1.5 py-0.2 rounded-full bg-blue-50 text-blue-700 font-extrabold text-[10px] border border-blue-200">
-                        {camp.followLogs?.length || 0}
-                      </span>
+
+                      <div className="inline-flex items-center space-x-1 text-[11px] font-bold text-emerald-700">
+                        <Users className="w-3 h-3" />
+                        <span>{camp.followLogs?.length || 0} Followers Verified</span>
+                      </div>
                     </div>
 
-                    <div className="inline-flex items-center space-x-1 text-[11px] font-bold text-emerald-700">
-                      <Users className="w-3 h-3" />
-                      <span>{camp.followLogs?.length || 0} Followers Verified</span>
-                    </div>
-                  </div>
+                    {camp.followLogs && camp.followLogs.length > 0 ? (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-1.5">
+                        {camp.followLogs.map((log) => {
+                          const followerName = log.followerName || log.followerUsername || 'AtoPlay User';
+                          const followerGmail = log.followerEmail || (log.followerUserId?.includes('@') ? log.followerUserId : `${log.followerUsername || 'user'}@gmail.com`);
+                          const followerAvatar = log.followerAvatar || `https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80`;
+                          const isReported = log.status === 'reported';
 
-                  {camp.followLogs && camp.followLogs.length > 0 ? (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-1.5">
-                      {camp.followLogs.map((log) => {
-                        const followerName = log.followerName || log.followerUsername || 'AtoPlay User';
-                        const followerGmail = log.followerEmail || (log.followerUserId?.includes('@') ? log.followerUserId : `${log.followerUsername || 'user'}@gmail.com`);
-                        const followerAvatar = log.followerAvatar || `https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80`;
-                        const isReported = log.status === 'reported';
-
-                        return (
-                          <div 
-                            key={log.id}
-                            className={`p-2.5 rounded-xl border flex items-center justify-between space-x-2.5 transition-all ${
-                              isReported 
-                                ? 'bg-zinc-50 border-zinc-200 opacity-60' 
-                                : 'bg-gradient-to-r from-blue-50/40 via-white to-white border-blue-100/90 shadow-2xs'
-                            }`}
-                          >
-                            <div className="flex items-center space-x-2.5 min-w-0">
-                              {/* User Google Avatar */}
-                              <div className="relative shrink-0">
-                                <img
-                                  src={followerAvatar}
-                                  alt={followerName}
-                                  referrerPolicy="no-referrer"
-                                  className="w-9 h-9 rounded-full object-cover border border-white shadow-xs bg-zinc-100"
-                                  onError={(e) => {
-                                    (e.currentTarget as HTMLImageElement).src = 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80';
-                                  }}
-                                />
-                                <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-emerald-500 border border-white flex items-center justify-center">
-                                  <Check className="w-2.5 h-2.5 text-white stroke-[3]" />
+                          return (
+                            <div 
+                              key={log.id}
+                              className={`p-2.5 rounded-xl border flex items-center justify-between space-x-2.5 transition-all ${
+                                isReported 
+                                  ? 'bg-zinc-50 border-zinc-200 opacity-60' 
+                                  : 'bg-gradient-to-r from-emerald-50/40 via-white to-white border-emerald-100/90 shadow-2xs'
+                              }`}
+                            >
+                              <div className="flex items-center space-x-2.5 min-w-0">
+                                {/* User Google Avatar */}
+                                <div className="relative shrink-0">
+                                  <img
+                                    src={followerAvatar}
+                                    alt={followerName}
+                                    referrerPolicy="no-referrer"
+                                    className="w-9 h-9 rounded-full object-cover border border-white shadow-xs bg-zinc-100"
+                                    onError={(e) => {
+                                      (e.currentTarget as HTMLImageElement).src = 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80';
+                                    }}
+                                  />
+                                  <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-emerald-500 border border-white flex items-center justify-center">
+                                    <Check className="w-2.5 h-2.5 text-white stroke-[3]" />
+                                  </div>
                                 </div>
-                              </div>
 
-                              {/* Follower Info: Name, Gmail, Handle */}
-                              <div className="min-w-0">
-                                <div className="flex items-center space-x-1.5">
-                                  <span className="font-extrabold text-xs text-zinc-900 truncate">
-                                    {followerName}
-                                  </span>
-                                  {log.followerUsername && (
-                                    <span className="text-[10px] text-zinc-400 font-mono truncate">
-                                      @{log.followerUsername}
+                                {/* Follower Info: Name, Gmail, Handle */}
+                                <div className="min-w-0">
+                                  <div className="flex items-center space-x-1.5">
+                                    <span className="font-extrabold text-xs text-zinc-900 truncate">
+                                      {followerName}
                                     </span>
-                                  )}
-                                </div>
+                                    {log.followerUsername && (
+                                      <span className="text-[10px] text-zinc-400 font-mono truncate">
+                                        @{log.followerUsername}
+                                      </span>
+                                    )}
+                                  </div>
 
-                                {/* Prominent Gmail Display */}
-                                <div className="flex items-center space-x-1 text-[11px] font-semibold text-blue-700 truncate mt-0.5">
-                                  <Mail className="w-3 h-3 text-red-500 shrink-0" />
-                                  <span className="truncate">{followerGmail}</span>
-                                </div>
+                                  {/* Prominent Gmail Display */}
+                                  <div className="flex items-center space-x-1 text-[11px] font-semibold text-emerald-700 truncate mt-0.5">
+                                    <Mail className="w-3 h-3 text-red-500 shrink-0" />
+                                    <span className="truncate">{followerGmail}</span>
+                                  </div>
 
-                                <div className="text-[10px] text-zinc-400 flex items-center space-x-1 mt-0.5">
-                                  <span>{new Date(log.timestamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
-                                  <span>•</span>
-                                  <span className="text-emerald-600 font-bold">+30 Coins</span>
+                                  <div className="text-[10px] text-zinc-400 flex items-center space-x-1 mt-0.5">
+                                    <span>{new Date(log.timestamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                                    <span>•</span>
+                                    <span className="text-emerald-600 font-bold">+30 Coins</span>
+                                  </div>
                                 </div>
                               </div>
-                            </div>
 
-                            {/* Report Button */}
-                            <div className="shrink-0">
-                              {isReported ? (
-                                <span className="px-2 py-0.5 rounded-md bg-zinc-100 text-zinc-500 text-[10px] font-bold border border-zinc-200">
-                                  Reported
-                                </span>
-                              ) : (
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleReportFollower(camp.id, log.id, log.followerUserId);
-                                  }}
-                                  className="px-2 py-1 rounded-lg bg-white hover:bg-red-50 text-red-600 text-[10px] font-bold border border-red-200 shadow-2xs cursor-pointer transition-colors"
-                                  title="Report fake follow if this user didn't subscribe"
-                                >
-                                  Report Fake
-                                </button>
-                              )}
+                              {/* Report Button */}
+                              <div className="shrink-0">
+                                {isReported ? (
+                                  <span className="px-2 py-0.5 rounded-md bg-zinc-100 text-zinc-500 text-[10px] font-bold border border-zinc-200">
+                                    Reported
+                                  </span>
+                                ) : (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleReportFollower(camp.id, log.id, log.followerUserId);
+                                    }}
+                                    className="px-2 py-1 rounded-lg bg-white hover:bg-red-50 text-red-600 text-[10px] font-bold border border-red-200 shadow-2xs cursor-pointer transition-colors"
+                                    title="Report fake follow if this user didn't subscribe"
+                                  >
+                                    Report Fake
+                                  </button>
+                                )}
+                              </div>
                             </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <div className="py-2.5 px-3 rounded-xl bg-zinc-50 border border-dashed border-zinc-200 text-center flex items-center justify-center space-x-2 text-[11px] text-zinc-500">
-                      <Users className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
-                      <span>
-                        Abhi tak kisi user ne follow nahi kiya hai. Video dekh kar follow karne wale users ka <strong>Avatar aur Gmail</strong> yahan dikhega.
-                      </span>
-                    </div>
-                  )}
-                </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="py-2.5 px-3 rounded-xl bg-zinc-50 border border-dashed border-zinc-200 text-center flex items-center justify-center space-x-2 text-[11px] text-zinc-500">
+                        <Users className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                        <span>
+                          Abhi tak kisi user ne follow nahi kiya hai. Channel ko follow karne wale users ka <strong>Avatar aur Gmail</strong> yahan dikhega.
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                )}
 
               </div>
             );
