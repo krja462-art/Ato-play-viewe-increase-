@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Coins, Home, ShieldCheck, Plus, MoreVertical, RefreshCw } from 'lucide-react';
 import { User } from '../types';
 import { SlideDrawer } from './SlideDrawer';
@@ -28,6 +28,42 @@ export const Navbar: React.FC<NavbarProps> = ({
   onUserUpdate
 }) => {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [displayCoins, setDisplayCoins] = useState(coins);
+  const [isCoinPumping, setIsCoinPumping] = useState(false);
+  const prevCoinsRef = useRef(coins);
+
+  useEffect(() => {
+    if (coins !== prevCoinsRef.current) {
+      const startVal = displayCoins;
+      const endVal = coins;
+      const diff = endVal - startVal;
+      if (diff > 0) {
+        setIsCoinPumping(true);
+        setTimeout(() => setIsCoinPumping(false), 900);
+      }
+      
+      const duration = 700; // ms
+      const startTime = performance.now();
+
+      const animateCount = (currentTime: number) => {
+        const elapsed = currentTime - startTime;
+        const progress = Math.min(1, elapsed / duration);
+        const ease = 1 - Math.pow(1 - progress, 4);
+        const current = Math.round(startVal + diff * ease);
+
+        setDisplayCoins(current);
+
+        if (progress < 1) {
+          requestAnimationFrame(animateCount);
+        } else {
+          setDisplayCoins(endVal);
+          prevCoinsRef.current = endVal;
+        }
+      };
+
+      requestAnimationFrame(animateCount);
+    }
+  }, [coins]);
 
   return (
     <>
@@ -115,9 +151,9 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </span>
               </div>
             ) : (
-              <div className="flex items-center space-x-1.5 px-2.5 sm:px-3 py-1.5 rounded-full bg-amber-50 border border-amber-200 text-amber-800 text-xs sm:text-sm font-extrabold shadow-xs">
-                <Coins className="w-4 h-4 text-amber-600" />
-                <span>{coins.toLocaleString()} Coins</span>
+              <div className={`flex items-center space-x-1.5 px-2.5 sm:px-3 py-1.5 rounded-full bg-amber-50 border border-amber-200 text-amber-800 text-xs sm:text-sm font-extrabold shadow-xs transition-transform duration-300 ${isCoinPumping ? 'scale-110 bg-amber-100 ring-2 ring-amber-400' : ''}`}>
+                <Coins className={`w-4 h-4 text-amber-600 ${isCoinPumping ? 'animate-spin' : ''}`} />
+                <span>{displayCoins.toLocaleString()} Coins</span>
               </div>
             )}
 
