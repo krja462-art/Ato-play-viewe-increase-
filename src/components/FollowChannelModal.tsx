@@ -449,19 +449,12 @@ export const FollowChannelModal: React.FC<FollowChannelModalProps> = ({
               </button>
             )}
 
-            {/* Test Simulation Helper if AtoPlay API cache delays */}
-            {hasOpenedLink && !verifiedSuccess && (
-              <div className="pt-1 text-center">
-                <button
-                  type="button"
-                  onClick={() => handleVerifyFollow(true)}
-                  disabled={verifying}
-                  className="text-[11px] text-zinc-500 hover:text-blue-600 underline font-semibold transition-colors cursor-pointer"
-                >
-                  Agar AtoPlay API update hone mein waqt lag raha hai: Click karein Simulate Follow (+1)
-                </button>
-              </div>
-            )}
+            {/* Note */}
+            <div className="pt-1 text-center">
+              <p className="text-[11px] text-zinc-400 font-medium">
+                Kripya AtoPlay par channel ko follow karke wapas yahan Verify par click karein.
+              </p>
+            </div>
           </div>
         )}
 

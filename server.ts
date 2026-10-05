@@ -2057,13 +2057,7 @@ app.post("/api/follow/verify", async (req, res) => {
   const resultAfter = await fetchChannelFollowerCount(campaign, true);
   let countAfter = resultAfter.count;
 
-  // If in dev simulation or test mode (simulateBump), increment countAfter
-  if (simulateBump) {
-    countAfter = Math.max(countAfter, countBefore + 1);
-    channelFollowerStore[channelKey] = countAfter;
-  }
-
-  // Strict User Rule: "ager user ek bhi follow badhe to coin mile"
+  // Strict rule: Follower count MUST genuinely increase according to AtoPlay API
   const followerIncreased = countAfter > countBefore;
 
   if (!followerIncreased) {
