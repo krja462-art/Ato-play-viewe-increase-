@@ -1455,10 +1455,8 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
                     </span>
                   </div>
 
-                  <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-between text-xs text-emerald-900">
-                    <div className="flex items-center space-x-1 font-bold">
-                      <span>👥 Current Followers: {camp.channelFollowers ?? 120}</span>
-                    </div>
+                  <div className="flex items-center justify-between text-xs text-zinc-500 font-mono px-1">
+                    <span>Follow AtoPlay Channel to earn reward</span>
                     <span className="font-mono text-zinc-500">ID: #{shortId}</span>
                   </div>
 

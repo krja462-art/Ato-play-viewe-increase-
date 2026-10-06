@@ -815,6 +815,9 @@ app.get("/api/campaigns", (req, res) => {
       // Don't show video if user has already watched it
       if (userWatchedCampaigns[activeUser.id]?.has(c.id)) return false;
       if (c.completedUserIds && Array.isArray(c.completedUserIds) && c.completedUserIds.includes(activeUser.id)) return false;
+      // Don't show follower campaign if user has already followed it
+      if (userFollowedCampaigns[activeUser.id]?.has(c.id)) return false;
+      if (c.followedUserIds && Array.isArray(c.followedUserIds) && c.followedUserIds.includes(activeUser.id)) return false;
     }
     return true;
   });

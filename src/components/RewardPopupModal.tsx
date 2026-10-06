@@ -415,30 +415,6 @@ export const RewardPopupModal: React.FC<RewardPopupModalProps> = ({
             </div>
           )}
 
-          {/* Real Channel Follower Status Comparison */}
-          {typeof followersBefore === 'number' && (
-            <div className="p-2.5 rounded-xl bg-white/90 border border-amber-200 text-xs text-left space-y-1">
-              <div className="font-bold text-zinc-800 flex items-center justify-between">
-                <span>Real AtoPlay Follower Verification:</span>
-                <span className={isClaimed ? "text-emerald-700 font-black" : "text-amber-700 font-bold"}>
-                  {isClaimed ? "Verified (+1 Follower ✓)" : "Pending Follow"}
-                </span>
-              </div>
-              <div className="grid grid-cols-2 gap-2 text-[11px] pt-1">
-                <div className="p-1.5 rounded-lg bg-zinc-50 border border-zinc-200">
-                  <span className="text-zinc-500 block text-[10px]">Pehle Followers</span>
-                  <span className="font-black text-zinc-800 text-sm">{followersBefore}</span>
-                </div>
-                <div className="p-1.5 rounded-lg bg-emerald-50 border border-emerald-200">
-                  <span className="text-emerald-700 block text-[10px]">Abhi Followers</span>
-                  <span className="font-black text-emerald-800 text-sm">
-                    {typeof followersAfter === 'number' ? followersAfter : followersBefore}
-                  </span>
-                </div>
-              </div>
-            </div>
-          )}
-
           <div className="h-px bg-amber-200/70 w-full" />
 
           {/* New Balance preview */}
