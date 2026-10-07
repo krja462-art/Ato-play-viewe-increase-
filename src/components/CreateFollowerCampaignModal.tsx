@@ -284,6 +284,7 @@ export const CreateFollowerCampaignModal: React.FC<CreateFollowerCampaignModalPr
           thumbnailUrl: bannerUrl,
           channelName: channelName || user.atoPlayUsername || 'AtoPlay Creator',
           channelFollowers: currentFollowers,
+          initialFollowers: currentFollowers,
           campaignType: 'follower'
         })
       });
@@ -302,7 +303,12 @@ export const CreateFollowerCampaignModal: React.FC<CreateFollowerCampaignModalPr
         } catch {}
 
         if (data.campaign) {
-          saveCampaignToFirestore(data.campaign).catch(() => {});
+          saveCampaignToFirestore({
+            ...data.campaign,
+            initialFollowers: currentFollowers,
+            channelFollowers: currentFollowers,
+            campaignType: 'follower'
+          }).catch(() => {});
         }
         if (data.user) {
           saveUserCoinsToFirestore(data.user.id, data.user.coins, data.user.email).catch(() => {});

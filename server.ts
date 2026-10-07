@@ -150,10 +150,105 @@ async function fetchChannelFollowerCount(campaign: Campaign, bypassCache: boolea
   try {
     const videoUrl = campaign.videoUrl || '';
     
-    // Check if channelId is already in URL or campaign
-    const directChannelMatch = videoUrl.match(/(?:channel\/|c\/|user\/)([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
+    // Check if channelId/channelSlug is in URL or campaign
+    const directChannelMatch = videoUrl.match(/(?:channels?\/|c\/|user\/|@)([a-zA-Z0-9_\-]+)/i);
+    let channelSlug = '';
     if (directChannelMatch) {
-      channelId = directChannelMatch[1];
+      channelSlug = directChannelMatch[1];
+      channelId = channelSlug;
+    }
+
+    // If channelSlug exists, directly query live AtoPlay channel API endpoints!
+    if (channelSlug && channelSlug !== 'channels' && channelSlug !== 'channel') {
+      const channelEndpoints = [
+        `https://api.atoplay.com/api/channels/${channelSlug}`,
+        `https://api.atoplay.com/api/channels/id/${channelSlug}`,
+        `https://api.atoplay.com/api/channels/username/${channelSlug}`,
+        `https://api.atoplay.com/api/channels/public/${channelSlug}`,
+        `https://api.atoplay.com/api/creators/${channelSlug}`
+      ];
+
+      for (const ep of channelEndpoints) {
+        try {
+          const cCtrl = new AbortController();
+          const cTo = setTimeout(() => cCtrl.abort(), 4000);
+          const cRes = await fetch(ep, {
+            signal: cCtrl.signal,
+            headers: {
+              'Accept': 'application/json',
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
+          });
+          clearTimeout(cTo);
+          if (cRes.ok) {
+            const cData = await cRes.json();
+            const channelObj = cData?.channel || cData?.data?.channel || cData?.data || cData;
+            if (channelObj) {
+              const parsedCount = parseFollowersCount(
+                channelObj.followersCount ?? 
+                channelObj.followers ?? 
+                channelObj.subscribersCount
+              );
+              if (parsedCount !== undefined && parsedCount >= 0) {
+                count = parsedCount;
+                isRealAtoPlay = true;
+              }
+              if (channelObj.name || channelObj.title || channelObj.username) {
+                channelName = channelObj.name || channelObj.title || channelObj.username;
+              }
+              if (channelObj.channelImage || channelObj.avatar) {
+                channelImage = channelObj.channelImage || channelObj.avatar;
+              }
+              if (count !== null) break;
+            }
+          }
+        } catch {}
+      }
+
+      // Also try live scraping channel HTML if JSON API didn't return count
+      if (count === null) {
+        try {
+          const sCtrl = new AbortController();
+          const sTo = setTimeout(() => sCtrl.abort(), 4000);
+          const sRes = await fetch(`https://atoplay.com/channels/${channelSlug}`, {
+            signal: sCtrl.signal,
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+              'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+            }
+          });
+          clearTimeout(sTo);
+          if (sRes.ok) {
+            const html = await sRes.text();
+            const nextMatch = html.match(/<script[^>]*id=["']__NEXT_DATA__["'][^>]*>([\s\S]*?)<\/script>/i);
+            if (nextMatch && nextMatch[1]) {
+              try {
+                const nJson = JSON.parse(nextMatch[1]);
+                const cObj = nJson?.props?.pageProps?.channel || nJson?.props?.pageProps?.channelData || nJson?.props?.pageProps?.data;
+                if (cObj) {
+                  const parsedF = parseFollowersCount(cObj.followersCount ?? cObj.followers ?? cObj.subscribersCount);
+                  if (parsedF !== undefined) {
+                    count = parsedF;
+                    isRealAtoPlay = true;
+                  }
+                  if (cObj.name) channelName = cObj.name;
+                }
+              } catch {}
+            }
+            if (count === null) {
+              const followMatch = html.match(/(?:([0-9.,]+[KkMmBb]?)\s*(?:Followers|followers|subscribers|Subscribers))/i) ||
+                                  html.match(/"(?:followersCount|subscribersCount|followers)"\s*:\s*([0-9]+)/i);
+              if (followMatch && followMatch[1]) {
+                const parsed = parseFollowersCount(followMatch[1]);
+                if (parsed !== undefined) {
+                  count = parsed;
+                  isRealAtoPlay = true;
+                }
+              }
+            }
+          }
+        } catch {}
+      }
     }
 
     // If no channelId yet, extract videoId from URL
@@ -1629,15 +1724,24 @@ app.post("/api/campaigns", async (req, res) => {
   }
 
   const metadata = await extractVideoMetadata(videoUrl);
-  let liveFollowers = req.body.channelFollowers || metadata.channelFollowers;
+  let liveFollowers = (typeof req.body.initialFollowers === 'number' && req.body.initialFollowers >= 0)
+    ? req.body.initialFollowers
+    : ((typeof req.body.channelFollowers === 'number' && req.body.channelFollowers >= 0)
+      ? req.body.channelFollowers
+      : metadata.channelFollowers);
+
   try {
     const channelResult = await fetchChannelFollowerCount({ videoUrl } as any);
-    if (typeof channelResult.count === 'number' && channelResult.count > 0 && channelResult.count > 5) {
+    if (typeof channelResult.count === 'number' && channelResult.count >= 0) {
       liveFollowers = channelResult.count;
     }
   } catch {}
 
-  const finalChannelFollowers = req.body.channelFollowers || liveFollowers || (metadata as any).channelFollowers || 150;
+  const finalChannelFollowers = (typeof req.body.initialFollowers === 'number' && req.body.initialFollowers >= 0)
+    ? req.body.initialFollowers
+    : ((typeof req.body.channelFollowers === 'number' && req.body.channelFollowers >= 0)
+      ? req.body.channelFollowers
+      : (liveFollowers ?? (metadata as any).channelFollowers ?? 0));
 
   const finalTitle = (customTitle && typeof customTitle === 'string' && customTitle.trim()) 
     ? customTitle.trim() 
@@ -2053,23 +2157,26 @@ app.post("/api/follow/verify", async (req, res) => {
 
   const sessionKey = `${activeUser.id}_${campaign.id}`;
   const session = followSessions[sessionKey];
-  const countBefore = session?.countBefore ?? (typeof clientCountBefore === 'number' ? clientCountBefore : (channelFollowerStore[session?.channelKey || campaign.channelName || campaign.id] ?? 0));
+  const countBefore = (typeof clientCountBefore === 'number' && clientCountBefore >= 0)
+    ? clientCountBefore
+    : (session?.countBefore ?? campaign.initialFollowers ?? campaign.channelFollowers ?? (channelFollowerStore[session?.channelKey || campaign.channelName || campaign.id] ?? 0));
   const channelKey = session?.channelKey || campaign.channelName || campaign.userName || campaign.id;
 
   // Re-fetch latest follower count directly from AtoPlay API!
   const resultAfter = await fetchChannelFollowerCount(campaign, true);
   let countAfter = resultAfter.count;
 
-  // Strict rule: Follower count MUST genuinely increase according to AtoPlay API
-  const followerIncreased = countAfter > countBefore;
+  // Strict rule: Follower count MUST genuinely increase compared to countBefore or initialFollowers
+  const baseline = campaign.initialFollowers ?? countBefore;
+  const followerIncreased = (countAfter !== null && (countAfter > countBefore || (baseline >= 0 && countAfter > baseline)));
 
   if (!followerIncreased) {
     return res.json({
       success: false,
       verified: false,
-      countBefore,
-      countAfter,
-      message: `AtoPlay API check: Follower nahi badha! (Pehle: ${countBefore}, Abhi: ${countAfter}). Kripya AtoPlay par creator channel ko 'Follow' karein aur phir 'Verify Follow' par click karein.`
+      countBefore: baseline,
+      countAfter: countAfter ?? baseline,
+      message: `AtoPlay API check: Follower nahi badha! (Pehle: ${baseline}, Abhi: ${countAfter ?? baseline}). Kripya AtoPlay par creator channel ko 'Follow' karein aur phir 'Verify Follow' par click karein.`
     });
   }
 
@@ -2077,11 +2184,16 @@ app.post("/api/follow/verify", async (req, res) => {
   const reward = 30;
   activeUser.coins += reward;
 
-  // Mark as followed by this user
+  // Mark as followed and completed by this user
   if (!userFollowedCampaigns[activeUser.id]) {
     userFollowedCampaigns[activeUser.id] = new Set<string>();
   }
   userFollowedCampaigns[activeUser.id].add(campaign.id);
+
+  if (!userWatchedCampaigns[activeUser.id]) {
+    userWatchedCampaigns[activeUser.id] = new Set<string>();
+  }
+  userWatchedCampaigns[activeUser.id].add(campaign.id);
 
   if (!campaign.followedUserIds) {
     campaign.followedUserIds = [];
@@ -2089,7 +2201,19 @@ app.post("/api/follow/verify", async (req, res) => {
   if (!campaign.followedUserIds.includes(activeUser.id)) {
     campaign.followedUserIds.push(activeUser.id);
   }
+  if (!campaign.completedUserIds) {
+    campaign.completedUserIds = [];
+  }
+  if (!campaign.completedUserIds.includes(activeUser.id)) {
+    campaign.completedUserIds.push(activeUser.id);
+  }
+  campaign.viewsCompleted = (campaign.viewsCompleted || 0) + 1;
+  campaign.completedViews = (campaign.completedViews || 0) + 1;
   campaign.channelFollowers = countAfter;
+  campaign.lastCheckedFollowers = countAfter;
+  if (campaign.completedViews >= (campaign.viewsRequired || campaign.targetViews || 10)) {
+    campaign.status = 'completed';
+  }
 
   // Clean up session
   delete followSessions[sessionKey];

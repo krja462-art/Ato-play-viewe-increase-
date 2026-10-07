@@ -212,6 +212,8 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
         if (c.userId === user.id) return false; // creator's own campaign
         if (watchedLocal.has(c.id)) return false; // watched locally by this user
         if (c.completedUserIds && Array.isArray(c.completedUserIds) && c.completedUserIds.includes(user.id)) return false; // watched on server/Firestore
+        if (c.followedUserIds && Array.isArray(c.followedUserIds) && c.followedUserIds.includes(user.id)) return false; // followed on server/Firestore
+        if (followedCampaignIds.has(c.id)) return false; // followed locally by this user
         return true;
       });
 
@@ -269,18 +271,11 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
 
   const handleFollowSuccess = (campaignId: string, earnedCoins: number, updatedUser: User) => {
     setFollowedCampaignIds(prev => new Set([...prev, campaignId]));
+    addWatchedId(user.id, campaignId);
     onCoinEarned(updatedUser);
     saveUserCoinsToFirestore(user.id, updatedUser.coins, user.email).catch(() => {});
-    setCampaigns(prev => prev.map(c => {
-      if (c.id === campaignId) {
-        return {
-          ...c,
-          followedUserIds: [...(c.followedUserIds || []), user.id],
-          channelFollowers: (c.channelFollowers ?? 0) + 1
-        };
-      }
-      return c;
-    }));
+    // Permanently remove from home feed view immediately
+    setCampaigns(prev => prev.filter(c => c.id !== campaignId));
   };
 
   // Invalidate and expire session both locally and on backend when returned < 60s
@@ -1736,8 +1731,9 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
           }}
           campaign={selectedFollowCampaign}
           user={user}
-          countBefore={selectedFollowCampaign.initialFollowers || selectedFollowCampaign.channelFollowers || 120}
+          countBefore={selectedFollowCampaign.initialFollowers ?? selectedFollowCampaign.channelFollowers ?? 0}
           onCoinEarned={onCoinEarned}
+          onFollowSuccess={handleFollowSuccess}
         />
       )}
 

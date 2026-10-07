@@ -71,9 +71,11 @@ export const FollowChannelModal: React.FC<FollowChannelModalProps> = ({
     setStatusType('info');
 
     // Default safe fallback in case of connection delay
-    const initialFallbackCount = typeof campaign.channelFollowers === 'number' && campaign.channelFollowers > 0 
-      ? campaign.channelFollowers 
-      : 128;
+    const initialFallbackCount = typeof campaign.initialFollowers === 'number' && campaign.initialFollowers >= 0
+      ? campaign.initialFollowers
+      : (typeof campaign.channelFollowers === 'number' && campaign.channelFollowers >= 0 
+        ? campaign.channelFollowers 
+        : 0);
 
     apiFetch('/api/follow/start', {
       method: 'POST',

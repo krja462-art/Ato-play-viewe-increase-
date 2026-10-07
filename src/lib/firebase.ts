@@ -416,8 +416,8 @@ export const getPublicCampaignsFromFirestore = async (currentUserId?: string): P
         if (data.userId === currentUserId) {
           return;
         }
-        // If this user already completed 60s watch, hide from this user's page
-        if (completedUserIds.includes(currentUserId)) {
+        // If this user already completed 60s watch or followed the channel, hide from this user's page
+        if (completedUserIds.includes(currentUserId) || (data.followedUserIds && Array.isArray(data.followedUserIds) && data.followedUserIds.includes(currentUserId))) {
           return;
         }
       }
@@ -441,6 +441,12 @@ export const getPublicCampaignsFromFirestore = async (currentUserId?: string): P
         displayId: data.displayId || '48A1',
         countryFlag: data.countryFlag || '🇮🇳',
         channelName: data.channelName,
+        channelId: data.channelId,
+        channelFollowers: typeof data.channelFollowers === 'number' ? data.channelFollowers : (typeof data.initialFollowers === 'number' ? data.initialFollowers : undefined),
+        initialFollowers: typeof data.initialFollowers === 'number' ? data.initialFollowers : (typeof data.channelFollowers === 'number' ? data.channelFollowers : undefined),
+        lastCheckedFollowers: data.lastCheckedFollowers,
+        campaignType: data.campaignType || ((String(data.videoUrl || '').includes('/channels/') || String(data.title || '').toLowerCase().includes('follow')) ? 'follower' : 'video'),
+        followedUserIds: Array.isArray(data.followedUserIds) ? data.followedUserIds : [],
         durationText: data.durationText || '1:00',
         completedUserIds
       };
@@ -490,6 +496,12 @@ export const getMyCampaignsFromFirestore = async (userId: string): Promise<Campa
           displayId: data.displayId || '48A1',
           countryFlag: data.countryFlag || '🇮🇳',
           channelName: data.channelName,
+          channelId: data.channelId,
+          channelFollowers: typeof data.channelFollowers === 'number' ? data.channelFollowers : (typeof data.initialFollowers === 'number' ? data.initialFollowers : undefined),
+          initialFollowers: typeof data.initialFollowers === 'number' ? data.initialFollowers : (typeof data.channelFollowers === 'number' ? data.channelFollowers : undefined),
+          lastCheckedFollowers: data.lastCheckedFollowers,
+          campaignType: data.campaignType || ((String(data.videoUrl || '').includes('/channels/') || String(data.title || '').toLowerCase().includes('follow')) ? 'follower' : 'video'),
+          followedUserIds: Array.isArray(data.followedUserIds) ? data.followedUserIds : [],
           durationText: data.durationText || '1:00',
           completedUserIds: Array.isArray(data.completedUserIds) ? data.completedUserIds : []
         });
@@ -501,6 +513,35 @@ export const getMyCampaignsFromFirestore = async (userId: string): Promise<Campa
   } catch (err) {
     console.warn('Could not fetch my campaigns from Firestore:', err);
     return [];
+  }
+};
+
+/**
+ * Update campaign followers progress in Cloud Firestore when followed
+ */
+export const updateCampaignFollowersInFirestore = async (
+  campaignId: string, 
+  userId?: string,
+  newFollowersCount?: number
+): Promise<void> => {
+  if (!campaignId) return;
+  try {
+    const campRef = doc(db, 'campaigns', campaignId);
+    const updates: Record<string, any> = {
+      viewsCompleted: increment(1),
+      completedViews: increment(1)
+    };
+    if (userId) {
+      updates.followedUserIds = arrayUnion(userId);
+      updates.completedUserIds = arrayUnion(userId);
+    }
+    if (typeof newFollowersCount === 'number' && newFollowersCount >= 0) {
+      updates.channelFollowers = newFollowersCount;
+      updates.lastCheckedFollowers = newFollowersCount;
+    }
+    await updateDoc(campRef, updates);
+  } catch (err) {
+    console.warn('Error updating campaign followers in Firestore:', err);
   }
 };
 

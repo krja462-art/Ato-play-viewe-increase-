@@ -374,11 +374,6 @@ export const RewardPopupModal: React.FC<RewardPopupModalProps> = ({
               <div className="text-[10px] text-zinc-600">
                 AtoPlay par creator channel ko follow karein, phir upar <strong>"Verify Follow (+30)"</strong> button tap karein. API se follower check hoga aur +30 coins auto credit ho jayenge!
               </div>
-              {typeof followersBefore === 'number' && (
-                <div className="text-[10px] text-zinc-500 font-medium">
-                  Current Followers: <span className="font-bold text-zinc-800">{followersBefore}</span> → Need: <span className="font-bold text-emerald-700">{followersBefore + 1}+</span>
-                </div>
-              )}
             </div>
           )}
 
