@@ -3107,40 +3107,46 @@ app.post("/api/assetlinks", (req, res) => {
 });
 
 
+function serveStatic(distPath: string) {
+  app.use(express.static(distPath, { dotfiles: 'allow' }));
+  app.get('*', (_req, res) => {
+    const indexPath = path.join(distPath, 'index.html');
+    if (fs.existsSync(indexPath)) {
+      res.sendFile(indexPath);
+    } else {
+      res.status(200).send('<!DOCTYPE html><html><head><title>AtoPlay Booster</title></head><body><h1>AtoPlay Booster Server</h1><p>Status: OK</p></body></html>');
+    }
+  });
+}
+
 async function startServer() {
+  const distPath = path.resolve(process.cwd(), 'dist');
+  const hasDist = fs.existsSync(path.join(distPath, 'index.html'));
+
   const isProduction =
     process.env.NODE_ENV === "production" ||
     Boolean(process.env.K_SERVICE) ||
     Boolean(process.env.CLOUD_RUN_JOB) ||
-    (typeof __filename !== "undefined" && __filename.endsWith(".cjs")) ||
-    (fs.existsSync(path.join(process.cwd(), "dist", "index.html")) && !process.env.VITE_DEV_SERVER);
+    hasDist;
 
   if (!isProduction) {
-    const { createServer: createViteServer } = await import("vite");
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
-    app.use(vite.middlewares);
+    try {
+      const { createServer: createViteServer } = await import("vite");
+      const vite = await createViteServer({
+        server: { middlewareMode: true },
+        appType: "spa",
+      });
+      app.use(vite.middlewares);
+    } catch (err) {
+      console.warn("Vite dev middleware unavailable, serving static dist:", err);
+      serveStatic(distPath);
+    }
   } else {
-    // Resolve dist path reliably whether running from workspace or dist
-    const distPath = fs.existsSync(path.join(process.cwd(), 'dist'))
-      ? path.join(process.cwd(), 'dist')
-      : (typeof __dirname !== 'undefined' ? __dirname : path.join(process.cwd(), 'dist'));
-
-    app.use(express.static(distPath, { dotfiles: 'allow' }));
-    app.get('*', (_req, res) => {
-      const indexPath = path.join(distPath, 'index.html');
-      if (fs.existsSync(indexPath)) {
-        res.sendFile(indexPath);
-      } else {
-        res.status(404).send('Application build not found. Please run npm run build.');
-      }
-    });
+    serveStatic(distPath);
   }
 
   const server = app.listen(PORT, "0.0.0.0", () => {
-    console.log(`AtoPlay Booster Server running on http://localhost:${PORT}`);
+    console.log(`AtoPlay Booster Server running on http://0.0.0.0:${PORT}`);
   });
 
   server.on('error', (err: any) => {
