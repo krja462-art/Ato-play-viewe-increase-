@@ -3009,6 +3009,21 @@ app.get("/pwa-192x192.png", servePublicImage("pwa-192x192.png", "image/png"));
 app.get("/pwa-512x512.png", servePublicImage("pwa-512x512.png", "image/png"));
 app.get("/pwa-maskable-512x512.png", servePublicImage("pwa-maskable-512x512.png", "image/png"));
 
+const servePublicHtml = (fileName: string) => (_req: express.Request, res: express.Response) => {
+  const publicPath = path.join(process.cwd(), "public", fileName);
+  const distPath = path.join(process.cwd(), "dist", fileName);
+  const filePath = fs.existsSync(publicPath) ? publicPath : distPath;
+  if (fs.existsSync(filePath)) {
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    return res.sendFile(filePath);
+  }
+  res.status(404).send("Page not found");
+};
+
+app.get(["/privacy-policy", "/privacy-policy.html", "/privacy", "/privacy.html"], servePublicHtml("privacy-policy.html"));
+app.get(["/terms", "/terms.html"], servePublicHtml("terms.html"));
+app.get(["/about", "/about.html"], servePublicHtml("about.html"));
+
 // Digital Asset Links in-memory registry for PWABuilder TWA APKs (Hides Chrome URL bar)
 interface AssetLinkTarget {
   namespace: string;

@@ -31,14 +31,36 @@ export default function App() {
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [showInstallScreen, setShowInstallScreen] = useState(() => {
     try {
+      if (typeof window !== 'undefined') {
+        const isStandalone = window.matchMedia('(display-mode: standalone)').matches ||
+          (window.navigator as any).standalone === true ||
+          document.referrer.includes('android-app://') ||
+          window.location.search.includes('source=apk') ||
+          window.location.search.includes('source=twa');
+        if (isStandalone) return false;
+      }
       return localStorage.getItem('pwa_prelogin_installed') !== 'true';
     } catch {
-      return true;
+      return false;
     }
   });
 
   const { isOnline, isReconnected } = useOnlineStatus();
   useTheme(); // Initialize and apply documentElement dark class
+
+  // Android Hardware Back Button & Gesture Navigation Handler for APK / TWA
+  useEffect(() => {
+    const handlePopState = () => {
+      if (isCreateModalOpen) {
+        setIsCreateModalOpen(false);
+      } else if (activeTab !== 'home') {
+        setActiveTab('home');
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [isCreateModalOpen, activeTab]);
 
   // Capture referral code from URL search params on initial load
   useEffect(() => {

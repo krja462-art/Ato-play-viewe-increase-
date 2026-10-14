@@ -9,10 +9,12 @@ import {
 import { User } from '../types';
 import { 
   signInWithGoogle, 
+  signInWithGoogleRedirect,
   syncFirebaseUserWithFirestore
 } from '../lib/firebase';
 import { apiFetch } from '../lib/api';
 import { AtoPlayBadge } from './AtoPlayBadge';
+import { LegalModal, LegalTabType } from './LegalModal';
 
 interface SplashScreenProps {
   onLoginSuccess: (user: User) => void;
@@ -22,6 +24,7 @@ interface SplashScreenProps {
 export const SplashScreen: React.FC<SplashScreenProps> = ({ onLoginSuccess, onOpenInstallScreen }) => {
   const [googleLoading, setGoogleLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [legalModalTab, setLegalModalTab] = useState<LegalTabType | null>(null);
   
   const [referralInput, setReferralInput] = useState('');
   const [showReferralField, setShowReferralField] = useState(false);
@@ -113,7 +116,16 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onLoginSuccess, onOp
         throw new Error('Could not retrieve email from Google account. Please try another account.');
       }
     } catch (err: any) {
-      console.warn('Google Sign-In failed or was cancelled:', err);
+      console.warn('Google Sign-In popup attempt:', err);
+      // If popup was blocked or on mobile device, try seamless redirect fallback
+      if (err?.code === 'auth/popup-blocked' || err?.code === 'auth/popup-closed-by-user' || /mobile|android/i.test(navigator.userAgent)) {
+        try {
+          await signInWithGoogleRedirect();
+          return;
+        } catch (redirectErr: any) {
+          console.error('Redirect sign-in error:', redirectErr);
+        }
+      }
       setErrorMessage(err?.message || 'Google Sign-In failed or was cancelled. Please try again.');
       setGoogleLoading(false);
     }
@@ -234,10 +246,56 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onLoginSuccess, onOp
 
       </div>
 
-      {/* Clean Footer */}
-      <div className="text-center text-xs text-blue-200/60 pt-6 pb-2 relative z-10">
-        © 2026 AtoViewer • AtoPlay Video Promotion Network
+      {/* Clean Legal & Compliance Footer for App Store (Uptodown / Play Store) Acceptance */}
+      <div className="text-center space-y-2 pt-6 pb-2 relative z-10">
+        <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-xs text-blue-200/80 font-medium">
+          <button
+            type="button"
+            onClick={() => setLegalModalTab('privacy')}
+            className="hover:text-white underline underline-offset-2 transition-colors cursor-pointer"
+          >
+            Privacy Policy
+          </button>
+          <span className="text-blue-300/40">•</span>
+          <button
+            type="button"
+            onClick={() => setLegalModalTab('terms')}
+            className="hover:text-white underline underline-offset-2 transition-colors cursor-pointer"
+          >
+            Terms of Service
+          </button>
+          <span className="text-blue-300/40">•</span>
+          <button
+            type="button"
+            onClick={() => setLegalModalTab('contact')}
+            className="hover:text-white underline underline-offset-2 transition-colors cursor-pointer"
+          >
+            Support
+          </button>
+          <span className="text-blue-300/40">•</span>
+          <button
+            type="button"
+            onClick={() => setLegalModalTab('delete_account')}
+            className="hover:text-white underline underline-offset-2 transition-colors cursor-pointer"
+          >
+            Data Deletion
+          </button>
+        </div>
+        <p className="text-[11px] text-blue-200/50">
+          © 2026 AtoPlay Booster • Official Community Video Promotion Platform
+        </p>
       </div>
+
+      {/* Direct In-App Legal Modal (Visible without login) */}
+      {legalModalTab && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+          <LegalModal
+            isOpen={true}
+            initialTab={legalModalTab}
+            onClose={() => setLegalModalTab(null)}
+          />
+        </div>
+      )}
 
     </div>
   );
