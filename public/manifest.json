@@ -1,14 +1,14 @@
 {
   "id": "/",
   "name": "AtoPlay Booster - Ato Play Views Increase",
-  "short_name": "AtoPlay Booster",
-  "description": "AtoPlay Booster (Ato Play Booster) is India's #1 AtoPlay video view exchange and watch time booster platform. Increase real AtoPlay views, earn coins, and monetize your channel faster.",
+  "short_name": "AtoPlay",
+  "description": "India's #1 AtoPlay video view exchange and watch time booster platform. Increase real AtoPlay views, earn coins, and monetize your channel faster.",
   "lang": "en",
   "dir": "ltr",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "display_override": ["standalone", "fullscreen"],
+  "display_override": ["window-controls-overlay", "standalone", "fullscreen"],
   "orientation": "portrait",
   "background_color": "#ffffff",
   "theme_color": "#2563eb",
@@ -17,37 +17,13 @@
   "handle_links": "preferred",
   "icons": [
     {
-      "src": "/apkicon.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "/apkicon.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "maskable"
-    },
-    {
-      "src": "/apkicon.png",
-      "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "/apkicon.png",
-      "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "maskable"
-    },
-    {
       "src": "/pwa-192x192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/pwa-192x192.png",
+      "src": "/pwa-maskable-192x192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "maskable"
@@ -65,80 +41,75 @@
       "purpose": "maskable"
     },
     {
-      "src": "/pwa-512x512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "maskable"
-    },
-    {
       "src": "/apple-touch-icon.png",
       "sizes": "180x180",
-      "type": "image/png"
-    },
-    {
-      "src": "/icon.png",
-      "sizes": "382x385",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/Icon.png",
-      "sizes": "2066x2048",
+      "src": "/favicon-96x96.png",
+      "sizes": "96x96",
       "type": "image/png",
       "purpose": "any"
     }
   ],
   "shortcuts": [
     {
-      "name": "Home Watch & Earn",
-      "short_name": "Home",
-      "description": "Watch AtoPlay videos and earn coins",
+      "name": "Watch & Earn Coins",
+      "short_name": "Watch",
+      "description": "Watch AtoPlay videos and earn free coins",
       "url": "/?tab=home",
-      "icons": [{ "src": "/apkicon.png", "sizes": "192x192" }]
+      "icons": [
+        {
+          "src": "/pwa-192x192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
     },
     {
       "name": "Create Campaign",
       "short_name": "Campaign",
       "description": "Promote your AtoPlay video",
       "url": "/?tab=campaigns",
-      "icons": [{ "src": "/apkicon.png", "sizes": "192x192" }]
+      "icons": [
+        {
+          "src": "/pwa-192x192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
     }
   ],
   "screenshots": [
     {
-      "src": "/screenshot.png",
+      "src": "/screenshot-mobile-1.png",
       "sizes": "1080x1920",
       "type": "image/png",
       "form_factor": "narrow",
-      "label": "AtoPlay Booster Splash Screen"
+      "label": "AtoPlay Booster Video Player and Coins Exchange"
     },
     {
-      "src": "/screenshot.png",
+      "src": "/screenshot-mobile-2.png",
+      "sizes": "1080x1920",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "AtoPlay Booster Campaign Dashboard"
+    },
+    {
+      "src": "/screenshot-desktop-1.png",
       "sizes": "1920x1080",
       "type": "image/png",
       "form_factor": "wide",
-      "label": "AtoPlay Booster Splash Screen"
+      "label": "AtoPlay Booster Desktop Overview"
     },
     {
-      "src": "/screenshot.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "form_factor": "narrow",
-      "label": "AtoPlay Booster Screen"
-    },
-    {
-      "src": "/pwa-512x512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "form_factor": "narrow",
-      "label": "AtoPlay Booster Mobile Screen"
-    },
-    {
-      "src": "/pwa-512x512.png",
-      "sizes": "512x512",
+      "src": "/screenshot-desktop-2.png",
+      "sizes": "1280x720",
       "type": "image/png",
       "form_factor": "wide",
-      "label": "AtoPlay Booster Desktop Screen"
+      "label": "AtoPlay Booster Wide Screen Display"
     }
-  ]
+  ],
+  "related_applications": []
 }

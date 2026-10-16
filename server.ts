@@ -518,14 +518,16 @@ app.post("/api/user/sync-wallet", (req, res) => {
   res.json({ success: true, user });
 });
 
-app.post("/api/auth/firebase-login", async (req, res) => {
-  const { uid, email, name, avatar, referralCode: inputReferralCode } = req.body;
+app.post(["/api/auth/firebase-login", "/api/auth/google"], async (req, res) => {
+  const { uid, email, name, avatar, displayName, photoURL, referralCode: inputReferralCode } = req.body;
   if (!email) {
     return res.status(400).json({ success: false, message: "Missing email" });
   }
 
   const cleanEmail = String(email).trim().toLowerCase();
   const isAdmin = cleanEmail === ADMIN_EMAIL || String(uid || '').includes('krja462');
+  const finalName = name || displayName || (isAdmin ? "Admin (KRJA)" : cleanEmail.split('@')[0]);
+  const finalAvatar = avatar || photoURL || `https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80`;
   
   // Find existing user by email to prevent duplicate accounts when logging out and logging back in
   let existingKey = Object.keys(users).find(key => {
@@ -541,10 +543,10 @@ app.post("/api/auth/firebase-login", async (req, res) => {
     const effectiveUid = uid || `g_${cleanEmail.replace(/[^a-zA-Z0-9]/g, '_')}`;
     user = {
       id: effectiveUid,
-      name: name || (isAdmin ? "Admin (KRJA)" : cleanEmail.split('@')[0]),
+      name: finalName,
       email: cleanEmail,
-      coins: isAdmin ? ADMIN_UNLIMITED_COINS : 100, // Unlimited coins for admin, 100 Welcome Bonus for normal users
-      avatar: avatar || `https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80`,
+      coins: isAdmin ? ADMIN_UNLIMITED_COINS : 300, // Unlimited coins for admin, 300 Starter Welcome Bonus
+      avatar: finalAvatar,
       streak: 1,
       lastCheckIn: new Date().toISOString().split('T')[0],
       createdAt: new Date().toISOString(),
@@ -3006,8 +3008,13 @@ app.get("/favicon-64x64.png", servePublicImage("favicon-64x64.png", "image/png")
 app.get("/favicon-96x96.png", servePublicImage("favicon-96x96.png", "image/png"));
 app.get("/apple-touch-icon.png", servePublicImage("apple-touch-icon.png", "image/png"));
 app.get("/pwa-192x192.png", servePublicImage("pwa-192x192.png", "image/png"));
+app.get("/pwa-maskable-192x192.png", servePublicImage("pwa-maskable-192x192.png", "image/png"));
 app.get("/pwa-512x512.png", servePublicImage("pwa-512x512.png", "image/png"));
 app.get("/pwa-maskable-512x512.png", servePublicImage("pwa-maskable-512x512.png", "image/png"));
+app.get("/screenshot-mobile-1.png", servePublicImage("screenshot-mobile-1.png", "image/png"));
+app.get("/screenshot-mobile-2.png", servePublicImage("screenshot-mobile-2.png", "image/png"));
+app.get("/screenshot-desktop-1.png", servePublicImage("screenshot-desktop-1.png", "image/png"));
+app.get("/screenshot-desktop-2.png", servePublicImage("screenshot-desktop-2.png", "image/png"));
 
 const servePublicHtml = (fileName: string) => (_req: express.Request, res: express.Response) => {
   const publicPath = path.join(process.cwd(), "public", fileName);

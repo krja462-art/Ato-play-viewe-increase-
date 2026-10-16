@@ -1,17 +1,19 @@
-// AtoViewer PWA Service Worker (TWA & Google Play Store Ready)
-const CACHE_NAME = 'atoviewer-cache-v2';
-const RUNTIME_CACHE = 'atoviewer-runtime-v2';
+// AtoViewer PWA Service Worker (PWABuilder & Google Play Store Ready)
+const CACHE_NAME = 'atoviewer-cache-v3';
+const RUNTIME_CACHE = 'atoviewer-runtime-v3';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
   '/manifest.json',
   '/favicon.ico',
   '/favicon.png',
-  '/icon.png',
   '/apple-touch-icon.png',
   '/pwa-192x192.png',
+  '/pwa-maskable-192x192.png',
   '/pwa-512x512.png',
-  '/pwa-maskable-512x512.png'
+  '/pwa-maskable-512x512.png',
+  '/screenshot-mobile-1.png',
+  '/screenshot-desktop-1.png'
 ];
 
 // 1. Install event: Pre-cache shell assets
