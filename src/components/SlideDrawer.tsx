@@ -25,7 +25,10 @@ import {
   PlusSquare,
   Info,
   RefreshCw,
-  MessageSquare
+  MessageSquare,
+  AlertTriangle,
+  Trash2,
+  LogIn
 } from 'lucide-react';
 import { User } from '../types';
 import { usePWAInstall } from '../hooks/usePWAInstall';
@@ -34,6 +37,7 @@ import { saveSupportMessageToFirestore } from '../lib/firebase';
 
 import { AtoPlayBadge } from './AtoPlayBadge';
 import { SubmitFeedbackModal } from './SubmitFeedbackModal';
+import { LegalModal, LegalTabType } from './LegalModal';
 
 interface SlideDrawerProps {
   isOpen: boolean;
@@ -51,6 +55,7 @@ export const SlideDrawer: React.FC<SlideDrawerProps> = ({
   onUserUpdate
 }) => {
   const [activeModal, setActiveModal] = useState<'privacy' | 'terms' | 'contact' | 'referral' | 'ios_install' | 'apk_bundle' | 'feedback' | null>(null);
+  const [legalModalTab, setLegalModalTab] = useState<LegalTabType | null>(null);
 
   const { isInstallable, isInstalled, isIOS, install } = usePWAInstall();
 
@@ -293,10 +298,17 @@ export const SlideDrawer: React.FC<SlideDrawerProps> = ({
                       )}
                     </div>
                     <p className="text-xs text-zinc-500 truncate font-medium">{user.email}</p>
-                    <div className="mt-1 flex items-center space-x-1 text-[11px] font-semibold text-emerald-700">
-                      <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                      <span>Google Account Verified</span>
-                    </div>
+                    {user.id.startsWith('guest_') ? (
+                      <div className="mt-1 flex items-center space-x-1 text-[11px] font-bold text-amber-700 bg-amber-100/80 px-2 py-0.5 rounded-md border border-amber-300 w-fit">
+                        <Sparkles className="w-3 h-3 text-amber-600" />
+                        <span>Guest Mode (Demo Session)</span>
+                      </div>
+                    ) : (
+                      <div className="mt-1 flex items-center space-x-1 text-[11px] font-semibold text-emerald-700">
+                        <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>Google Account Verified</span>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -312,6 +324,23 @@ export const SlideDrawer: React.FC<SlideDrawerProps> = ({
                       : `${user.coins.toLocaleString()} Coins`}
                   </span>
                 </div>
+
+                {/* Quick Google Login for Guest User */}
+                {user.id.startsWith('guest_') && (
+                  <div className="pt-2 border-t border-zinc-200">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onClose();
+                        if (onLogout) onLogout();
+                      }}
+                      className="w-full py-2.5 px-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs flex items-center justify-center space-x-1.5 shadow-sm transition-all cursor-pointer"
+                    >
+                      <LogIn className="w-3.5 h-3.5" />
+                      <span>Sign In with Google (Save Coins)</span>
+                    </button>
+                  </div>
+                )}
 
 
               </div>
@@ -371,7 +400,7 @@ export const SlideDrawer: React.FC<SlideDrawerProps> = ({
 
               {/* Privacy Policy */}
               <button
-                onClick={() => setActiveModal('privacy')}
+                onClick={() => setLegalModalTab('privacy')}
                 className="w-full p-3 rounded-2xl hover:bg-blue-50/70 border border-transparent hover:border-blue-100 flex items-center justify-between text-left transition-all cursor-pointer group"
               >
                 <div className="flex items-center space-x-3">
@@ -388,7 +417,7 @@ export const SlideDrawer: React.FC<SlideDrawerProps> = ({
 
               {/* Terms of Service */}
               <button
-                onClick={() => setActiveModal('terms')}
+                onClick={() => setLegalModalTab('terms')}
                 className="w-full p-3 rounded-2xl hover:bg-purple-50/70 border border-transparent hover:border-purple-100 flex items-center justify-between text-left transition-all cursor-pointer group"
               >
                 <div className="flex items-center space-x-3">
@@ -403,9 +432,26 @@ export const SlideDrawer: React.FC<SlideDrawerProps> = ({
                 <ChevronRight className="w-4 h-4 text-zinc-400 group-hover:text-purple-600 group-hover:translate-x-0.5 transition-all" />
               </button>
 
+              {/* Platform Disclaimer (Trademark Notice) */}
+              <button
+                onClick={() => setLegalModalTab('disclaimer')}
+                className="w-full p-3 rounded-2xl hover:bg-amber-50/70 border border-transparent hover:border-amber-100 flex items-center justify-between text-left transition-all cursor-pointer group"
+              >
+                <div className="flex items-center space-x-3">
+                  <div className="w-10 h-10 rounded-xl bg-amber-100/70 text-amber-700 flex items-center justify-center group-hover:scale-105 transition-transform">
+                    <AlertTriangle className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-sm text-zinc-900 group-hover:text-amber-600">Platform Disclaimer</h4>
+                    <p className="text-[11px] text-zinc-500">Third-party independent creator network</p>
+                  </div>
+                </div>
+                <ChevronRight className="w-4 h-4 text-zinc-400 group-hover:text-amber-600 group-hover:translate-x-0.5 transition-all" />
+              </button>
+
               {/* Contact Us */}
               <button
-                onClick={() => setActiveModal('contact')}
+                onClick={() => setLegalModalTab('contact')}
                 className="w-full p-3 rounded-2xl hover:bg-emerald-50/70 border border-transparent hover:border-emerald-100 flex items-center justify-between text-left transition-all cursor-pointer group"
               >
                 <div className="flex items-center space-x-3">
@@ -413,8 +459,8 @@ export const SlideDrawer: React.FC<SlideDrawerProps> = ({
                     <Mail className="w-5 h-5" />
                   </div>
                   <div>
-                    <h4 className="font-bold text-sm text-zinc-900 group-hover:text-emerald-600">Contact Us</h4>
-                    <p className="text-[11px] text-zinc-500">24/7 Creator support & help desk</p>
+                    <h4 className="font-bold text-sm text-zinc-900 group-hover:text-emerald-600">Contact Us & Support</h4>
+                    <p className="text-[11px] text-zinc-500">24/7 Creator support (krja462@gmail.com)</p>
                   </div>
                 </div>
                 <ChevronRight className="w-4 h-4 text-zinc-400 group-hover:text-emerald-600 group-hover:translate-x-0.5 transition-all" />
@@ -423,18 +469,35 @@ export const SlideDrawer: React.FC<SlideDrawerProps> = ({
               {/* Submit Feedback */}
               <button
                 onClick={() => setActiveModal('feedback')}
-                className="w-full p-3 rounded-2xl hover:bg-amber-50/70 border border-transparent hover:border-amber-100 flex items-center justify-between text-left transition-all cursor-pointer group"
+                className="w-full p-3 rounded-2xl hover:bg-blue-50/50 border border-transparent hover:border-blue-100 flex items-center justify-between text-left transition-all cursor-pointer group"
               >
                 <div className="flex items-center space-x-3">
-                  <div className="w-10 h-10 rounded-xl bg-amber-100/70 text-amber-700 flex items-center justify-center group-hover:scale-105 transition-transform">
+                  <div className="w-10 h-10 rounded-xl bg-blue-100/70 text-blue-700 flex items-center justify-center group-hover:scale-105 transition-transform">
                     <MessageSquare className="w-5 h-5" />
                   </div>
                   <div>
-                    <h4 className="font-bold text-sm text-zinc-900 group-hover:text-amber-600">Submit Feedback</h4>
-                    <p className="text-[11px] text-zinc-500">Send suggestions or report bugs to admin</p>
+                    <h4 className="font-bold text-sm text-zinc-900 group-hover:text-blue-600">Submit Feedback</h4>
+                    <p className="text-[11px] text-zinc-500">Send suggestions or report bugs</p>
                   </div>
                 </div>
-                <ChevronRight className="w-4 h-4 text-zinc-400 group-hover:text-amber-600 group-hover:translate-x-0.5 transition-all" />
+                <ChevronRight className="w-4 h-4 text-zinc-400 group-hover:text-blue-600 group-hover:translate-x-0.5 transition-all" />
+              </button>
+
+              {/* Account & Data Deletion (GDPR & Uptodown Policy) */}
+              <button
+                onClick={() => setLegalModalTab('delete_account')}
+                className="w-full p-3 rounded-2xl hover:bg-rose-50/70 border border-transparent hover:border-rose-100 flex items-center justify-between text-left transition-all cursor-pointer group"
+              >
+                <div className="flex items-center space-x-3">
+                  <div className="w-10 h-10 rounded-xl bg-rose-100/70 text-rose-700 flex items-center justify-center group-hover:scale-105 transition-transform">
+                    <Trash2 className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-sm text-zinc-900 group-hover:text-rose-600">Data Deletion</h4>
+                    <p className="text-[11px] text-zinc-500">Purge account data, GDPR & Store rules</p>
+                  </div>
+                </div>
+                <ChevronRight className="w-4 h-4 text-zinc-400 group-hover:text-rose-600 group-hover:translate-x-0.5 transition-all" />
               </button>
 
               {/* Install PWA App Option: Completely removed once downloaded/installed */}
@@ -1126,6 +1189,15 @@ export const SlideDrawer: React.FC<SlideDrawerProps> = ({
           isOpen={activeModal === 'feedback'}
           onClose={() => setActiveModal(null)}
           user={user}
+        />
+      )}
+
+      {/* Universal Legal & Compliance Modal (Privacy, Terms, Disclaimer, Contact, Data Deletion) */}
+      {legalModalTab && (
+        <LegalModal
+          isOpen={true}
+          initialTab={legalModalTab}
+          onClose={() => setLegalModalTab(null)}
         />
       )}
 

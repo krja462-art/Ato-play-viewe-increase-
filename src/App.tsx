@@ -49,6 +49,27 @@ export default function App() {
   useTheme(); // Initialize and apply documentElement dark class
 
   // Android Hardware Back Button & Gesture Navigation Handler for APK / TWA
+  const handleTabChange = (newTab: string) => {
+    if (newTab !== activeTab) {
+      if (typeof window !== 'undefined') {
+        window.history.pushState({ tab: newTab }, '', `/?tab=${newTab}`);
+      }
+      setActiveTab(newTab);
+    }
+  };
+
+  const handleOpenCreateModal = () => {
+    if (typeof window !== 'undefined') {
+      window.history.pushState({ modal: 'create' }, '', window.location.href);
+    }
+    setActiveTab('campaigns');
+    setIsCreateModalOpen(true);
+  };
+
+  const handleCloseCreateModal = () => {
+    setIsCreateModalOpen(false);
+  };
+
   useEffect(() => {
     const handlePopState = () => {
       if (isCreateModalOpen) {
@@ -396,13 +417,10 @@ export default function App() {
       {/* Top Navbar & Drawer Navigation */}
       <Navbar
         activeTab={activeTab}
-        setActiveTab={setActiveTab}
+        setActiveTab={handleTabChange}
         coins={user.coins}
         streak={user.streak}
-        onOpenCreate={() => {
-          setActiveTab('campaigns');
-          setIsCreateModalOpen(true);
-        }}
+        onOpenCreate={handleOpenCreateModal}
         user={user}
         onLogout={handleLogout}
         onRefresh={handleAppRefresh}
@@ -416,7 +434,7 @@ export default function App() {
           <HomeWatchFeed
             user={user}
             onCoinEarned={handleUpdateUser}
-            setActiveTab={setActiveTab}
+            setActiveTab={handleTabChange}
             onClaimCheckin={handleClaimCheckin}
             onWatchAd={handleWatchAd}
             refreshTrigger={refreshTrigger}
@@ -428,8 +446,8 @@ export default function App() {
             user={user}
             onCampaignCreated={handleUpdateUser}
             isCreateModalOpen={isCreateModalOpen}
-            onCloseCreateModal={() => setIsCreateModalOpen(false)}
-            onOpenCreateModal={() => setIsCreateModalOpen(true)}
+            onCloseCreateModal={handleCloseCreateModal}
+            onOpenCreateModal={handleOpenCreateModal}
           />
         )}
 

@@ -4,7 +4,9 @@ import {
   CheckCircle, 
   ArrowRight, 
   Plus,
-  Download
+  Eye,
+  ShieldCheck,
+  HelpCircle
 } from 'lucide-react';
 import { User } from '../types';
 import { 
@@ -28,6 +30,24 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onLoginSuccess, onOp
   
   const [referralInput, setReferralInput] = useState('');
   const [showReferralField, setShowReferralField] = useState(false);
+
+  const handleGuestLogin = () => {
+    setGoogleLoading(false);
+    const guestId = `guest_${Math.random().toString(36).substring(2, 9)}`;
+    const guestUser: User = {
+      id: guestId,
+      name: 'Guest Reviewer',
+      email: 'guest@atoplaybooster.app',
+      avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=GuestCreator',
+      coins: 500, // 500 starter coins for reviewing & testing
+      streak: 1,
+      isAdmin: false,
+      createdAt: new Date().toISOString()
+    };
+    localStorage.setItem('atoviewer_user', JSON.stringify(guestUser));
+    localStorage.setItem('atoplay_active_user', JSON.stringify(guestUser));
+    onLoginSuccess(guestUser);
+  };
 
   const completeGoogleLogin = async (email: string, displayName?: string, photoURL?: string) => {
     setGoogleLoading(true);
@@ -90,6 +110,7 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onLoginSuccess, onOp
         createdAt: new Date().toISOString()
       };
 
+      localStorage.setItem('atoviewer_user', JSON.stringify(loggedInUser));
       localStorage.setItem('atoplay_active_user', JSON.stringify(loggedInUser));
       onLoginSuccess(loggedInUser);
     } catch (e: any) {
@@ -150,10 +171,10 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onLoginSuccess, onOp
           <div className="space-y-1">
             <div className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-full bg-blue-500/30 border border-blue-400/30 text-blue-200 text-xs font-extrabold uppercase tracking-widest">
               <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-              <span>Official AtoPlay Booster</span>
+              <span>Community Promotion Network</span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight pt-1">
-              AtoViewer
+              AtoPlay Booster
             </h1>
             <p className="text-xs sm:text-sm text-blue-200/90 font-medium max-w-xs mx-auto">
               Watch AtoPlay videos to earn coins, exchange views, and grow your channel organically.
@@ -169,8 +190,8 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onLoginSuccess, onOp
           </div>
         )}
 
-        {/* Primary Action: Continue with Google */}
-        <div className="space-y-4">
+        {/* Primary Action: Continue with Google & Demo Mode for Reviewers */}
+        <div className="space-y-3">
           <button
             type="button"
             id="google-signin-btn"
@@ -197,6 +218,17 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onLoginSuccess, onOp
                 <ArrowRight className="w-4 h-4 text-zinc-400 group-hover:translate-x-1 transition-transform" />
               </>
             )}
+          </button>
+
+          {/* Reviewer / Tester Guest Mode */}
+          <button
+            type="button"
+            onClick={handleGuestLogin}
+            disabled={googleLoading}
+            className="w-full py-3 px-4 rounded-2xl bg-white/10 hover:bg-white/20 border border-white/20 text-white font-bold text-xs sm:text-sm flex items-center justify-center space-x-2 transition-all cursor-pointer hover:border-white/40"
+          >
+            <Eye className="w-4 h-4 text-blue-300" />
+            <span>Explore App as Guest (Demo Mode)</span>
           </button>
 
           {/* Optional Referral Code Toggle */}
@@ -229,10 +261,10 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onLoginSuccess, onOp
         </div>
 
         {/* Verification Badges */}
-        <div className="pt-4 border-t border-white/10 grid grid-cols-3 gap-1 text-[11px] text-center text-blue-200/90 font-medium">
+        <div className="pt-3 border-t border-white/10 grid grid-cols-3 gap-1 text-[11px] text-center text-blue-200/90 font-medium">
           <div className="flex flex-col items-center justify-center space-y-0.5">
             <CheckCircle className="w-4 h-4 text-emerald-400" />
-            <span>Auto Channel</span>
+            <span>Fair Exchange</span>
           </div>
           <div className="flex flex-col items-center justify-center space-y-0.5">
             <CheckCircle className="w-4 h-4 text-emerald-400" />
@@ -244,10 +276,15 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onLoginSuccess, onOp
           </div>
         </div>
 
+        {/* Legal Disclaimer Box for Store Compliance */}
+        <div className="pt-2 text-[10px] text-blue-200/60 leading-relaxed text-center px-1">
+          Disclaimer: AtoPlay Booster is an independent community video promotion network. Not officially affiliated with or endorsed by AtoPlay or Bluedoors Technologies.
+        </div>
+
       </div>
 
       {/* Clean Legal & Compliance Footer for App Store (Uptodown / Play Store) Acceptance */}
-      <div className="text-center space-y-2 pt-6 pb-2 relative z-10">
+      <div className="text-center space-y-2 pt-4 pb-2 relative z-10">
         <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-xs text-blue-200/80 font-medium">
           <button
             type="button"
@@ -267,6 +304,14 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onLoginSuccess, onOp
           <span className="text-blue-300/40">•</span>
           <button
             type="button"
+            onClick={() => setLegalModalTab('disclaimer')}
+            className="hover:text-white underline underline-offset-2 transition-colors cursor-pointer"
+          >
+            Disclaimer
+          </button>
+          <span className="text-blue-300/40">•</span>
+          <button
+            type="button"
             onClick={() => setLegalModalTab('contact')}
             className="hover:text-white underline underline-offset-2 transition-colors cursor-pointer"
           >
@@ -282,7 +327,7 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onLoginSuccess, onOp
           </button>
         </div>
         <p className="text-[11px] text-blue-200/50">
-          © 2026 AtoPlay Booster • Official Community Video Promotion Platform
+          © 2026 AtoPlay Booster • Community Video Promotion Platform
         </p>
       </div>
 
