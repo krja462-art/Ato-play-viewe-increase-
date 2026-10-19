@@ -5,7 +5,7 @@ import { AtoPlayBadge } from './AtoPlayBadge';
 import { CreateFollowerCampaignModal } from './CreateFollowerCampaignModal';
 import { apiFetch, extractVideoMetadataClient, cleanVideoUrl } from '../lib/api';
 import { saveCampaignToFirestore, deleteCampaignInFirestore, saveUserCoinsToFirestore, getMyCampaignsFromFirestore, getFollowLogsFromFirestore, reportFakeFollowInFirestore } from '../lib/firebase';
-import confetti from 'canvas-confetti';
+import { triggerCampaignGoalCelebration, triggerWatchCompleteCelebration } from '../utils/confetti';
 
 interface CampaignsProps {
   user: User;
@@ -194,6 +194,26 @@ export const Campaigns: React.FC<CampaignsProps> = ({
       );
 
       setCampaigns(campaignsWithLogs);
+
+      // Check if any campaign newly reached its view goal
+      const newlyCompleted = campaignsWithLogs.find(c => {
+        const req = c.viewsRequired ?? c.targetViews ?? 10;
+        const comp = c.viewsCompleted ?? c.completedViews ?? 0;
+        const isDone = comp >= req || c.status === 'completed';
+        if (!isDone) return false;
+        try {
+          return !sessionStorage.getItem(`celebrated_goal_${c.id}`);
+        } catch {
+          return false;
+        }
+      });
+
+      if (newlyCompleted) {
+        try {
+          sessionStorage.setItem(`celebrated_goal_${newlyCompleted.id}`, 'true');
+        } catch {}
+        triggerCampaignGoalCelebration();
+      }
     } catch (err) {
       console.error('Failed to load campaigns', err);
     } finally {
@@ -405,15 +425,8 @@ export const Campaigns: React.FC<CampaignsProps> = ({
         setShowCustomThumbInput(false);
         setIsModalOpen(false);
 
-        // Trigger confetti celebration on successful campaign launch
-        try {
-          confetti({
-            particleCount: 120,
-            spread: 80,
-            origin: { y: 0.5 },
-            colors: ['#3b82f6', '#f59e0b', '#10b981', '#8b5cf6', '#ec4899']
-          });
-        } catch {}
+        // Trigger celebratory confetti on successful campaign launch
+        triggerWatchCompleteCelebration();
 
         // Sync campaign to Firestore
         if (data.campaign) {
@@ -486,20 +499,20 @@ export const Campaigns: React.FC<CampaignsProps> = ({
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6 mb-28 bg-white min-h-screen relative">
       
       {/* Top Header info */}
-      <div className="flex items-center justify-between pb-2 border-b border-zinc-100">
+      <div className="flex items-center justify-between pb-3 border-b border-zinc-200/80">
         <div>
-          <h1 className="text-xl font-extrabold text-zinc-900">My Campaigns</h1>
-          <p className="text-xs text-zinc-500">Manage your active AtoPlay video promotion campaigns</p>
+          <h1 className="text-lg sm:text-xl font-bold text-zinc-900 tracking-tight">My Campaigns</h1>
+          <p className="text-xs text-zinc-500">Manage and track your active AtoPlay promotion campaigns</p>
         </div>
 
-        <div className="flex items-center space-x-2 px-3.5 py-1.5 rounded-full bg-yellow-50 border border-yellow-200 text-yellow-800 text-xs font-extrabold shadow-xs">
-          <Coins className="w-3.5 h-3.5 text-yellow-600" />
-          <span>{user.coins.toLocaleString()} Coins</span>
+        <div className="flex items-center space-x-1.5 px-3 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-900 text-xs font-semibold shadow-2xs">
+          <Coins className="w-3.5 h-3.5 text-amber-600" />
+          <span className="tabular-nums font-bold">{user.coins.toLocaleString()} Coins</span>
         </div>
       </div>
 
       {successMsg && (
-        <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-300 text-emerald-800 text-xs font-bold flex items-center space-x-2">
+        <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold flex items-center space-x-2">
           <span>✅ {successMsg}</span>
         </div>
       )}
@@ -513,14 +526,14 @@ export const Campaigns: React.FC<CampaignsProps> = ({
 
       {/* Active Campaign Running Notice */}
       {activeRunningCampaign && (
-        <div className="p-4 rounded-2xl bg-blue-50 border border-blue-200 flex items-start space-x-3">
+        <div className="p-4 rounded-2xl bg-blue-50/70 border border-blue-200/80 flex items-start space-x-3">
           <Clock className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
           <div className="text-xs space-y-1">
-            <p className="font-extrabold text-blue-950">
-              Active Campaign In Progress: "{activeRunningCampaign.title}"
+            <p className="font-semibold text-blue-950">
+              Active Campaign: "{activeRunningCampaign.title}"
             </p>
             <p className="text-blue-700 leading-relaxed">
-              Progress: <strong>{activeRunningCampaign.completedViews} of {activeRunningCampaign.targetViews} views completed</strong>. As per policy, you can launch your next campaign once this current campaign reaches all {activeRunningCampaign.targetViews} views.
+              Progress: <strong className="tabular-nums">{activeRunningCampaign.completedViews} of {activeRunningCampaign.targetViews} views completed</strong>. As per policy, you can launch your next campaign once this current campaign reaches its goal.
             </p>
           </div>
         </div>
@@ -533,12 +546,12 @@ export const Campaigns: React.FC<CampaignsProps> = ({
           <p className="text-xs text-zinc-500">Loading your campaigns...</p>
         </div>
       ) : campaigns.length === 0 ? (
-        <div className="text-center py-20 bg-white rounded-2xl border border-zinc-200 p-8 space-y-4">
+        <div className="text-center py-20 bg-white rounded-2xl border border-zinc-200/80 p-8 space-y-4 shadow-2xs">
           <Video className="w-12 h-12 text-zinc-300 mx-auto" />
           <div className="space-y-1">
-            <p className="font-bold text-zinc-800 text-sm">No campaigns created yet</p>
+            <p className="font-semibold text-zinc-800 text-sm">No campaigns created yet</p>
             <p className="text-xs text-zinc-500 max-w-sm mx-auto">
-              Tap the center <strong>+ Create</strong> button in the bottom navigation bar to boost your AtoPlay video views.
+              Tap the <strong>+ Create</strong> button in the bottom navigation bar to boost your AtoPlay video views.
             </p>
           </div>
           <button
@@ -546,14 +559,14 @@ export const Campaigns: React.FC<CampaignsProps> = ({
               setIsModalOpen(true);
               if (onOpenCreateModal) onOpenCreateModal();
             }}
-            className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-md shadow-blue-500/20 transition-all hover:scale-102 cursor-pointer inline-flex items-center space-x-1.5"
+            className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-95 text-white font-semibold text-xs shadow-xs transition-all cursor-pointer inline-flex items-center space-x-1.5"
           >
-            <Plus className="w-4 h-4 stroke-[3]" />
+            <Plus className="w-4 h-4 stroke-[2.5]" />
             <span>Create Campaign</span>
           </button>
         </div>
       ) : (
-        <div className="bg-white rounded-2xl border border-zinc-200 divide-y divide-zinc-100 shadow-sm overflow-hidden">
+        <div className="bg-white rounded-2xl border border-zinc-200/80 divide-y divide-zinc-100 shadow-2xs overflow-hidden">
           {campaigns.map(camp => {
             const isFollowerCamp = camp.campaignType === 'follower' || String(camp.title || '').toLowerCase().includes('follow') || String(camp.videoUrl || '').toLowerCase().includes('/channels/') || String(camp.videoUrl || '').toLowerCase().includes('/channel/');
             const reqViews = camp.viewsRequired ?? camp.targetViews ?? 10;
@@ -562,13 +575,12 @@ export const Campaigns: React.FC<CampaignsProps> = ({
             const isCompleted = compViews >= reqViews || camp.status === 'completed';
 
             return (
-              <div key={camp.id} className={`p-4 sm:p-5 flex flex-col space-y-3.5 relative hover:bg-zinc-50/50 transition-colors ${isFollowerCamp ? 'border-l-4 border-l-emerald-500' : 'border-l-4 border-l-blue-500'}`}>
+              <div key={camp.id} className="p-4 sm:p-5 flex flex-col space-y-3.5 relative hover:bg-zinc-50/60 transition-colors">
                 
                 {/* Top Row: Video Thumbnail + Meta + Actions */}
                 <div className="flex items-start sm:items-center space-x-3.5 sm:space-x-4">
                   {/* Stretched Thumbnail on left */}
-                  <div className="w-24 sm:w-36 aspect-video rounded-xl bg-zinc-950 overflow-hidden shrink-0 border border-zinc-200 shadow-xs relative">
-                    {/* AtoPlay Official Badge */}
+                  <div className="w-24 sm:w-36 aspect-video rounded-xl bg-zinc-950 overflow-hidden shrink-0 border border-zinc-200/80 shadow-2xs relative">
                     <AtoPlayBadge size="sm" className="absolute top-1 left-1 z-10" />
 
                     <img 
@@ -584,12 +596,12 @@ export const Campaigns: React.FC<CampaignsProps> = ({
                       className="w-full h-full object-cover" 
                     />
                     {!isFollowerCamp && (
-                      <div className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-black/80 text-white text-[9px] font-bold">
+                      <div className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-black/80 text-white text-[9px] font-semibold tabular-nums">
                         {camp.durationText || '60s'}
                       </div>
                     )}
                     {isFollowerCamp && (
-                      <div className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-emerald-600 text-white text-[9px] font-bold uppercase tracking-wide">
+                      <div className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-emerald-600 text-white text-[9px] font-semibold uppercase tracking-wide">
                         Channel
                       </div>
                     )}
@@ -598,7 +610,7 @@ export const Campaigns: React.FC<CampaignsProps> = ({
                   {/* Info section: Title, ID below, Progress bar */}
                   <div className="flex-1 min-w-0 space-y-1">
                     <div className="flex items-center justify-between">
-                      <h3 className={`font-bold text-sm sm:text-base truncate ${isFollowerCamp ? 'text-emerald-700' : 'text-blue-600'}`}>
+                      <h3 className={`font-semibold text-xs sm:text-sm truncate ${isFollowerCamp ? 'text-emerald-700' : 'text-zinc-900'}`}>
                         {camp.title}
                       </h3>
                     </div>
@@ -609,15 +621,19 @@ export const Campaigns: React.FC<CampaignsProps> = ({
                       </p>
                     )}
 
-                    <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-500 font-mono">
-                      <span>ID: <span className="font-extrabold text-zinc-700">{format4CharId(camp.displayId, camp.id)}</span></span>
-                      <span className="text-zinc-300">•</span>
-                      <span className={`font-sans font-bold px-2 py-0.5 rounded-md border ${
-                        isFollowerCamp 
-                          ? 'text-emerald-700 bg-emerald-50 border-emerald-200' 
-                          : 'text-blue-700 bg-blue-50 border-blue-200'
+                    <div className="flex flex-wrap items-center gap-1.5 text-xs text-zinc-500">
+                      <span className="font-mono text-zinc-400 font-semibold text-[11px]">#{format4CharId(camp.displayId, camp.id)}</span>
+                      <span className="text-zinc-300">·</span>
+                      <span className="font-semibold text-zinc-700 text-[11px] tabular-nums">
+                        {isFollowerCamp ? '30 Coins / follower' : '60 Coins / view'}
+                      </span>
+                      <span className="text-zinc-300">·</span>
+                      <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-md ${
+                        isCompleted 
+                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' 
+                          : 'bg-blue-50 text-blue-700 border border-blue-100'
                       }`}>
-                        {isFollowerCamp ? 'Reward: 30 Coins/follower' : 'Reward: 60 Coins/view'}
+                        {isCompleted ? 'Completed' : 'Active'}
                       </span>
                     </div>
 
@@ -636,6 +652,35 @@ export const Campaigns: React.FC<CampaignsProps> = ({
                           style={{ width: `${progress}%` }} 
                         />
                       </div>
+
+                      {/* Interactive Goal Reached Banner with Confetti Celebration */}
+                      {isCompleted && (
+                        <div className="mt-2.5 p-2.5 rounded-xl bg-gradient-to-r from-emerald-50 via-teal-50 to-amber-50 border border-emerald-300 flex items-center justify-between shadow-xs">
+                          <div className="flex items-center space-x-2 min-w-0 pr-2">
+                            <Sparkles className="w-4 h-4 text-emerald-600 animate-pulse shrink-0" />
+                            <div className="min-w-0">
+                              <span className="text-xs font-black text-emerald-950 block truncate">
+                                🎉 View Goal Reached! (100% Delivered)
+                              </span>
+                              <span className="text-[10px] text-emerald-700 font-medium block truncate">
+                                All {reqViews} {isFollowerCamp ? 'followers' : 'views'} completed
+                              </span>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              triggerCampaignGoalCelebration();
+                            }}
+                            className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[11px] shadow-xs cursor-pointer flex items-center space-x-1 active:scale-95 transition-all shrink-0"
+                            title="Celebrate View Goal Reached"
+                          >
+                            <Sparkles className="w-3.5 h-3.5" />
+                            <span>Celebrate 🎉</span>
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
 

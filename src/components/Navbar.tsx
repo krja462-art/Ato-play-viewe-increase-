@@ -67,57 +67,58 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   return (
     <>
-      {/* Top Header - Pure Clean Modern Light Theme */}
-      <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-zinc-200/90 shadow-xs transition-colors duration-200">
+      {/* Top Header - Authentic Real App Native Navigation Bar */}
+      <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-zinc-200/80 shadow-[0_1px_3px_rgba(0,0,0,0.03)] transition-colors duration-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           
-          {/* Brand Logo - Top Left with User's Uploaded Logo */}
+          {/* Brand Identity - Clean Product Lockup */}
           <div className="flex items-center space-x-2.5 cursor-pointer select-none" onClick={() => setActiveTab('home')}>
             <img
               src="/icon.png"
               alt="AtoPlay Booster Logo"
-              className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl object-contain shadow-xs border border-zinc-200/80"
+              className="w-9 h-9 rounded-xl object-contain shadow-xs border border-zinc-200/80"
               onError={(e) => {
                 (e.currentTarget as HTMLImageElement).src = '/favicon.png';
               }}
             />
-            <div className="flex items-center space-x-1.5">
-              <span className="font-black text-lg sm:text-xl text-zinc-900 tracking-tight">AtoPlay</span>
-              <span className="text-[10px] sm:text-[11px] px-2 py-0.5 rounded-full bg-blue-600 text-white font-black uppercase tracking-wider shadow-xs">
-                BOOSTER
-              </span>
+            <div className="flex flex-col -space-y-0.5">
+              <div className="flex items-center space-x-1.5">
+                <span className="font-extrabold text-lg text-zinc-900 tracking-tight">AtoPlay</span>
+                <span className="text-xs font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded-md border border-blue-200/50">Booster</span>
+              </div>
+              <span className="text-[10px] font-medium text-zinc-600 tracking-tight">View Exchange</span>
             </div>
           </div>
 
           {/* Desktop Nav Links */}
-          <nav className="hidden md:flex items-center space-x-3">
+          <nav className="hidden md:flex items-center space-x-2">
             <button
               onClick={() => setActiveTab('home')}
-              className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-sm font-semibold transition-colors cursor-pointer ${
+              className={`flex items-center space-x-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all cursor-pointer ${
                 activeTab === 'home'
-                  ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20'
-                  : 'text-zinc-600 hover:bg-zinc-100'
+                  ? 'bg-blue-600 text-white shadow-sm shadow-blue-600/20'
+                  : 'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100/80'
               }`}
             >
               <Home className="w-4 h-4" />
-              <span>Home (Watch & Earn)</span>
+              <span>Watch & Earn</span>
             </button>
 
             {/* Desktop Center Create Button */}
             <button
               onClick={onOpenCreate}
-              className="flex items-center space-x-1.5 px-4 py-2 rounded-xl text-sm font-bold bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white shadow-md shadow-blue-500/20 transition-all hover:scale-102 cursor-pointer"
+              className="flex items-center space-x-1.5 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold bg-blue-600 hover:bg-blue-700 active:scale-95 text-white shadow-sm shadow-blue-600/25 transition-all cursor-pointer"
             >
-              <Plus className="w-4 h-4 stroke-[3]" />
+              <Plus className="w-4 h-4 stroke-[2.5]" />
               <span>Create Campaign</span>
             </button>
 
             <button
               onClick={() => setActiveTab('campaigns')}
-              className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-sm font-semibold transition-colors cursor-pointer ${
+              className={`flex items-center space-x-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all cursor-pointer ${
                 activeTab === 'campaigns'
-                  ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20'
-                  : 'text-zinc-600 hover:bg-zinc-100'
+                  ? 'bg-blue-600 text-white shadow-sm shadow-blue-600/20'
+                  : 'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100/80'
               }`}
             >
               <ShieldCheck className="w-4 h-4" />
@@ -127,33 +128,31 @@ export const Navbar: React.FC<NavbarProps> = ({
             {Boolean(user?.isAdmin || user?.email?.toLowerCase().trim() === 'krja462@gmail.com') && (
               <button
                 onClick={() => setActiveTab('users')}
-                className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-sm font-semibold transition-colors cursor-pointer ${
+                className={`flex items-center space-x-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all cursor-pointer ${
                   activeTab === 'users'
-                    ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20'
-                    : 'text-zinc-600 hover:bg-zinc-100 bg-blue-50/60 text-blue-800'
+                    ? 'bg-blue-600 text-white shadow-sm shadow-blue-600/20'
+                    : 'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100/80'
                 }`}
               >
                 <ShieldCheck className="w-4 h-4 text-blue-600" />
-                <span>Google Users</span>
+                <span>Admin Users</span>
               </button>
             )}
           </nav>
 
-          {/* Right Header Actions: Coin Balance & Three Dots Menu */}
+          {/* Right Header Actions: Coin Balance & Menu */}
           <div className="flex items-center space-x-2 sm:space-x-2.5">
             {Boolean(user?.isAdmin || user?.email?.toLowerCase().trim() === 'krja462@gmail.com') ? (
-              <div className="flex items-center space-x-1.5 px-2.5 sm:px-3 py-1.5 rounded-full bg-amber-50 border border-amber-300 text-amber-900 text-xs sm:text-sm font-extrabold shadow-xs">
+              <div className="flex items-center space-x-1.5 px-3 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-900 text-xs sm:text-sm font-semibold shadow-2xs">
                 <Coins className="w-4 h-4 text-amber-600" />
-                <span className="hidden xs:inline">∞ Unlimited Coins</span>
-                <span className="xs:hidden">∞ Coins</span>
-                <span className="ml-1 px-1.5 py-0.5 rounded bg-amber-200 text-amber-900 text-[10px] font-black uppercase tracking-wider">
-                  Admin 👑
-                </span>
+                <span className="tabular-nums font-bold">∞</span>
+                <span className="text-[10px] font-semibold text-amber-800 bg-amber-200/70 px-1.5 py-0.5 rounded">Admin</span>
               </div>
             ) : (
-              <div className={`flex items-center space-x-1.5 px-2.5 sm:px-3 py-1.5 rounded-full bg-amber-50 border border-amber-200 text-amber-800 text-xs sm:text-sm font-extrabold shadow-xs transition-transform duration-300 ${isCoinPumping ? 'scale-110 bg-amber-100 ring-2 ring-amber-400' : ''}`}>
+              <div className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-900 text-xs sm:text-sm font-semibold shadow-2xs transition-transform duration-300 ${isCoinPumping ? 'scale-105 ring-2 ring-amber-400/50 bg-amber-100/80' : ''}`}>
                 <Coins className={`w-4 h-4 text-amber-600 ${isCoinPumping ? 'animate-spin' : ''}`} />
-                <span>{displayCoins.toLocaleString()} Coins</span>
+                <span className="tabular-nums font-bold tracking-tight">{displayCoins.toLocaleString()}</span>
+                <span className="text-[11px] font-medium text-amber-700/90 hidden xs:inline">Coins</span>
               </div>
             )}
 
@@ -162,7 +161,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               <button
                 onClick={onRefresh}
                 disabled={isRefreshing}
-                className="p-2 rounded-xl text-zinc-700 hover:text-blue-600 hover:bg-zinc-100 transition-colors cursor-pointer flex items-center justify-center border border-zinc-200/80 shadow-xs active:scale-95"
+                className="w-9 h-9 rounded-xl text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100/80 transition-colors cursor-pointer flex items-center justify-center border border-zinc-200/80 shadow-2xs active:scale-95"
                 title="Refresh Feed & Sync Coins"
                 aria-label="Refresh Feed & Sync Coins"
               >
@@ -173,7 +172,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             {/* Three Dots Button to Open Slide Drawer */}
             <button
               onClick={() => setIsDrawerOpen(true)}
-              className="p-2 rounded-xl text-zinc-700 hover:text-blue-600 hover:bg-zinc-100 transition-colors cursor-pointer flex items-center justify-center border border-zinc-200/80 shadow-xs"
+              className="w-9 h-9 rounded-xl text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100/80 transition-colors cursor-pointer flex items-center justify-center border border-zinc-200/80 shadow-2xs active:scale-95"
               title="Open Menu"
               aria-label="Open Menu"
             >
@@ -195,48 +194,46 @@ export const Navbar: React.FC<NavbarProps> = ({
 
       {/* Professional Fixed Bottom Navigation Bar (Hidden when Slide Drawer is open) */}
       {!isDrawerOpen && (
-        <nav className="fixed bottom-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-md border-t border-zinc-200 px-6 py-2 shadow-2xl flex items-center justify-between max-w-lg mx-auto sm:rounded-t-3xl sm:border-x">
+        <nav className="fixed bottom-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-md border-t border-zinc-200/80 px-4 pt-1.5 pb-safe shadow-[0_-4px_20px_rgba(0,0,0,0.04)] flex items-center justify-around max-w-lg mx-auto sm:rounded-t-2xl sm:border-x">
           
           {/* Home Tab Button (Left) */}
           <button
             onClick={() => setActiveTab('home')}
-            className={`flex flex-col items-center justify-center flex-1 py-1 transition-all cursor-pointer ${
+            className={`flex flex-col items-center justify-center py-1 px-3 rounded-xl transition-all cursor-pointer active:scale-95 ${
               activeTab === 'home' 
-                ? 'text-blue-600 font-bold' 
-                : 'text-zinc-500 hover:text-zinc-900 font-medium'
+                ? 'text-blue-600' 
+                : 'text-zinc-500 hover:text-zinc-800'
             }`}
           >
-            <div className={`p-1.5 rounded-xl transition-colors ${activeTab === 'home' ? 'bg-blue-50' : ''}`}>
-              <Home className="w-5 h-5" />
-            </div>
-            <span className="text-[11px] pt-0.5 font-bold">Home</span>
+            <Home className="w-5 h-5 stroke-[2.2]" />
+            <span className={`text-[11px] pt-0.5 tracking-tight ${activeTab === 'home' ? 'font-bold' : 'font-medium'}`}>
+              Watch
+            </span>
           </button>
 
-          {/* Professional Center Elevated Plus Button (Center) */}
-          <div className="flex flex-col items-center justify-center px-4 -mt-6 shrink-0">
-            <button
-              onClick={onOpenCreate}
-              className="w-13 h-13 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white flex items-center justify-center shadow-lg shadow-blue-600/40 ring-4 ring-white active:scale-95 transition-all hover:scale-105 cursor-pointer group"
-              title="Create Campaign"
-            >
-              <Plus className="w-7 h-7 stroke-[3] transition-transform group-hover:rotate-90 duration-300" />
-            </button>
-            <span className="text-[10px] font-black text-blue-600 tracking-tight pt-1">Create</span>
-          </div>
+          {/* Center Create Button - Sleek Native App Action */}
+          <button
+            onClick={onOpenCreate}
+            className="flex items-center space-x-1.5 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-95 text-white font-semibold text-xs shadow-sm shadow-blue-600/30 transition-all cursor-pointer"
+            title="Create Campaign"
+          >
+            <Plus className="w-4 h-4 stroke-[2.5]" />
+            <span>Create</span>
+          </button>
 
           {/* Campaign Tab Button (Right) */}
           <button
             onClick={() => setActiveTab('campaigns')}
-            className={`flex flex-col items-center justify-center flex-1 py-1 transition-all cursor-pointer ${
+            className={`flex flex-col items-center justify-center py-1 px-3 rounded-xl transition-all cursor-pointer active:scale-95 ${
               activeTab === 'campaigns' 
-                ? 'text-blue-600 font-bold' 
-                : 'text-zinc-500 hover:text-zinc-900 font-medium'
+                ? 'text-blue-600' 
+                : 'text-zinc-500 hover:text-zinc-800'
             }`}
           >
-            <div className={`p-1.5 rounded-xl transition-colors ${activeTab === 'campaigns' ? 'bg-blue-50' : ''}`}>
-              <ShieldCheck className="w-5 h-5" />
-            </div>
-            <span className="text-[11px] pt-0.5 font-bold">Campaigns</span>
+            <ShieldCheck className="w-5 h-5 stroke-[2.2]" />
+            <span className={`text-[11px] pt-0.5 tracking-tight ${activeTab === 'campaigns' ? 'font-bold' : 'font-medium'}`}>
+              Campaigns
+            </span>
           </button>
         </nav>
       )}

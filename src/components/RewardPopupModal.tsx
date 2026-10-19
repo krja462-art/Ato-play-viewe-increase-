@@ -18,7 +18,7 @@ import { Campaign, User, format4CharId, FollowLog } from '../types';
 import { playCoinCelebrationSound } from '../utils/audio';
 import { apiFetch, openAtoPlayUrl } from '../lib/api';
 import { saveUserCoinsToFirestore, saveFollowLogToFirestore } from '../lib/firebase';
-import confetti from 'canvas-confetti';
+import { triggerWatchCompleteCelebration, triggerQuickConfetti } from '../utils/confetti';
 
 interface RewardPopupModalProps {
   isOpen: boolean;
@@ -81,15 +81,7 @@ export const RewardPopupModal: React.FC<RewardPopupModalProps> = ({
       setFeedbackType(null);
       setVerifying(false);
 
-      playCoinCelebrationSound();
-      try {
-        confetti({
-          particleCount: 100,
-          spread: 70,
-          origin: { y: 0.6 },
-          colors: ['#3b82f6', '#f59e0b', '#10b981', '#8b5cf6', '#ec4899']
-        });
-      } catch {}
+      triggerWatchCompleteCelebration();
     }
   }, [isOpen, earnedCoins, newBalance, followedBonus, countBefore, countAfter, bonusCoins]);
 
@@ -173,15 +165,7 @@ export const RewardPopupModal: React.FC<RewardPopupModalProps> = ({
         };
         saveFollowLogToFirestore(logToSave).catch(err => console.warn('Follow log firestore err:', err));
 
-        playCoinCelebrationSound();
-        try {
-          confetti({
-            particleCount: 120,
-            spread: 80,
-            origin: { y: 0.6 },
-            colors: ['#10b981', '#3b82f6', '#f59e0b', '#ec4899']
-          });
-        } catch {}
+        triggerQuickConfetti();
 
         if (res.user) {
           if (onCoinEarned) onCoinEarned(res.user);

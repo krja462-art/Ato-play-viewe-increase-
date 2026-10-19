@@ -8,6 +8,7 @@ import { FollowerRewardModal } from './FollowerRewardModal';
 import { Warning4SecModal } from './Warning4SecModal';
 import { AtoPlayBadge } from './AtoPlayBadge';
 import { playCoinCelebrationSound } from '../utils/audio';
+import { triggerWatchCompleteCelebration } from '../utils/confetti';
 import { apiFetch, getWatchedIds, addWatchedId, cleanVideoUrl, openAtoPlayUrl } from '../lib/api';
 import { 
   updateCampaignViewsInFirestore, 
@@ -450,6 +451,7 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
       });
 
       if (data?.success) {
+        triggerWatchCompleteCelebration();
         const earned = data.earnedCoins || (data.followed ? 90 : 60);
         if (data.user) {
           saveUserCoinsToFirestore(data.user.id, data.user.coins, data.user.email).catch(e => console.warn('Firestore user coins sync error:', e));
@@ -1340,67 +1342,67 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6 mb-20 bg-white min-h-screen">
       
-      {/* Home Section Tabs: Video Views vs Followers */}
-      <div className="flex rounded-2xl bg-zinc-100 p-1.5 border border-zinc-200">
+      {/* Home Section Segmented Control: Video Views vs Followers */}
+      <div className="flex rounded-xl bg-zinc-100 p-1 border border-zinc-200/80">
         <button
           onClick={() => setHomeSection('video')}
-          className={`flex-1 py-2.5 px-4 rounded-xl font-extrabold text-xs sm:text-sm flex items-center justify-center space-x-2 transition-all cursor-pointer ${
+          className={`flex-1 py-2 px-3 rounded-lg text-xs sm:text-sm font-semibold flex items-center justify-center space-x-2 transition-all cursor-pointer ${
             homeSection === 'video'
-              ? 'bg-blue-600 text-white shadow-md'
+              ? 'bg-white text-zinc-900 shadow-xs'
               : 'text-zinc-600 hover:text-zinc-900'
           }`}
         >
-          <Video className="w-4 h-4" />
-          <span>🎬 Video Views Feed</span>
+          <Video className="w-4 h-4 text-blue-600" />
+          <span>Video Views</span>
         </button>
 
         <button
           onClick={() => setHomeSection('follower')}
-          className={`flex-1 py-2.5 px-4 rounded-xl font-extrabold text-xs sm:text-sm flex items-center justify-center space-x-2 transition-all cursor-pointer ${
+          className={`flex-1 py-2 px-3 rounded-lg text-xs sm:text-sm font-semibold flex items-center justify-center space-x-2 transition-all cursor-pointer ${
             homeSection === 'follower'
-              ? 'bg-emerald-600 text-white shadow-md'
+              ? 'bg-white text-zinc-900 shadow-xs'
               : 'text-zinc-600 hover:text-zinc-900'
           }`}
         >
-          <Users className="w-4 h-4" />
-          <span>👥 Followers Campaigns</span>
+          <Users className="w-4 h-4 text-emerald-600" />
+          <span>Follower Campaigns</span>
         </button>
       </div>
 
       {/* Section Header */}
       <div className="flex items-center justify-between px-1 pt-1">
         <div>
-          <h2 className="text-base sm:text-lg font-extrabold text-zinc-900">
-            {homeSection === 'video' ? "Active Video View Campaigns" : "Active AtoPlay Channel Follower Campaigns"}
+          <h2 className="text-base sm:text-lg font-bold text-zinc-900 tracking-tight">
+            {homeSection === 'video' ? "Available Videos" : "AtoPlay Channels to Follow"}
           </h2>
           <p className="text-xs text-zinc-500">
             {homeSection === 'video' 
-              ? "Watch any video for 60 seconds in external browser to earn 60 coins" 
-              : "Visit channel URL, spend 4+ seconds, follow the channel & earn +30 follower reward coins"}
+              ? "Watch for 60 seconds to earn coins for your channel campaigns" 
+              : "Open channel, spend 4+ seconds, follow on AtoPlay & earn coins"}
           </p>
         </div>
         <button
           onClick={() => setActiveTab('campaigns')}
-          className="px-3.5 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-600 font-bold text-xs transition-colors cursor-pointer"
+          className="px-3 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-600 font-semibold text-xs transition-colors cursor-pointer"
         >
-          + Promote Campaign
+          + Promote
         </button>
       </div>
 
       {homeSection === 'follower' ? (
-        <div className="space-y-3.5">
+        <div className="space-y-3">
           {campaigns.filter(c => c.campaignType === 'follower').length === 0 ? (
-            <div className="text-center py-16 bg-white rounded-2xl border border-zinc-200 p-8 space-y-3 shadow-xs">
-              <div className="w-16 h-16 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto mb-2">
-                <Users className="w-8 h-8" />
+            <div className="text-center py-16 bg-white rounded-2xl border border-zinc-200/80 p-8 space-y-3 shadow-2xs">
+              <div className="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto mb-2">
+                <Users className="w-6 h-6" />
               </div>
-              <h3 className="text-base font-bold text-zinc-800">No Follower Campaigns in Feed</h3>
+              <h3 className="text-sm font-semibold text-zinc-800">No follower campaigns active</h3>
               <p className="text-xs text-zinc-500 max-w-sm mx-auto">
-                Filhal koi follower campaign uplabdh nahi hai. Aap apna khud ka channel follower campaign launch kar sakte hain.
+                Be the first to promote your channel followers to real AtoPlay creators.
               </p>
               <button
                 onClick={() => setActiveTab('campaigns')}
-                className="inline-flex items-center space-x-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm transition-colors cursor-pointer"
+                className="inline-flex items-center space-x-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-semibold text-xs shadow-xs transition-all cursor-pointer"
               >
                 <span>+ Create Follower Campaign</span>
               </button>
@@ -1411,7 +1413,7 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
               return (
                 <div
                   key={camp.id}
-                  className="bg-white rounded-2xl border border-emerald-200 shadow-xs hover:shadow-md transition-all p-4 space-y-3"
+                  className="bg-white rounded-2xl border border-zinc-200/80 shadow-2xs hover:shadow-xs transition-all p-4 space-y-3"
                 >
                   {/* Channel Banner Preview */}
                   {camp.thumbnailUrl && (
@@ -1425,8 +1427,8 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
                         }}
                         className="w-full h-full object-cover"
                       />
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent flex items-end p-2.5">
-                        <div className="text-white text-xs font-extrabold truncate">
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent flex items-end p-2.5">
+                        <div className="text-white text-xs font-semibold truncate">
                           {camp.channelName || camp.userName || 'AtoPlay Creator'}
                         </div>
                       </div>
@@ -1436,31 +1438,31 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
                   <div className="flex items-center justify-between">
                     <div className="flex items-center space-x-3">
                       {!camp.thumbnailUrl && (
-                        <div className="w-12 h-12 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold">
+                        <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center font-bold text-sm border border-emerald-100">
                           👥
                         </div>
                       )}
                       <div>
-                        <h3 className="font-extrabold text-sm sm:text-base text-zinc-900">{camp.channelName || camp.userName || 'AtoPlay Creator'}</h3>
+                        <h3 className="font-semibold text-sm text-zinc-900">{camp.channelName || camp.userName || 'AtoPlay Creator'}</h3>
                         <p className="text-xs text-zinc-500">{camp.title || 'Grow Channel Followers'}</p>
                       </div>
                     </div>
-                    <span className="px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-800 font-black text-xs">
-                      +30 Coins Reward
+                    <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-md border border-emerald-100 tabular-nums">
+                      +30 Coins
                     </span>
                   </div>
 
-                  <div className="flex items-center justify-between text-xs text-zinc-500 font-mono px-1">
-                    <span>Follow AtoPlay Channel to earn reward</span>
-                    <span className="font-mono text-zinc-500">ID: #{shortId}</span>
+                  <div className="flex items-center justify-between text-xs text-zinc-400">
+                    <span>Follow channel to earn reward</span>
+                    <span className="font-mono text-xs">#{shortId}</span>
                   </div>
 
                   <button
                     onClick={() => handleStartFollowTask(camp)}
-                    className="w-full py-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-black text-xs sm:text-sm shadow-md flex items-center justify-center space-x-2 cursor-pointer transition-transform active:scale-98"
+                    className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-semibold text-xs shadow-xs flex items-center justify-center space-x-2 cursor-pointer transition-transform"
                   >
                     <ExternalLink className="w-4 h-4" />
-                    <span>Follow Channel & Earn (+30 Coins)</span>
+                    <span>Follow Channel (+30 Coins)</span>
                   </button>
                 </div>
               );
@@ -1468,24 +1470,24 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
           )}
         </div>
       ) : campaigns.filter(c => c.campaignType !== 'follower').length === 0 ? (
-        <div className="text-center py-16 bg-white rounded-2xl border border-zinc-200 p-8 space-y-3 shadow-xs">
-          <div className="w-16 h-16 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center mx-auto mb-2">
-            <Video className="w-8 h-8" />
+        <div className="text-center py-16 bg-white rounded-2xl border border-zinc-200/80 p-8 space-y-3 shadow-2xs">
+          <div className="w-12 h-12 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center mx-auto mb-2">
+            <Video className="w-6 h-6" />
           </div>
-          <h3 className="text-base font-bold text-zinc-800">No Videos in Feed</h3>
+          <h3 className="text-sm font-semibold text-zinc-800">No videos available right now</h3>
           <p className="text-xs text-zinc-500 max-w-sm mx-auto">
-            Filhal koi video campaign uplabdh nahi hai. Aap apna khud ka video promote karne ke liye "+ Promote Video" par click karein.
+            All current campaigns have been watched or none are available. Click refresh or promote your own video.
           </p>
           <div className="flex items-center justify-center gap-2 pt-2">
             <button
               onClick={() => setActiveTab('campaigns')}
-              className="inline-flex items-center space-x-1.5 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-sm transition-colors cursor-pointer"
+              className="inline-flex items-center space-x-1.5 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-95 text-white font-semibold text-xs shadow-xs transition-all cursor-pointer"
             >
               <span>+ Promote Video</span>
             </button>
             <button
               onClick={fetchCampaigns}
-              className="inline-flex items-center space-x-1.5 px-4 py-2 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-bold text-xs transition-colors cursor-pointer"
+              className="inline-flex items-center space-x-1.5 px-4 py-2 rounded-xl bg-zinc-100 hover:bg-zinc-200 active:scale-95 text-zinc-700 font-semibold text-xs transition-all cursor-pointer"
             >
               <RefreshCw className="w-3.5 h-3.5" />
               <span>Refresh Feed</span>
@@ -1493,22 +1495,20 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
           </div>
         </div>
       ) : (
-        <div className="space-y-3.5">
+        <div className="space-y-3">
           {campaigns.filter(c => c.campaignType !== 'follower').map((camp) => {
             const shortId = format4CharId(camp.displayId, camp.id);
-            const isFollowed = followedCampaignIds.has(camp.id) || Boolean(camp.followedUserIds?.includes(user.id));
 
             return (
               <div
                 key={camp.id}
                 onClick={() => !startingSession && handleSelectCampaign(camp)}
-                className="bg-white rounded-2xl border border-zinc-200/90 shadow-xs hover:shadow-md transition-all p-3 sm:p-4 cursor-pointer group"
+                className="bg-white rounded-2xl border border-zinc-200/80 shadow-2xs hover:shadow-xs hover:border-zinc-300 transition-all p-3 sm:p-4 cursor-pointer group"
               >
                 {/* Top Row: Thumbnail + Info */}
                 <div className="flex items-start space-x-3 sm:space-x-4">
                   {/* High Quality 16:9 Thumbnail */}
-                  <div className="relative w-28 sm:w-36 aspect-video rounded-xl bg-zinc-950 overflow-hidden shrink-0 shadow-xs border border-zinc-200">
-                    {/* AtoPlay Official Video Thumbnail Badge */}
+                  <div className="relative w-28 sm:w-36 aspect-video rounded-xl bg-zinc-950 overflow-hidden shrink-0 shadow-2xs border border-zinc-200/80">
                     <AtoPlayBadge size="sm" className="absolute top-1 left-1 z-10" />
 
                     <img
@@ -1521,59 +1521,58 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
                           target.src = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80";
                         }
                       }}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      className="w-full h-full object-cover group-hover:scale-102 transition-transform duration-300"
                     />
-                    <div className="absolute inset-0 bg-black/10 group-hover:bg-transparent transition-colors" />
-                    <div className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-black/85 text-white text-[9px] font-black tracking-wider">
-                      60s
-                    </div>
-                    <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                      <div className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center shadow-lg">
-                        <Play className="w-4 h-4 fill-current ml-0.5" />
-                      </div>
+                    <div className="absolute inset-0 bg-black/5 group-hover:bg-transparent transition-colors" />
+                    <div className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-black/80 text-white text-[9px] font-semibold tabular-nums">
+                      1:00
                     </div>
                   </div>
 
-                  {/* Title & Creator & 4-Char ID */}
+                  {/* Title & Creator & ID */}
                   <div className="flex-1 min-w-0 space-y-1">
-                    <h3 className="font-bold text-sm sm:text-base text-zinc-900 group-hover:text-blue-600 line-clamp-2 leading-snug transition-colors">
+                    <h3 className="font-semibold text-xs sm:text-sm text-zinc-900 group-hover:text-blue-600 line-clamp-2 leading-snug transition-colors">
                       {camp.title}
                     </h3>
                     
                     <div className="flex items-center flex-wrap gap-1.5 text-xs text-zinc-500 pt-0.5">
-                      <span className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-zinc-100 text-zinc-800 font-mono text-[10px] font-extrabold border border-zinc-200">
-                        ID: #{shortId}
+                      <span className="font-mono text-zinc-400 text-[11px]">
+                        #{shortId}
                       </span>
-                      <span className="text-[11px] text-zinc-500 truncate max-w-[130px]">
-                        • {camp.userName || 'Creator'}
+                      <span className="text-zinc-300" aria-hidden="true">·</span>
+                      <span className="text-[11px] text-zinc-600 truncate max-w-[130px]">
+                        {camp.userName || 'Creator'}
                       </span>
                       {typeof camp.channelFollowers === 'number' && (
-                        <span className="text-[10px] text-zinc-400">
-                          • {camp.channelFollowers} Followers
-                        </span>
+                        <>
+                          <span className="text-zinc-300" aria-hidden="true">·</span>
+                          <span className="text-[10px] text-zinc-400">
+                            {camp.channelFollowers} Followers
+                          </span>
+                        </>
                       )}
                     </div>
                   </div>
                 </div>
 
-                {/* Unified Reward Task Flow Badge */}
-                <div className="mt-2.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-amber-50 via-yellow-50 to-amber-50 border border-amber-200 flex items-center justify-between gap-2">
-                  <div className="flex items-center space-x-1.5 text-xs text-amber-900 font-bold">
-                    <Sparkles className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                    <span className="text-[11px] sm:text-xs">
-                      Earn: <span className="font-extrabold text-zinc-900">60 Coins (Watch)</span> + <span className="font-extrabold text-emerald-700">30 Coins (Follow)</span> = <span className="font-black text-amber-700">90 Coins Total</span>
-                    </span>
+                {/* Micro Reward Row */}
+                <div className="mt-2.5 px-3 py-1.5 rounded-xl bg-zinc-50 border border-zinc-100 flex items-center justify-between text-xs">
+                  <div className="flex items-center space-x-1.5 text-zinc-700">
+                    <Sparkles className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                    <span className="text-[11px] text-zinc-600">Watch 60s &amp; Follow Channel</span>
                   </div>
+                  <span className="font-bold text-amber-600 text-[11px] tabular-nums">+90 Coins Total</span>
                 </div>
 
                 {/* Bottom Row: Verified Badge & Watch Button */}
                 <div className="flex items-center justify-between gap-2 pt-2.5 mt-2.5 border-t border-zinc-100">
-                  <div className="flex items-center space-x-2">
-                    <span className="inline-flex items-center text-[11px] text-blue-700 font-bold bg-blue-50 px-2 py-0.5 rounded-lg border border-blue-200/60">
-                      <ShieldCheck className="w-3.5 h-3.5 text-blue-600 mr-1" />
-                      60s Verified
+                  <div className="flex items-center space-x-2 text-xs text-zinc-500">
+                    <span className="inline-flex items-center text-[11px] text-blue-600 font-medium">
+                      <ShieldCheck className="w-3.5 h-3.5 mr-1" />
+                      60s Watch
                     </span>
-                    <span className="text-[11px] text-zinc-500 font-medium">
+                    <span className="text-zinc-300">·</span>
+                    <span className="text-[11px] font-semibold text-zinc-700 tabular-nums">
                       +{camp.coinsReward || 60} Coins
                     </span>
                   </div>

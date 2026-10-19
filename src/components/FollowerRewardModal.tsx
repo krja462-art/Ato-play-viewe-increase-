@@ -4,7 +4,7 @@ import { Campaign, User, format4CharId, FollowLog } from '../types';
 import { playCoinCelebrationSound } from '../utils/audio';
 import { apiFetch } from '../lib/api';
 import { saveUserCoinsToFirestore, saveFollowLogToFirestore, updateCampaignFollowersInFirestore } from '../lib/firebase';
-import confetti from 'canvas-confetti';
+import { triggerWatchCompleteCelebration } from '../utils/confetti';
 
 interface FollowerRewardModalProps {
   isOpen: boolean;
@@ -89,8 +89,7 @@ export const FollowerRewardModal: React.FC<FollowerRewardModalProps> = ({
         setFeedbackType('success');
         setFeedbackMessage(res.message || `Follow verified! Creator ke followers badhkar ${resolvedAfter} ho gaye (+1 Follower). +30 Coins aapke wallet mein auto-credit ho gaye hain!`);
 
-        playCoinCelebrationSound();
-        try { confetti({ particleCount: 120, spread: 80, origin: { y: 0.6 } }); } catch {}
+        triggerWatchCompleteCelebration();
 
         const updatedUser: User = res.user || { ...user, coins: newCoins };
         onCoinEarned(updatedUser);
