@@ -147,7 +147,7 @@ export const LegalModal: React.FC<LegalModalProps> = ({
             <div>
               <h3 className="font-bold text-zinc-900 text-sm">4. Data Retention &amp; User Rights</h3>
               <p className="text-xs pt-1">
-                You retain complete control over your data. You can delete your campaigns anytime with full coin refunds. You can request complete account deletion by contacting us at <strong className="text-zinc-900">krja462@gmail.com</strong> or using the in-app "Delete Account" tab.
+                You retain complete control over your data. You can delete your campaigns anytime with full coin refunds. You can request complete account deletion by contacting us at <strong className="text-zinc-900">Developer</strong> or using the in-app "Delete Account" tab.
               </p>
             </div>
 
@@ -251,28 +251,15 @@ export const LegalModal: React.FC<LegalModalProps> = ({
               </p>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="p-3.5 rounded-2xl bg-zinc-50 border border-zinc-200 space-y-1">
-                <div className="flex items-center space-x-2 text-zinc-900 font-bold text-xs">
-                  <Mail className="w-4 h-4 text-emerald-600" />
-                  <span>Official Developer Email</span>
-                </div>
-                <p className="text-xs text-blue-600 font-mono font-bold select-all">
-                  krja462@gmail.com
-                </p>
-                <p className="text-[11px] text-zinc-500">Fast response within 24 hours</p>
+            <div className="p-3.5 rounded-2xl bg-zinc-50 border border-zinc-200 space-y-1">
+              <div className="flex items-center space-x-2 text-zinc-900 font-bold text-xs">
+                <Mail className="w-4 h-4 text-emerald-600" />
+                <span>Developer Support</span>
               </div>
-
-              <div className="p-3.5 rounded-2xl bg-zinc-50 border border-zinc-200 space-y-1">
-                <div className="flex items-center space-x-2 text-zinc-900 font-bold text-xs">
-                  <ShieldCheck className="w-4 h-4 text-blue-600" />
-                  <span>Application Store</span>
-                </div>
-                <p className="text-xs text-zinc-800 font-bold">
-                  Uptodown &amp; Android PWA WebAPK
-                </p>
-                <p className="text-[11px] text-zinc-500">Version 2.5.0 Production</p>
-              </div>
+              <p className="text-xs text-zinc-800 font-bold">
+                Developer
+              </p>
+              <p className="text-[11px] text-zinc-500">Fast response within 24 hours</p>
             </div>
 
             {contactSent ? (
@@ -280,7 +267,7 @@ export const LegalModal: React.FC<LegalModalProps> = ({
                 <CheckCircle2 className="w-10 h-10 text-emerald-600 mx-auto" />
                 <h4 className="font-extrabold text-emerald-900 text-sm">Message Prepared!</h4>
                 <p className="text-xs text-emerald-700">
-                  Click below to open your email client and send your query directly to <strong>krja462@gmail.com</strong>.
+                  Click below to open your email client and send your query directly to <strong>Developer</strong>.
                 </p>
                 <a
                   href={`mailto:krja462@gmail.com?subject=AtoPlay%20Booster%20Inquiry%20from%20${encodeURIComponent(contactName || 'User')}&body=${encodeURIComponent(`Name: ${contactName}\nEmail: ${contactEmail}\n\nMessage:\n${contactMessage}`)}`}
@@ -332,7 +319,7 @@ export const LegalModal: React.FC<LegalModalProps> = ({
                   type="submit"
                   className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs sm:text-sm shadow-md transition-colors cursor-pointer"
                 >
-                  Send Message to Developer (krja462@gmail.com)
+                  Send Message to Developer
                 </button>
               </form>
             )}
@@ -354,7 +341,7 @@ export const LegalModal: React.FC<LegalModalProps> = ({
               <ol className="list-decimal pl-5 pt-1 space-y-1.5 text-xs">
                 <li><strong>In-App Logout:</strong> Open the account drawer and tap &ldquo;Sign Out from Google&rdquo; to clear all local tokens and saved sessions.</li>
                 <li><strong>Campaign Removal:</strong> In the &ldquo;Campaigns&rdquo; tab, tap the delete trash icon on any active campaign for an immediate refund and data removal.</li>
-                <li><strong>Permanent Account Purging:</strong> Send an email from your registered account to <strong className="text-zinc-900">krja462@gmail.com</strong> with the subject <em>&ldquo;Request Account Deletion&rdquo;</em>. Our administrator will permanently delete your user profile, coin ledger, and Firestore records within 24 to 48 hours.</li>
+                <li><strong>Permanent Account Purging:</strong> Send an email from your registered account to <strong className="text-zinc-900">Developer Support</strong> with the subject <em>&ldquo;Request Account Deletion&rdquo;</em>. Our administrator will permanently delete your user profile, coin ledger, and Firestore records within 24 to 48 hours.</li>
               </ol>
             </div>
 

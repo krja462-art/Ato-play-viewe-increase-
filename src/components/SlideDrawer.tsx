@@ -460,7 +460,7 @@ export const SlideDrawer: React.FC<SlideDrawerProps> = ({
                   </div>
                   <div>
                     <h4 className="font-bold text-sm text-zinc-900 group-hover:text-emerald-600">Contact Us & Support</h4>
-                    <p className="text-[11px] text-zinc-500">24/7 Creator support (krja462@gmail.com)</p>
+                    <p className="text-[11px] text-zinc-500">24/7 Creator support (Developer)</p>
                   </div>
                 </div>
                 <ChevronRight className="w-4 h-4 text-zinc-400 group-hover:text-emerald-600 group-hover:translate-x-0.5 transition-all" />
@@ -926,7 +926,7 @@ export const SlideDrawer: React.FC<SlideDrawerProps> = ({
                 <CheckCircle2 className="w-12 h-12 text-emerald-600 mx-auto" />
                 <h4 className="font-extrabold text-emerald-900 text-base">Message Sent to Support!</h4>
                 <p className="text-xs text-emerald-700 max-w-sm mx-auto leading-relaxed">
-                  Aapka message support team ko (<strong>krja462@gmail.com</strong>) par bhej diya gaya hai. Hamari team jald hi aapke email par sampark karegi.
+                  Aapka message support team (Developer) ko bhej diya gaya hai. Hamari team jald hi aapke email par sampark karegi.
                 </p>
 
                 <div className="pt-2 flex flex-col sm:flex-row gap-2 justify-center">

@@ -15,7 +15,7 @@ const ai = new GoogleGenAI({
 });
 
 const app = express();
-const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+const PORT = 3000;
 
 app.use(express.json());
 
@@ -3145,11 +3145,7 @@ async function startServer() {
   const distPath = path.resolve(process.cwd(), 'dist');
   const hasDist = fs.existsSync(path.join(distPath, 'index.html'));
 
-  const isProduction =
-    process.env.NODE_ENV === "production" ||
-    Boolean(process.env.K_SERVICE) ||
-    Boolean(process.env.CLOUD_RUN_JOB) ||
-    hasDist;
+  const isProduction = process.env.NODE_ENV === "production";
 
   if (!isProduction) {
     try {

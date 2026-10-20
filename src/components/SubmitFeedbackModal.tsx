@@ -93,7 +93,7 @@ export const SubmitFeedbackModal: React.FC<SubmitFeedbackModalProps> = ({
             </div>
             <div>
               <h3 className="text-lg font-black text-zinc-900 tracking-tight">Submit Feedback</h3>
-              <p className="text-xs text-zinc-500 font-medium">Send suggestions or report bugs to Admin (krja462@gmail.com)</p>
+              <p className="text-xs text-zinc-500 font-medium">Send suggestions or report bugs to Developer</p>
             </div>
           </div>
           <button
@@ -185,7 +185,7 @@ export const SubmitFeedbackModal: React.FC<SubmitFeedbackModalProps> = ({
               <div className="font-bold text-zinc-800">Sender Info:</div>
               <div>Name: <span className="font-semibold text-zinc-900">{user?.name || 'Guest'}</span></div>
               <div>Email: <span className="font-semibold text-zinc-900">{user?.email || 'N/A'}</span></div>
-              <div>Recipient: <span className="font-semibold text-blue-600">krja462@gmail.com (Admin)</span></div>
+              <div>Recipient: <span className="font-semibold text-blue-600">Developer Support</span></div>
             </div>
 
             {/* Action Buttons */}

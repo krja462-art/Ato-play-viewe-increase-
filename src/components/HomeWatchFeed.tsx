@@ -1378,7 +1378,7 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
           <p className="text-xs text-zinc-500">
             {homeSection === 'video' 
               ? "Watch for 60 seconds to earn coins for your channel campaigns" 
-              : "Open channel, spend 4+ seconds, follow on AtoPlay & earn coins"}
+              : "Open channel, follow on AtoPlay & earn coins"}
           </p>
         </div>
         <button

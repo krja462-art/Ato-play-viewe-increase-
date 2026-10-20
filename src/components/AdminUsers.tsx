@@ -304,7 +304,7 @@ export const AdminUsers: React.FC<AdminUsersProps> = ({ user, setActiveTab }) =>
           </div>
           <div>
             <p className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Active Admin</p>
-            <p className="text-sm font-black text-purple-900 mt-0.5 truncate max-w-[200px]">krja462@gmail.com</p>
+            <p className="text-sm font-black text-purple-900 mt-0.5 truncate max-w-[200px]">Developer</p>
           </div>
         </div>
       </div>
