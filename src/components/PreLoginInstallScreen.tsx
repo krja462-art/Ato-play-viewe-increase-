@@ -182,7 +182,7 @@ export const PreLoginInstallScreen: React.FC<PreLoginInstallScreenProps> = ({ on
               AtoPlay Booster
             </span>
             <span className="text-[11px] text-blue-200 font-medium">
-              Official Promotion Network
+              Community Promotion Network
             </span>
           </div>
         </div>

@@ -57,7 +57,7 @@ export const LegalModal: React.FC<LegalModalProps> = ({
               {activeTab === 'contact' && 'Contact & Developer Support'}
               {activeTab === 'delete_account' && 'Account & Data Deletion'}
             </h2>
-            <p className="text-xs text-zinc-500 font-medium">AtoPlay Booster • Official Legal Compliance</p>
+            <p className="text-xs text-zinc-500 font-medium">AtoPlay Booster • Independent Community Platform</p>
           </div>
         </div>
         {!standalone && (
