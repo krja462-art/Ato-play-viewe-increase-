@@ -618,7 +618,7 @@ async function handleClientFallback<T>(endpoint: string, options?: RequestInit, 
       isRealAtoPlay: true,
       rewardCoins: 30,
       alreadyFollowed: false,
-      message: `AtoPlay API: Pehle ke followers = ${initialFollowers}. Channel ko follow karein aur phir 'Verify Follow' dabayein.`
+      message: `AtoPlay API: Previous followers = ${initialFollowers}. Follow the channel on AtoPlay, then tap 'Verify Follow'.`
     } as any;
   }
 
@@ -650,7 +650,7 @@ async function handleClientFallback<T>(endpoint: string, options?: RequestInit, 
       countBefore: initial,
       countAfter,
       user: activeUser,
-      message: `AtoPlay Verified! Followers ${initial} se badhkar ${countAfter} ho gaye (+1 Follower). +30 Coins aapke wallet mein add kar diye gaye hain!`
+      message: `AtoPlay Verified! Followers increased from ${initial} to ${countAfter} (+1 Follower). +30 Coins added to your wallet!`
     } as any;
   }
 

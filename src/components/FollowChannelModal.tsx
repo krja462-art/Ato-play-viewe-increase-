@@ -90,17 +90,17 @@ export const FollowChannelModal: React.FC<FollowChannelModalProps> = ({
           setChannelUrl(data.channelUrl || campaign.videoUrl);
           setChannelName(data.channelName || campaign.userName || 'AtoPlay Creator');
           setIsRealAtoPlay(Boolean(data.isRealAtoPlay));
-          setStatusMessage(`AtoPlay API: Pehle ke followers = ${data.countBefore}. Channel ko follow karein aur phir 'Verify Follow' dabayein.`);
+          setStatusMessage(`AtoPlay API: Previous followers = ${data.countBefore}. Follow the channel, then tap 'Verify Follow'.`);
           setStatusType('info');
         } else if (data && data.alreadyFollowed) {
           setAlreadyFollowed(true);
-          setStatusMessage('Aap pehle hi is creator channel ko follow karke 30 coins prapt kar chuke hain.');
+          setStatusMessage('You have already followed this creator channel and claimed 30 coins.');
           setStatusType('warning');
         } else {
           setCountBefore(initialFallbackCount);
           setChannelUrl(campaign.videoUrl);
           setChannelName(campaign.userName || 'AtoPlay Creator');
-          setStatusMessage(data?.message || `AtoPlay Creator: Pehle ke followers = ${initialFallbackCount}. Channel follow karein aur Verify karein.`);
+          setStatusMessage(data?.message || `AtoPlay Creator: Previous followers = ${initialFallbackCount}. Follow the channel and verify.`);
           setStatusType('info');
         }
       })
@@ -111,7 +111,7 @@ export const FollowChannelModal: React.FC<FollowChannelModalProps> = ({
         setCountBefore(initialFallbackCount);
         setChannelUrl(campaign.videoUrl);
         setChannelName(campaign.userName || 'AtoPlay Creator');
-        setStatusMessage(`AtoPlay Creator: Pehle ke followers = ${initialFallbackCount}. Channel follow karein aur 'Verify Follow' dabayein.`);
+        setStatusMessage(`AtoPlay Creator: Previous followers = ${initialFallbackCount}. Follow the channel and tap 'Verify Follow'.`);
         setStatusType('info');
       })
       .finally(() => {
@@ -189,7 +189,7 @@ export const FollowChannelModal: React.FC<FollowChannelModalProps> = ({
     if (!campaign) return;
 
     if (user?.isFollowRestricted) {
-      setStatusMessage('Aapka account 3 fake follow reports ki wajah se follow bonus ke liye restricted hai.');
+      setStatusMessage('Your account is restricted from claiming follow rewards due to 3 fake follow reports.');
       setStatusType('error');
       return;
     }
@@ -197,7 +197,7 @@ export const FollowChannelModal: React.FC<FollowChannelModalProps> = ({
     const effectiveUsername = user?.atoPlayUsername || user?.name || user?.email?.split('@')[0] || 'atoplay_user';
 
     setVerifying(true);
-    setStatusMessage('AtoPlay API se live check ho raha hai: Kya follower badha...?');
+    setStatusMessage('Checking AtoPlay API live: Has the follower count increased...?');
     setStatusType('info');
 
     try {
@@ -245,7 +245,7 @@ export const FollowChannelModal: React.FC<FollowChannelModalProps> = ({
       } else {
         const afterCount = data?.countAfter ?? countBefore ?? 128;
         setCountAfter(afterCount);
-        setStatusMessage(data?.message || `Follower nahi badha! (Pehle: ${countBefore}, Abhi: ${afterCount}). Kripya AtoPlay par creator ko follow karein.`);
+        setStatusMessage(data?.message || `Follower count did not increase (Previous: ${countBefore}, Current: ${afterCount}). Please follow the creator on AtoPlay.`);
         setStatusType('warning');
       }
     } catch (err) {
@@ -337,7 +337,7 @@ export const FollowChannelModal: React.FC<FollowChannelModalProps> = ({
             {/* Box 1: Count Before */}
             <div className="p-3 bg-white rounded-xl border border-amber-200 shadow-2xs">
               <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider block">
-                Pehle Ke Followers
+                Previous Followers
               </span>
               <div className="text-xl sm:text-2xl font-black text-zinc-900 mt-1">
                 {loadingInitial ? (
@@ -358,7 +358,7 @@ export const FollowChannelModal: React.FC<FollowChannelModalProps> = ({
                 : 'bg-white border-amber-200'
             }`}>
               <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider block">
-                Abhi Ke Followers
+                Current Followers
               </span>
               <div className={`text-xl sm:text-2xl font-black mt-1 ${
                 verifiedSuccess ? 'text-emerald-600' : 'text-zinc-900'
@@ -376,7 +376,7 @@ export const FollowChannelModal: React.FC<FollowChannelModalProps> = ({
               <span className={`text-[10px] font-bold ${
                 verifiedSuccess ? 'text-emerald-700' : 'text-zinc-400'
               }`}>
-                {verifiedSuccess ? '+1 Follower Badha!' : 'After Follow'}
+                {verifiedSuccess ? '+1 Follower Gained!' : 'After Follow'}
               </span>
             </div>
           </div>
@@ -384,7 +384,7 @@ export const FollowChannelModal: React.FC<FollowChannelModalProps> = ({
           {/* Condition explainer badge */}
           <div className="flex items-center space-x-1.5 text-[11px] text-amber-800 font-medium pt-0.5">
             <ShieldCheck className="w-3.5 h-3.5 text-amber-700 shrink-0" />
-            <span>Niyam: AtoPlay API se <strong>kam se kam 1 follower badhna</strong> anivarya hai tabhi 30 coins credit honge.</span>
+            <span>Rule: AtoPlay API must verify <strong>at least 1 follower increase</strong> to credit the 30 coins reward.</span>
           </div>
         </div>
 
@@ -422,14 +422,14 @@ export const FollowChannelModal: React.FC<FollowChannelModalProps> = ({
                   : 'bg-amber-600 hover:bg-amber-700 text-white shadow-amber-600/25 ring-2 ring-amber-300'
               }`}
             >
-              <span>{hasOpenedLink ? '1. Channel Khol Chuke Hain (Fir se kholne ke liye click karein)' : '1. AtoPlay par Channel Kholein aur Follow Karein'}</span>
+              <span>{hasOpenedLink ? '1. Channel Opened (Click to reopen)' : '1. Open Channel on AtoPlay & Follow'}</span>
               <ExternalLink className="w-4 h-4 shrink-0" />
             </button>
 
             {/* Step 2 Button: Verify Follow */}
             {user.isFollowRestricted ? (
               <div className="p-3 bg-red-50 rounded-2xl border border-red-300 text-red-900 text-xs font-semibold">
-                ⚠️ Account Restricted: Aapka account follow bonus ke liye restricted hai (3 fake follow strikes).
+                ⚠️ Account Restricted: Your account is restricted from follow rewards (3 fake follow strikes).
               </div>
             ) : (
               <button
@@ -440,12 +440,12 @@ export const FollowChannelModal: React.FC<FollowChannelModalProps> = ({
                 {verifying ? (
                   <>
                     <RefreshCw className="w-4 h-4 animate-spin" />
-                    <span>AtoPlay API Check Ho Raha Hai...</span>
+                    <span>Verifying with AtoPlay API...</span>
                   </>
                 ) : (
                   <>
                     <CheckCircle2 className="w-4 h-4" />
-                    <span>2. Verify Follow Karein (+30 Coins Claim)</span>
+                    <span>2. Verify Follow (+30 Coins Claim)</span>
                   </>
                 )}
               </button>
@@ -454,7 +454,7 @@ export const FollowChannelModal: React.FC<FollowChannelModalProps> = ({
             {/* Note */}
             <div className="pt-1 text-center">
               <p className="text-[11px] text-zinc-400 font-medium">
-                Kripya AtoPlay par channel ko follow karke wapas yahan Verify par click karein.
+                Please follow the channel on AtoPlay, then return here and click Verify Follow.
               </p>
             </div>
           </div>
@@ -469,7 +469,7 @@ export const FollowChannelModal: React.FC<FollowChannelModalProps> = ({
                 <span>+30 Coins Successfully Credited!</span>
               </h3>
               <p className="text-xs text-emerald-800">
-                AtoPlay API ne safaltapoorvak verify kar liya ki 1 follower badh gaya hai.
+                AtoPlay API successfully verified that the follower count increased by 1.
               </p>
             </div>
 
@@ -477,7 +477,7 @@ export const FollowChannelModal: React.FC<FollowChannelModalProps> = ({
               onClick={onClose}
               className="w-full py-3 px-6 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-black text-xs sm:text-sm shadow-md transition-all cursor-pointer"
             >
-              Done / Feed par wapas jayein
+              Done / Back to Feed
             </button>
           </div>
         )}

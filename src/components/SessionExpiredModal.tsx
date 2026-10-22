@@ -56,7 +56,7 @@ export const SessionExpiredModal: React.FC<SessionExpiredModalProps> = ({
             Session Expired (0 Coins Claimed)
           </h2>
           <p className="text-xs sm:text-sm text-zinc-600">
-            Aap 60 seconds poore hone se pehle hi app par wapas aa gaye.
+            You returned to the app before completing the required 60-second watch duration.
           </p>
         </div>
 
@@ -76,10 +76,10 @@ export const SessionExpiredModal: React.FC<SessionExpiredModalProps> = ({
           <div className="text-left text-xs text-zinc-600 bg-white p-3 rounded-xl border border-zinc-200 space-y-1.5">
             <div className="flex items-center space-x-1.5 font-bold text-red-800">
               <Clock className="w-3.5 h-3.5" />
-              <span>{remaining} seconds kam reh gaye the!</span>
+              <span>{remaining} seconds remained to complete!</span>
             </div>
             <p className="text-[11px] text-zinc-500 leading-relaxed">
-              Token-based security rule: Video ko external browser/tab mein poore 60s chalne dein. Uske baad app par switch karne par hi coins claim hote hain. Premature return karne par token expire ho jata hai.
+              Anti-cheat security rule: Please let the video play for a full 60 seconds in the external browser. Switching back prematurely expires the security token and awards 0 coins.
             </p>
           </div>
 

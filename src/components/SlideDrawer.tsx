@@ -500,29 +500,6 @@ export const SlideDrawer: React.FC<SlideDrawerProps> = ({
                 <ChevronRight className="w-4 h-4 text-zinc-400 group-hover:text-rose-600 group-hover:translate-x-0.5 transition-all" />
               </button>
 
-              {/* Install PWA App Option: Completely removed once downloaded/installed */}
-              {!isInstalled && (
-                <button
-                  onClick={() => setActiveModal('apk_bundle')}
-                  className="w-full p-3 rounded-2xl bg-gradient-to-r from-blue-50 to-indigo-50 hover:from-blue-100 hover:to-indigo-100 border border-blue-200/80 flex items-center justify-between text-left transition-all cursor-pointer group shadow-xs"
-                >
-                  <div className="flex items-center space-x-3">
-                    <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center group-hover:scale-105 transition-transform shadow-xs">
-                      <Download className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <div className="flex items-center space-x-1.5">
-                        <h4 className="font-bold text-sm text-zinc-900 group-hover:text-blue-600">Install App (WebAPK)</h4>
-                        <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-blue-600 text-white font-black uppercase">
-                          Android
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-zinc-500">Direct 1-Click Install on Android</p>
-                    </div>
-                  </div>
-                  <ChevronRight className="w-4 h-4 text-zinc-400 group-hover:text-blue-600 group-hover:translate-x-0.5 transition-all" />
-                </button>
-              )}
             </div>
 
           </div>
@@ -926,7 +903,7 @@ export const SlideDrawer: React.FC<SlideDrawerProps> = ({
                 <CheckCircle2 className="w-12 h-12 text-emerald-600 mx-auto" />
                 <h4 className="font-extrabold text-emerald-900 text-base">Message Sent to Support!</h4>
                 <p className="text-xs text-emerald-700 max-w-sm mx-auto leading-relaxed">
-                  Aapka message support team (Developer) ko bhej diya gaya hai. Hamari team jald hi aapke email par sampark karegi.
+                  Your message has been sent to the support team (Developer). Our team will contact you shortly via email.
                 </p>
 
                 <div className="pt-2 flex flex-col sm:flex-row gap-2 justify-center">
@@ -1129,7 +1106,7 @@ export const SlideDrawer: React.FC<SlideDrawerProps> = ({
                 <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-blue-600 text-white font-bold">Recommended</span>
               </div>
               <p className="text-xs text-zinc-700 leading-relaxed">
-                App ko seedhe apne phone par install karein. Yeh bina kisi browser URL bar ke 100% full screen chalega!
+                Install the app directly on your phone. It runs in 100% full-screen mode without any browser URL bar!
               </p>
               
               {isInstallable ? (
@@ -1147,10 +1124,10 @@ export const SlideDrawer: React.FC<SlideDrawerProps> = ({
                 <div className="p-3 rounded-xl bg-white border border-blue-200 text-xs text-blue-950 font-medium space-y-1">
                   <div className="font-bold flex items-center space-x-1.5 text-blue-800">
                     <Info className="w-4 h-4 text-blue-600 shrink-0" />
-                    <span>Chrome se Install karne ka Tarika:</span>
+                    <span>How to Install via Chrome:</span>
                   </div>
                   <p className="text-zinc-600 pl-5 leading-relaxed text-[11px]">
-                    Chrome browser me upar daayein kone me <strong>Three Dots (⋮)</strong> dabayein aur <strong>"Install app"</strong> ya <strong>"Add to Home screen"</strong> par click karein.
+                    Tap the <strong>three dots (⋮)</strong> in the top-right corner of Chrome, then select <strong>"Install app"</strong> or <strong>"Add to Home screen"</strong>.
                   </p>
                 </div>
               )}
@@ -1163,9 +1140,9 @@ export const SlideDrawer: React.FC<SlideDrawerProps> = ({
                 <span>App Features:</span>
               </div>
               <ul className="text-[11px] text-emerald-900 space-y-1.5 pl-5 list-disc leading-relaxed">
-                <li><strong>No Browser URL Bar:</strong> 100% Full Screen native app interface.</li>
-                <li><strong>Fast Performance:</strong> Home screen aur app drawer se instant open.</li>
-                <li><strong>Real-time Coin Sync:</strong> Watch, earn aur boost seamlessly.</li>
+                <li><strong>No Browser URL Bar:</strong> 100% Full-screen native app interface.</li>
+                <li><strong>Fast Performance:</strong> Opens instantly from your home screen and app drawer.</li>
+                <li><strong>Real-time Coin Sync:</strong> Watch, earn coins, and boost channels seamlessly.</li>
               </ul>
             </div>
 

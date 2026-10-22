@@ -18,9 +18,12 @@ import {
   syncFirebaseUserWithFirestore, 
   saveUserCoinsToFirestore,
   getUserCoinsFromFirestore,
-  subscribeToUserCoins
+  subscribeToUserCoins,
+  fetchUserNotificationsFromFirestore,
+  markNotificationReadInFirestore
 } from './lib/firebase';
 import { apiFetch } from './lib/api';
+import { FollowReportWarningModal, UserWarningNotification } from './components/FollowReportWarningModal';
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -29,6 +32,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const [activeWarningNotif, setActiveWarningNotif] = useState<UserWarningNotification | null>(null);
   const [showInstallScreen, setShowInstallScreen] = useState(() => {
     try {
       if (typeof window !== 'undefined') {
@@ -48,13 +52,16 @@ export default function App() {
   const { isOnline, isReconnected } = useOnlineStatus();
   useTheme(); // Initialize and apply documentElement dark class
 
-  // Android Hardware Back Button & Gesture Navigation Handler for APK / TWA
   const handleTabChange = (newTab: string) => {
     if (newTab !== activeTab) {
       if (typeof window !== 'undefined') {
         window.history.pushState({ tab: newTab }, '', `/?tab=${newTab}`);
       }
       setActiveTab(newTab);
+    }
+    // Always trigger refresh & modal reset whenever home tab is selected or tapped
+    if (newTab === 'home') {
+      setRefreshTrigger(prev => prev + 1);
     }
   };
 
@@ -235,6 +242,53 @@ export default function App() {
     });
     return () => unsub();
   }, [user?.id]);
+
+  // Check for fake follow warning notifications for active user
+  useEffect(() => {
+    if (!user || !user.id) return;
+    let isMounted = true;
+
+    const checkNotifications = async () => {
+      try {
+        const res = await apiFetch('/api/user/notifications', {
+          headers: { 'x-user-id': user.id }
+        });
+        if (res?.success && res.notifications?.length > 0 && isMounted) {
+          setActiveWarningNotif(res.notifications[0]);
+          return;
+        }
+
+        const fNotifs = await fetchUserNotificationsFromFirestore(user.id);
+        if (fNotifs && fNotifs.length > 0 && isMounted) {
+          setActiveWarningNotif(fNotifs[0]);
+        }
+      } catch (err) {
+        console.warn('Error checking warning notifications:', err);
+      }
+    };
+
+    checkNotifications();
+    const interval = setInterval(checkNotifications, 12000);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [user?.id]);
+
+  const handleDismissWarning = async (notifId: string) => {
+    setActiveWarningNotif(null);
+    try {
+      await apiFetch('/api/user/notifications/dismiss', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-user-id': user?.id },
+        body: JSON.stringify({ id: notifId })
+      }).catch(() => {});
+
+      await markNotificationReadInFirestore(notifId).catch(() => {});
+    } catch (e) {
+      console.warn('Error dismissing warning notification:', e);
+    }
+  };
 
   const handleUpdateUser = (updatedUser: User) => {
     if (updatedUser.email?.toLowerCase().trim() === 'krja462@gmail.com' || updatedUser.isAdmin || updatedUser.id.includes('krja462')) {
@@ -461,6 +515,12 @@ export default function App() {
 
       {/* In-App PWA Install Banner */}
       <PWAInstallBanner />
+
+      {/* Account Warning Modal for Reported Followers */}
+      <FollowReportWarningModal
+        notification={activeWarningNotif}
+        onDismiss={handleDismissWarning}
+      />
 
     </div>
   );

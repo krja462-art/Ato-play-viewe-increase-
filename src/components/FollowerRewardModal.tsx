@@ -87,7 +87,7 @@ export const FollowerRewardModal: React.FC<FollowerRewardModalProps> = ({
         const resolvedAfter = typeof res.countAfter === 'number' ? res.countAfter : (baseline + 1);
         setFollowersAfter(resolvedAfter);
         setFeedbackType('success');
-        setFeedbackMessage(res.message || `Follow verified! Creator ke followers badhkar ${resolvedAfter} ho gaye (+1 Follower). +30 Coins aapke wallet mein auto-credit ho gaye hain!`);
+        setFeedbackMessage(res.message || `Follow verified! Creator followers increased to ${resolvedAfter} (+1 Follower). +30 Coins have been credited to your wallet!`);
 
         triggerWatchCompleteCelebration();
 
@@ -124,7 +124,7 @@ export const FollowerRewardModal: React.FC<FollowerRewardModalProps> = ({
         setFollowersAfter(afterCount);
         setFeedbackMessage(
           res?.message || 
-          `AtoPlay API check: Follower nahi badha! (Pehle: ${baseline}, Abhi: ${afterCount}). Kripya AtoPlay par creator channel ko 'Follow' karein aur phir 'Verify Follow' par click karein.`
+          `AtoPlay API check: Follower count did not increase (Previous: ${baseline}, Current: ${afterCount}). Please follow the creator channel on AtoPlay and tap 'Verify Follow'.`
         );
       }
     } catch (err: any) {
@@ -176,7 +176,7 @@ export const FollowerRewardModal: React.FC<FollowerRewardModalProps> = ({
           }`}>
             {isClaimed 
               ? "Awesome! Follower verified via AtoPlay API. +30 Coins credited to your wallet!"
-              : "AtoPlay API se live check ho raha hai: Kya channel par follower badha...?"
+              : "Checking AtoPlay API live: Has the follower count increased on the channel...?"
             }
           </div>
         </div>
@@ -196,7 +196,7 @@ export const FollowerRewardModal: React.FC<FollowerRewardModalProps> = ({
             {/* Box 1: Pehle ke followers */}
             <div className="p-3 rounded-xl bg-white border border-emerald-200 text-center shadow-2xs">
               <span className="text-[10px] text-zinc-500 block uppercase font-black tracking-wider">
-                Pehle ke followers
+                Previous Followers
               </span>
               <div className="text-xl sm:text-2xl font-black text-zinc-900 mt-1">
                 {followersBefore}
@@ -211,7 +211,7 @@ export const FollowerRewardModal: React.FC<FollowerRewardModalProps> = ({
                 : 'bg-white border-emerald-200'
             }`}>
               <span className="text-[10px] text-emerald-900 block uppercase font-black tracking-wider">
-                Abhi ke followers
+                Current Followers
               </span>
               <div className="text-xl sm:text-2xl font-black text-emerald-700 mt-1">
                 {verifying ? (
@@ -224,7 +224,7 @@ export const FollowerRewardModal: React.FC<FollowerRewardModalProps> = ({
                 )}
               </div>
               <span className={`text-[10px] font-bold ${isClaimed ? 'text-emerald-700' : 'text-zinc-400'}`}>
-                {isClaimed ? '+1 Badha!' : 'Live API Count'}
+                {isClaimed ? '+1 Gained!' : 'Live API Count'}
               </span>
             </div>
           </div>
@@ -241,7 +241,7 @@ export const FollowerRewardModal: React.FC<FollowerRewardModalProps> = ({
                 {verifying ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>AtoPlay API se Check Ho Raha Hai...</span>
+                    <span>Verifying with AtoPlay API...</span>
                   </>
                 ) : (
                   <>

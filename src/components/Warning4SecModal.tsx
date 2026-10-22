@@ -40,7 +40,7 @@ export const Warning4SecModal: React.FC<Warning4SecModalProps> = ({
           </h3>
 
           <p className="text-xs text-zinc-600 leading-relaxed pt-1">
-            ⚠️ Aapne AtoPlay channel page par sirf <strong className="text-red-600">{elapsedSeconds} seconds</strong> spend kiye (4 seconds se pehle wapas aagaye) aur channel follow nahi kiya.
+            ⚠️ You only spent <strong className="text-red-600">{elapsedSeconds} seconds</strong> on the AtoPlay channel page (returned before 4 seconds) and did not follow the channel.
           </p>
         </div>
 
@@ -50,7 +50,7 @@ export const Warning4SecModal: React.FC<Warning4SecModalProps> = ({
             <span>Rule:</span>
           </div>
           <p className="text-[11px] text-amber-800 leading-relaxed">
-            Follower reward claim karne ke liye AtoPlay channel par kam se kam <strong>4 seconds</strong> spend karein aur <strong>Follow</strong> button dabayein!
+            To claim the follower reward, spend at least <strong>4 seconds</strong> on the AtoPlay channel and tap the <strong>Follow</strong> button!
           </p>
         </div>
 

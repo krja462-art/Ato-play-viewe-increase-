@@ -149,7 +149,7 @@ export const RewardPopupModal: React.FC<RewardPopupModalProps> = ({
         setFeedbackType('success');
         setFeedbackMessage(
           res.message || 
-          `Follower Verified! Creator ke followers badhkar ${res.countAfter} ho gaye (+1 Follower). +30 Coins aapke wallet mein auto-credit ho gaye hain!`
+          `Follower Verified! Creator followers increased to ${res.countAfter} (+1 Follower). +30 Coins have been credited to your wallet!`
         );
 
         // Save Follow Log to Cloud Firestore
@@ -181,7 +181,7 @@ export const RewardPopupModal: React.FC<RewardPopupModalProps> = ({
         if (typeof res?.countAfter === 'number') setFollowersAfter(res.countAfter);
         setFeedbackMessage(
           res?.message || 
-          `AtoPlay API check: Follower nahi badha! (Pehle: ${res?.countBefore ?? baseline}, Abhi: ${res?.countAfter ?? baseline}). Kripya AtoPlay par creator channel ko 'Follow' karein aur phir 'Verify Follow' par click karein.`
+          `AtoPlay API check: Follower count did not increase (Previous: ${res?.countBefore ?? baseline}, Current: ${res?.countAfter ?? baseline}). Please follow the creator on AtoPlay and click 'Verify Follow'.`
         );
       }
     } catch (err: any) {
@@ -356,7 +356,7 @@ export const RewardPopupModal: React.FC<RewardPopupModalProps> = ({
                 )}
               </div>
               <div className="text-[10px] text-zinc-600">
-                AtoPlay par creator channel ko follow karein, phir upar <strong>"Verify Follow (+30)"</strong> button tap karein. API se follower check hoga aur +30 coins auto credit ho jayenge!
+                Follow the creator's channel on AtoPlay, then tap <strong>"Verify Follow (+30)"</strong> above. The system will verify the new follower count and automatically credit +30 coins!
               </div>
             </div>
           )}

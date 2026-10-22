@@ -20,6 +20,7 @@ import {
   increment,
   arrayUnion,
   collection,
+  addDoc,
   getDocs,
   query,
   limit,
@@ -848,7 +849,8 @@ export const getFollowLogsFromFirestore = async (campaignId: string): Promise<Fo
  */
 export const reportFakeFollowInFirestore = async (
   logId: string, 
-  followerUserId: string
+  followerUserId: string,
+  campaignDetails?: { channelUrl?: string; channelTitle?: string }
 ): Promise<{ warningCount: number; isRestricted: boolean }> => {
   try {
     // 1. Mark follow log as reported
@@ -889,10 +891,65 @@ export const reportFakeFollowInFirestore = async (
       }, { merge: true });
     }
 
+    // 3. Save notification document for reported user
+    try {
+      const channelTitle = campaignDetails?.channelTitle || 'AtoPlay Channel';
+      const channelUrl = campaignDetails?.channelUrl || 'https://atoplay.com';
+      await addDoc(collection(db, 'user_notifications'), {
+        userId: followerUserId,
+        type: 'fake_follow_warning',
+        title: 'Channel Follow Warning: Action Required',
+        message: `The creator of "${channelTitle}" reported that you did not follow or you unsubscribed from their channel after claiming bonus coins.`,
+        notice: 'Notice: Please subscribe to the channel properly using the link below. If you do not follow the channel or continue submitting fake follows, your account will be permanently blocked.',
+        channelUrl,
+        channelTitle,
+        timestamp: new Date().toISOString(),
+        read: false
+      });
+    } catch (nErr) {
+      console.warn('Failed to save notification document:', nErr);
+    }
+
     return { warningCount: newWarningCount, isRestricted };
   } catch (err) {
     console.warn('Error reporting fake follow in Firestore:', err);
     return { warningCount: 1, isRestricted: false };
+  }
+};
+
+/**
+ * Fetch unread notifications for user from Firestore
+ */
+export const fetchUserNotificationsFromFirestore = async (userId: string) => {
+  if (!userId) return [];
+  try {
+    const q = query(
+      collection(db, 'user_notifications'),
+      where('userId', '==', userId),
+      where('read', '==', false)
+    );
+    const snap = await getDocs(q);
+    const list: any[] = [];
+    snap.forEach(docSnap => {
+      list.push({ id: docSnap.id, ...docSnap.data() });
+    });
+    return list;
+  } catch (err) {
+    console.warn('Error fetching user notifications from Firestore:', err);
+    return [];
+  }
+};
+
+/**
+ * Mark notification as read in Firestore
+ */
+export const markNotificationReadInFirestore = async (notifId: string) => {
+  if (!notifId) return;
+  try {
+    const nRef = doc(db, 'user_notifications', notifId);
+    await updateDoc(nRef, { read: true, acknowledgedAt: new Date().toISOString() });
+  } catch (err) {
+    console.warn('Error marking notification read in Firestore:', err);
   }
 };
 

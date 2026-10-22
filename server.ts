@@ -2021,7 +2021,7 @@ app.post("/api/follow/start", async (req, res) => {
   }
 
   if (campaign.userId === activeUser.id) {
-    return res.status(400).json({ success: false, message: "Aap apne khud ke creator channel ko follow karke coins nahi kama sakte." });
+    return res.status(400).json({ success: false, message: "You cannot earn coins by following your own channel." });
   }
 
   // Anti-fraud: Check if user is restricted from follow bonus
@@ -2052,7 +2052,7 @@ app.post("/api/follow/start", async (req, res) => {
     return res.status(400).json({ 
       success: false, 
       alreadyFollowed: true, 
-      message: "Aap pehle hi is channel ko follow karke 30 coins prapt kar chuke hain." 
+      message: "You have already claimed 30 coins for following this channel." 
     });
   }
 
@@ -2082,7 +2082,7 @@ app.post("/api/follow/start", async (req, res) => {
     isRealAtoPlay: result.isRealAtoPlay,
     rewardCoins: 30,
     alreadyFollowed: false,
-    message: `AtoPlay API se creator ke pehle ke followers capture ho gaye (${result.count}). Channel follow karein aur verify karein.`
+    message: `AtoPlay API captured initial follower count (${result.count}). Please follow the channel and click 'Verify Follow'.`
   });
 });
 
@@ -2141,7 +2141,7 @@ app.post("/api/follow/verify", async (req, res) => {
   }
 
   if (campaign.userId === activeUser.id) {
-    return res.status(400).json({ success: false, message: "Aap apne khud ke creator channel ko follow karke coins nahi kama sakte." });
+    return res.status(400).json({ success: false, message: "You cannot earn coins by following your own channel." });
   }
 
   const alreadyFollowed = Boolean(
@@ -2153,7 +2153,7 @@ app.post("/api/follow/verify", async (req, res) => {
     return res.status(400).json({ 
       success: false, 
       alreadyFollowed: true, 
-      message: "Aap pehle hi is channel ke liye 30 coins claim kar chuke hain." 
+      message: "You have already claimed 30 coins for this channel." 
     });
   }
 
@@ -2178,7 +2178,7 @@ app.post("/api/follow/verify", async (req, res) => {
       verified: false,
       countBefore: baseline,
       countAfter: countAfter ?? baseline,
-      message: `AtoPlay API check: Follower nahi badha! (Pehle: ${baseline}, Abhi: ${countAfter ?? baseline}). Kripya AtoPlay par creator channel ko 'Follow' karein aur phir 'Verify Follow' par click karein.`
+      message: `AtoPlay API check: Follower count did not increase (Previous: ${baseline}, Current: ${countAfter ?? baseline}). Please follow the creator on AtoPlay and click 'Verify Follow'.`
     });
   }
 
@@ -2267,7 +2267,7 @@ app.post("/api/follow/verify", async (req, res) => {
     campaignId: campaign.id,
     user: activeUser,
     followLog: followLogEntry,
-    message: `AtoPlay API Verified! Creator ke followers ${countBefore} se badhkar ${countAfter} ho gaye (+1 Follower). +30 Coins aapke wallet mein add kar diye gaye hain!`
+    message: `AtoPlay API Verified! Creator followers increased from ${countBefore} to ${countAfter} (+1 Follower). +30 Coins added to your wallet!`
   });
 });
 
@@ -2317,13 +2317,27 @@ app.get("/api/campaigns/:id/follow-logs", (req, res) => {
   res.json({ success: true, logs });
 });
 
+interface UserNotification {
+  id: string;
+  userId: string;
+  type: 'fake_follow_warning' | 'info';
+  title: string;
+  message: string;
+  notice: string;
+  channelUrl: string;
+  channelTitle?: string;
+  timestamp: string;
+  read: boolean;
+}
+const userNotifications: Record<string, UserNotification[]> = {};
+
 // Endpoint to report a fake follower by creator
 app.post("/api/follow/report-fake", (req, res) => {
   const activeUser = getActiveUser(req);
   if (!activeUser) {
     return res.status(401).json({ success: false, message: "Please log in" });
   }
-  const { logId } = req.body;
+  const { logId, channelUrl: reqChannelUrl, channelTitle: reqChannelTitle } = req.body;
   if (!logId) {
     return res.status(400).json({ success: false, message: "Log ID is required" });
   }
@@ -2363,13 +2377,63 @@ app.post("/api/follow/report-fake", (req, res) => {
     }
   }
 
+  // Create and dispatch warning notification with channel link & block notice to reported user
+  const targetCampaign = campaigns.find(c => c.id === log.campaignId);
+  const resolvedChannelUrl = reqChannelUrl || 
+    (targetCampaign?.channelId ? `https://atoplay.com/channel/${targetCampaign.channelId}` : targetCampaign?.videoUrl || 'https://atoplay.com');
+  const resolvedChannelTitle = reqChannelTitle || targetCampaign?.channelName || targetCampaign?.title || 'AtoPlay Channel';
+
+  const newWarningNotif: UserNotification = {
+    id: `notif_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+    userId: log.followerUserId,
+    type: 'fake_follow_warning',
+    title: 'Channel Follow Warning: Action Required',
+    message: `The creator of "${resolvedChannelTitle}" reported that you did not subscribe or you unfollowed their channel after claiming bonus coins.`,
+    notice: 'Notice: Please subscribe to the channel properly using the link below. If you do not follow the channel or continue submitting fake follows, your account will be permanently blocked.',
+    channelUrl: resolvedChannelUrl,
+    channelTitle: resolvedChannelTitle,
+    timestamp: new Date().toISOString(),
+    read: false
+  };
+
+  if (!userNotifications[log.followerUserId]) {
+    userNotifications[log.followerUserId] = [];
+  }
+  userNotifications[log.followerUserId].unshift(newWarningNotif);
+
   res.json({
     success: true,
-    message: `Report recorded. @${log.followerUsername} has been reported. 30 coins deducted from user. ${isRestricted ? 'Account has reached 3 reports and is now restricted from follow bonuses.' : `Warning count: ${warningCount}/3.`}`,
+    message: `Report recorded. @${log.followerUsername} has been reported. 30 coins deducted from user. Notification sent with channel link. ${isRestricted ? 'Account has reached 3 reports and is now restricted from follow bonuses.' : `Warning strike count: ${warningCount}/3.`}`,
     log,
     warningCount,
-    isRestricted
+    isRestricted,
+    notification: newWarningNotif
   });
+});
+
+// Endpoint to fetch unread notifications for active user
+app.get("/api/user/notifications", (req, res) => {
+  const activeUser = getActiveUser(req);
+  if (!activeUser) {
+    return res.json({ success: true, notifications: [] });
+  }
+  const notifs = userNotifications[activeUser.id] || [];
+  res.json({ success: true, notifications: notifs.filter(n => !n.read) });
+});
+
+// Endpoint to dismiss/acknowledge notification
+app.post("/api/user/notifications/dismiss", (req, res) => {
+  const activeUser = getActiveUser(req);
+  if (!activeUser) {
+    return res.status(401).json({ success: false, message: "Please log in" });
+  }
+  const { id } = req.body;
+  if (userNotifications[activeUser.id]) {
+    userNotifications[activeUser.id] = userNotifications[activeUser.id].map(n => 
+      n.id === id ? { ...n, read: true } : n
+    );
+  }
+  res.json({ success: true });
 });
 
 // Endpoint to list followed campaign IDs for active user
@@ -2999,6 +3063,7 @@ const servePublicImage = (filename: string, contentType: string = "image/png") =
 
 app.get("/favicon.ico", servePublicImage("favicon.ico", "image/x-icon"));
 app.get("/icon.png", servePublicImage("icon.png", "image/png"));
+app.get("/icon-512x512.png", servePublicImage("icon-512x512.png", "image/png"));
 app.get("/Icon.png", servePublicImage("Icon.png", "image/png"));
 app.get("/apkicon.png", servePublicImage("apkicon.png", "image/png"));
 app.get("/screenshot.png", servePublicImage("screenshot.png", "image/png"));

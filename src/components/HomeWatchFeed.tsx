@@ -268,6 +268,27 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
   useEffect(() => {
     fetchCampaigns();
     fetchFollowedCampaigns();
+    // Cleanly reset any open modal or video screen and return to clean home feed
+    setShowExpiredModal(false);
+    setExpiredCampaign(null);
+    setExpiredElapsed(0);
+    setShowRewardModal(false);
+    setRewardData(null);
+    setFollowModalCampaign(null);
+    setShowFollowerRewardModal(false);
+    setSelectedCampaign(null);
+    setIsPlaying(false);
+    setVideoStarted(false);
+    setIsCompleted(false);
+    setStartTime(null);
+    setSessionId(null);
+    setSessionToken(null);
+    isExpiringRef.current = false;
+    isVerifyingRef.current = false;
+    hasLeftAppRef.current = false;
+    wasBackgroundedRef.current = false;
+    localStorage.removeItem(STORAGE_KEY);
+    document.title = 'AtoPlay Booster - Video Promotion Exchange';
   }, [user.id, refreshTrigger, fetchFollowedCampaigns]);
 
   const handleFollowSuccess = (campaignId: string, earnedCoins: number, updatedUser: User) => {
@@ -292,6 +313,7 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
 
     localStorage.removeItem(STORAGE_KEY);
     setIsPlaying(false);
+    setVideoStarted(false);
     setSelectedCampaign(null);
     setStartTime(null);
     setSessionId(null);
@@ -301,7 +323,11 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
     wasBackgroundedRef.current = false;
     document.title = 'AtoPlay Booster - Video Promotion Exchange';
 
-    // Open Expired Notification modal IMMEDIATELY (zero lag, synchronous)
+    // Dismiss any celebratory reward modal if it was open
+    setShowRewardModal(false);
+    setRewardData(null);
+
+    // Open Expired Notification modal IMMEDIATELY
     setExpiredElapsed(elapsed);
     setExpiredCampaign(camp);
     setShowExpiredModal(true);
@@ -321,6 +347,45 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
       isExpiringRef.current = false;
     });
   }, []);
+
+  // Cleanly close Session Expired modal and reset all watch state to clean home feed
+  const handleCloseSessionExpired = useCallback(() => {
+    isExpiringRef.current = false;
+    isVerifyingRef.current = false;
+    hasLeftAppRef.current = false;
+    wasBackgroundedRef.current = false;
+    setShowExpiredModal(false);
+    setExpiredCampaign(null);
+    setExpiredElapsed(0);
+    setSelectedCampaign(null);
+    setIsPlaying(false);
+    setVideoStarted(false);
+    setIsCompleted(false);
+    setStartTime(null);
+    setSessionId(null);
+    setSessionToken(null);
+    localStorage.removeItem(STORAGE_KEY);
+    fetchCampaigns();
+  }, [fetchCampaigns]);
+
+  // Cleanly close Reward modal and reset all watch state to clean home feed
+  const handleCloseRewardModal = useCallback(() => {
+    setShowRewardModal(false);
+    setRewardData(null);
+    setSelectedCampaign(null);
+    setIsPlaying(false);
+    setIsCompleted(false);
+    setVideoStarted(false);
+    setStartTime(null);
+    setSessionId(null);
+    setSessionToken(null);
+    isExpiringRef.current = false;
+    isVerifyingRef.current = false;
+    hasLeftAppRef.current = false;
+    wasBackgroundedRef.current = false;
+    localStorage.removeItem(STORAGE_KEY);
+    fetchCampaigns();
+  }, [fetchCampaigns]);
 
   // Background Follower Check Function (Auto-credits 30 coins if AtoPlay follower count increased)
   const triggerBackgroundFollowCheck = useCallback(async (camp: Campaign, beforeCount?: number) => {
@@ -346,7 +411,7 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
         setFollowAutoCredited(true);
         setUserFollowedChannel(true);
         setIsCheckingFollow(false);
-        setFollowCheckMessage(`🎉 AtoPlay API Verified! Followers ${res.countBefore} se badhkar ${res.countAfter} ho gaye (+1)! +30 Coins aapke wallet me auto-credit ho gaye!`);
+        setFollowCheckMessage(`🎉 AtoPlay API Verified! Followers increased from ${res.countBefore} to ${res.countAfter} (+1)! +30 Coins credited to your wallet!`);
         
         try {
           playCoinCelebrationSound();
@@ -371,9 +436,9 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
         setFollowAutoCredited(true);
         setUserFollowedChannel(true);
         setIsCheckingFollow(false);
-        setFollowCheckMessage('Aap pehle hi is creator channel ke liye 30 coins claim kar chuke hain.');
+        setFollowCheckMessage('You have already claimed 30 coins for following this creator channel.');
       } else {
-        setFollowCheckMessage(`AtoPlay check: Follower count abhi nahi badha (${res?.countBefore ?? channelCountBefore ?? '?'} -> ${res?.countAfter ?? '?'}). Kripya AtoPlay par creator channel ko 'Follow' karein!`);
+        setFollowCheckMessage(`AtoPlay check: Follower count did not increase yet (${res?.countBefore ?? channelCountBefore ?? '?'} -> ${res?.countAfter ?? '?'}). Please follow the creator channel on AtoPlay!`);
         setIsCheckingFollow(false);
       }
     } catch (err) {
@@ -585,8 +650,8 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
           triggerBackgroundFollowCheck(selectedCampaign);
         }
 
-        // Check if user returned after leaving app or at least 1.5s after video started
-        if (wasBackgroundedRef.current || hasLeftAppRef.current || elapsed >= 1.5) {
+        // Check if user returned after leaving app or backgrounding
+        if (wasBackgroundedRef.current || hasLeftAppRef.current) {
           if (elapsed >= 60) {
             // Success: 60s completed! Claim coins with single-use security token
             isVerifyingRef.current = true;
@@ -595,7 +660,6 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
             verifyWatchSession(selectedCampaign.id, sessionId, sessionToken, selectedCampaign);
           } else {
             // Expired: User returned BEFORE 60 seconds!
-            // Requirement: Immediately show the Session Expired modal without requiring a screen tap
             isExpiringRef.current = true;
             handleExpireSession(sessionId, sessionToken, elapsed, selectedCampaign);
           }
@@ -603,7 +667,7 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
       }
     };
 
-    // Frame-based monitor: wakes up instantly (0-16ms) as soon as tab restores to foreground
+    // Frame-based monitor: wakes up instantly as soon as tab restores to foreground
     let animFrameId: number;
     const frameLoop = () => {
       if (document.visibilityState === 'visible' && !document.hidden) {
@@ -630,12 +694,12 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
           document.title = `(🎉 60s Complete! Return to claim) AtoPlay`;
         }
       } else {
-        // App is visible in foreground! Check immediately if user came back
-        if (wasBackgroundedRef.current || hasLeftAppRef.current || elapsed >= 2.0) {
+        // App is visible in foreground! Check if user came back from external browser
+        if (wasBackgroundedRef.current || hasLeftAppRef.current) {
           checkAndProcessResume();
         }
       }
-    }, 300);
+    }, 500);
 
     const onVisibilityChange = () => {
       if (document.hidden || document.visibilityState === 'hidden') {
@@ -645,14 +709,12 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
       }
     };
 
-    // Attach all lifecycle events across Android Chrome, iOS Safari, PWA, and desktop
+    // Attach lifecycle events across Android Chrome, iOS Safari, PWA, and desktop
     document.addEventListener('visibilitychange', onVisibilityChange);
     window.addEventListener('blur', handleWindowBlur);
     window.addEventListener('focus', checkAndProcessResume);
     window.addEventListener('pageshow', checkAndProcessResume);
     document.addEventListener('resume', checkAndProcessResume);
-    window.addEventListener('pointerdown', checkAndProcessResume, { passive: true });
-    window.addEventListener('touchstart', checkAndProcessResume, { passive: true });
 
     return () => {
       cancelAnimationFrame(animFrameId);
@@ -662,8 +724,6 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
       window.removeEventListener('focus', checkAndProcessResume);
       window.removeEventListener('pageshow', checkAndProcessResume);
       document.removeEventListener('resume', checkAndProcessResume);
-      window.removeEventListener('pointerdown', checkAndProcessResume);
-      window.removeEventListener('touchstart', checkAndProcessResume);
       document.title = 'AtoPlay Booster - Video Promotion Exchange';
     };
   }, [isPlaying, startTime, isCompleted, sessionId, sessionToken, selectedCampaign, verifyWatchSession, handleExpireSession]);
@@ -753,11 +813,6 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
       try {
         const safeUrl = cleanVideoUrl(selectedCampaign.videoUrl);
         window.open(safeUrl, '_blank', 'noopener,noreferrer');
-        // Mark that external video was opened so premature back triggers modal immediately
-        setTimeout(() => {
-          hasLeftAppRef.current = true;
-          wasBackgroundedRef.current = true;
-        }, 1200);
       } catch (e) {
         console.error('Popup open error:', e);
       }
@@ -906,7 +961,7 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
                     Ready to Watch & Earn 60 Coins
                   </h4>
                   <p className="text-xs text-zinc-600">
-                    Neeche diye gaye Play button par click karein. Video start hone par hi countdown shuru hoga.
+                    Click the Play button below. The countdown timer starts once the video begins.
                   </p>
                 </div>
               </div>
@@ -932,7 +987,7 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
                     Video & Creator Channel Opened in External Tab
                   </h4>
                   <p className="text-xs text-blue-700">
-                    Poore 60s video dekhein aur AtoPlay par creator channel ko Follow karein taaki total 90 coins credit ho.
+                    Watch the full 60s video and follow the creator's channel on AtoPlay to earn 90 total coins.
                   </p>
                 </div>
               </div>
@@ -1211,7 +1266,7 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
                 <span>Strict Security Rule (Token Invalidation):</span>
               </div>
               <p className="text-[11px] leading-relaxed">
-                App par wapas switch karne par background time calculate hota hai. Agar 60 seconds se kam waqt hua, toh reward claim nahi hoga aur session expire ho jayega.
+                Background elapsed time is calculated upon returning to the app. If less than 60 seconds elapsed, no reward is granted and the session expires.
               </p>
             </div>
 
@@ -1274,16 +1329,7 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
         {/* Celebratory Pop Notification Modal (60s completed) */}
         <RewardPopupModal
           isOpen={showRewardModal}
-          onClose={() => {
-            setShowRewardModal(false);
-            setSelectedCampaign(null);
-            setIsPlaying(false);
-            setIsCompleted(false);
-            setStartTime(null);
-            setSessionId(null);
-            setSessionToken(null);
-            fetchCampaigns();
-          }}
+          onClose={handleCloseRewardModal}
           earnedCoins={rewardData?.earnedCoins || 60}
           newBalance={rewardData?.newBalance || user.coins}
           campaign={rewardData?.campaign || selectedCampaign}
@@ -1295,13 +1341,7 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
           countAfter={rewardData?.countAfter}
           onWatchNext={handleWatchNextVideo}
           onPromoteVideo={() => {
-            setShowRewardModal(false);
-            setSelectedCampaign(null);
-            setIsPlaying(false);
-            setIsCompleted(false);
-            setStartTime(null);
-            setSessionId(null);
-            setSessionToken(null);
+            handleCloseRewardModal();
             setActiveTab('campaigns');
           }}
           user={user}
@@ -1311,20 +1351,16 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
         {/* Session Expired Modal (< 60s completed) */}
         <SessionExpiredModal
           isOpen={showExpiredModal}
-          onClose={() => {
-            isExpiringRef.current = false;
-            isVerifyingRef.current = false;
-            setShowExpiredModal(false);
-            setExpiredCampaign(null);
-            setExpiredElapsed(0);
-            fetchCampaigns();
-          }}
+          onClose={handleCloseSessionExpired}
           elapsedSeconds={expiredElapsed}
           campaign={expiredCampaign}
           onRetry={() => {
             isExpiringRef.current = false;
             isVerifyingRef.current = false;
+            hasLeftAppRef.current = false;
+            wasBackgroundedRef.current = false;
             setShowExpiredModal(false);
+            localStorage.removeItem(STORAGE_KEY);
             if (expiredCampaign) {
               handleSelectCampaign(expiredCampaign);
             }
@@ -1555,15 +1591,6 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
                   </div>
                 </div>
 
-                {/* Micro Reward Row */}
-                <div className="mt-2.5 px-3 py-1.5 rounded-xl bg-zinc-50 border border-zinc-100 flex items-center justify-between text-xs">
-                  <div className="flex items-center space-x-1.5 text-zinc-700">
-                    <Sparkles className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                    <span className="text-[11px] text-zinc-600">Watch 60s &amp; Follow Channel</span>
-                  </div>
-                  <span className="font-bold text-amber-600 text-[11px] tabular-nums">+90 Coins Total</span>
-                </div>
-
                 {/* Bottom Row: Verified Badge & Watch Button */}
                 <div className="flex items-center justify-between gap-2 pt-2.5 mt-2.5 border-t border-zinc-100">
                   <div className="flex items-center space-x-2 text-xs text-zinc-500">
@@ -1606,6 +1633,7 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
                             userClickedFollow: false
                           };
                           localStorage.setItem(STORAGE_KEY, JSON.stringify(newSession));
+                          setSelectedCampaign(camp);
                           setSessionId(data.sessionId);
                           setSessionToken(data.sessionToken);
                           setTimeLeft(60);
@@ -1652,16 +1680,7 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
       {/* Celebratory Pop Notification Modal */}
       <RewardPopupModal
         isOpen={showRewardModal}
-        onClose={() => {
-          setShowRewardModal(false);
-          setSelectedCampaign(null);
-          setIsPlaying(false);
-          setIsCompleted(false);
-          setStartTime(null);
-          setSessionId(null);
-          setSessionToken(null);
-          fetchCampaigns();
-        }}
+        onClose={handleCloseRewardModal}
         earnedCoins={rewardData?.earnedCoins || 60}
         newBalance={rewardData?.newBalance || user.coins}
         campaign={rewardData?.campaign || null}
@@ -1673,13 +1692,7 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
         countAfter={rewardData?.countAfter}
         onWatchNext={handleWatchNextVideo}
         onPromoteVideo={() => {
-          setShowRewardModal(false);
-          setSelectedCampaign(null);
-          setIsPlaying(false);
-          setIsCompleted(false);
-          setStartTime(null);
-          setSessionId(null);
-          setSessionToken(null);
+          handleCloseRewardModal();
           setActiveTab('campaigns');
         }}
         user={user}
@@ -1689,20 +1702,16 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
       {/* Session Expired Modal (If restored and < 60s) */}
       <SessionExpiredModal
         isOpen={showExpiredModal}
-        onClose={() => {
-          isExpiringRef.current = false;
-          isVerifyingRef.current = false;
-          setShowExpiredModal(false);
-          setExpiredCampaign(null);
-          setExpiredElapsed(0);
-          fetchCampaigns();
-        }}
+        onClose={handleCloseSessionExpired}
         elapsedSeconds={expiredElapsed}
         campaign={expiredCampaign}
         onRetry={() => {
           isExpiringRef.current = false;
           isVerifyingRef.current = false;
+          hasLeftAppRef.current = false;
+          wasBackgroundedRef.current = false;
           setShowExpiredModal(false);
+          localStorage.removeItem(STORAGE_KEY);
           if (expiredCampaign) {
             handleSelectCampaign(expiredCampaign);
           }
