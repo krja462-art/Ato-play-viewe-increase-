@@ -451,16 +451,6 @@ export const CreateFollowerCampaignModal: React.FC<CreateFollowerCampaignModalPr
                 </div>
               )}
             </div>
-            {channelUrl && (
-              <button
-                type="button"
-                onClick={() => openAtoPlayUrl(channelUrl, true)}
-                className="w-full py-2.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 font-extrabold text-xs flex items-center justify-center space-x-1.5 transition-colors cursor-pointer"
-              >
-                <ExternalLink className="w-3.5 h-3.5" />
-                <span>Open Channel in Chrome / Browser</span>
-              </button>
-            )}
           </div>
 
           {/* Select Number of Followers Required */}
