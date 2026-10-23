@@ -398,26 +398,6 @@ export const SlideDrawer: React.FC<SlideDrawerProps> = ({
                 Help & Information
               </p>
 
-              {/* Install Android App & PWA Package */}
-              <button
-                onClick={() => setActiveModal('apk_bundle')}
-                className="w-full p-3 rounded-2xl bg-gradient-to-r from-blue-50/90 to-indigo-50/90 hover:from-blue-100/90 hover:to-indigo-100/90 border border-blue-200/80 flex items-center justify-between text-left transition-all cursor-pointer group"
-              >
-                <div className="flex items-center space-x-3">
-                  <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-sm group-hover:scale-105 transition-transform">
-                    <Smartphone className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <div className="flex items-center space-x-1.5">
-                      <h4 className="font-bold text-sm text-zinc-900 group-hover:text-blue-700">Android App & PWA Package</h4>
-                      <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-emerald-600 text-white font-black uppercase">Ready</span>
-                    </div>
-                    <p className="text-[11px] text-zinc-600">1-Click Install • Uptodown & TWA Ready</p>
-                  </div>
-                </div>
-                <ChevronRight className="w-4 h-4 text-blue-600 group-hover:translate-x-0.5 transition-all" />
-              </button>
-
               {/* Privacy Policy */}
               <button
                 onClick={() => setLegalModalTab('privacy')}
@@ -535,7 +515,7 @@ export const SlideDrawer: React.FC<SlideDrawerProps> = ({
                 className="w-full py-3.5 px-4 rounded-2xl bg-red-50 hover:bg-red-100 text-red-600 font-extrabold text-sm flex items-center justify-center space-x-2 border border-red-200 shadow-xs transition-all hover:scale-101 active:scale-98 cursor-pointer"
               >
                 <LogOut className="w-4 h-4" />
-                <span>Sign Out from Google</span>
+                <span>Sign Out</span>
               </button>
             )}
 
