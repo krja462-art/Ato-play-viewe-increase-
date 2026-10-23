@@ -129,13 +129,19 @@ interface ChannelFollowerResult {
 }
 
 function parseFollowersCount(val: any): number | undefined {
-  if (typeof val === 'number') return val;
-  if (!val || typeof val !== 'string') return undefined;
-  const s = val.trim().toUpperCase();
-  if (s.endsWith('M')) return Math.round(parseFloat(s) * 1000000);
-  if (s.endsWith('K')) return Math.round(parseFloat(s) * 1000);
-  const n = parseInt(s.replace(/,/g, ''), 10);
-  return isNaN(n) ? undefined : n;
+  if (typeof val === 'number' && !isNaN(val)) return Math.max(0, Math.floor(val));
+  if (!val) return undefined;
+  const s = String(val).trim().toUpperCase();
+  const mMatch = s.match(/([0-9.]+)\s*M/i);
+  if (mMatch) return Math.round(parseFloat(mMatch[1]) * 1000000);
+  const kMatch = s.match(/([0-9.]+)\s*K/i);
+  if (kMatch) return Math.round(parseFloat(kMatch[1]) * 1000);
+  const numMatch = s.match(/([0-9,]+)/);
+  if (numMatch) {
+    const n = parseInt(numMatch[1].replace(/,/g, ''), 10);
+    return isNaN(n) ? undefined : n;
+  }
+  return undefined;
 }
 
 // Backend Helper to fetch creator's current channel follower count from AtoPlay
@@ -205,49 +211,58 @@ async function fetchChannelFollowerCount(campaign: Campaign, bypassCache: boolea
         } catch {}
       }
 
-      // Also try live scraping channel HTML if JSON API didn't return count
+      // Also try live scraping channel HTML from both /channels/ and /channel/ if JSON API didn't return count
       if (count === null) {
-        try {
-          const sCtrl = new AbortController();
-          const sTo = setTimeout(() => sCtrl.abort(), 4000);
-          const sRes = await fetch(`https://atoplay.com/channels/${channelSlug}`, {
-            signal: sCtrl.signal,
-            headers: {
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-              'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
-            }
-          });
-          clearTimeout(sTo);
-          if (sRes.ok) {
-            const html = await sRes.text();
-            const nextMatch = html.match(/<script[^>]*id=["']__NEXT_DATA__["'][^>]*>([\s\S]*?)<\/script>/i);
-            if (nextMatch && nextMatch[1]) {
-              try {
-                const nJson = JSON.parse(nextMatch[1]);
-                const cObj = nJson?.props?.pageProps?.channel || nJson?.props?.pageProps?.channelData || nJson?.props?.pageProps?.data;
-                if (cObj) {
-                  const parsedF = parseFollowersCount(cObj.followersCount ?? cObj.followers ?? cObj.subscribersCount);
-                  if (parsedF !== undefined) {
-                    count = parsedF;
+        const pageUrls = [
+          `https://atoplay.com/channels/${channelSlug}`,
+          `https://atoplay.com/channel/${channelSlug}`,
+          `https://atoplay.com/c/${channelSlug}`,
+          `https://atoplay.com/user/${channelSlug}`
+        ];
+        for (const pUrl of pageUrls) {
+          try {
+            const sCtrl = new AbortController();
+            const sTo = setTimeout(() => sCtrl.abort(), 4000);
+            const sRes = await fetch(pUrl, {
+              signal: sCtrl.signal,
+              headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+              }
+            });
+            clearTimeout(sTo);
+            if (sRes.ok) {
+              const html = await sRes.text();
+              const nextMatch = html.match(/<script[^>]*id=["']__NEXT_DATA__["'][^>]*>([\s\S]*?)<\/script>/i);
+              if (nextMatch && nextMatch[1]) {
+                try {
+                  const nJson = JSON.parse(nextMatch[1]);
+                  const cObj = nJson?.props?.pageProps?.channel || nJson?.props?.pageProps?.channelData || nJson?.props?.pageProps?.data;
+                  if (cObj) {
+                    const parsedF = parseFollowersCount(cObj.followersCount ?? cObj.followers ?? cObj.subscribersCount);
+                    if (parsedF !== undefined) {
+                      count = parsedF;
+                      isRealAtoPlay = true;
+                    }
+                    if (cObj.name) channelName = cObj.name;
+                  }
+                } catch {}
+              }
+              if (count === null) {
+                const followMatch = html.match(/(?:([0-9.,]+[KkMmBb]?)\s*(?:Followers|followers|subscribers|Subscribers))/i) ||
+                                    html.match(/"(?:followersCount|subscribersCount|followers)"\s*:\s*([0-9]+)/i);
+                if (followMatch && followMatch[1]) {
+                  const parsed = parseFollowersCount(followMatch[1]);
+                  if (parsed !== undefined) {
+                    count = parsed;
                     isRealAtoPlay = true;
                   }
-                  if (cObj.name) channelName = cObj.name;
-                }
-              } catch {}
-            }
-            if (count === null) {
-              const followMatch = html.match(/(?:([0-9.,]+[KkMmBb]?)\s*(?:Followers|followers|subscribers|Subscribers))/i) ||
-                                  html.match(/"(?:followersCount|subscribersCount|followers)"\s*:\s*([0-9]+)/i);
-              if (followMatch && followMatch[1]) {
-                const parsed = parseFollowersCount(followMatch[1]);
-                if (parsed !== undefined) {
-                  count = parsed;
-                  isRealAtoPlay = true;
                 }
               }
+              if (count !== null) break;
             }
-          }
-        } catch {}
+          } catch {}
+        }
       }
     }
 
@@ -2168,9 +2183,12 @@ app.post("/api/follow/verify", async (req, res) => {
   const resultAfter = await fetchChannelFollowerCount(campaign, true);
   let countAfter = resultAfter.count;
 
-  // Strict rule: Follower count MUST genuinely increase compared to countBefore or initialFollowers
-  const baseline = campaign.initialFollowers ?? countBefore;
-  const followerIncreased = (countAfter !== null && (countAfter > countBefore || (baseline >= 0 && countAfter > baseline)));
+  // Strict rule: Follower count MUST genuinely increase compared to baseline
+  const baseline = Math.max(
+    typeof countBefore === 'number' ? countBefore : 0,
+    typeof campaign.initialFollowers === 'number' ? campaign.initialFollowers : 0
+  );
+  const followerIncreased = typeof countAfter === 'number' && countAfter > baseline;
 
   if (!followerIncreased) {
     return res.json({
@@ -2178,7 +2196,7 @@ app.post("/api/follow/verify", async (req, res) => {
       verified: false,
       countBefore: baseline,
       countAfter: countAfter ?? baseline,
-      message: `AtoPlay API check: Follower count did not increase (Previous: ${baseline}, Current: ${countAfter ?? baseline}). Please follow the creator on AtoPlay and click 'Verify Follow'.`
+      message: `AtoPlay check: Follower count did not increase (Previous: ${baseline}, Current: ${countAfter ?? baseline}). Please follow the creator on AtoPlay and click 'Verify Follow'.`
     });
   }
 

@@ -212,7 +212,7 @@ export const FollowChannelModal: React.FC<FollowChannelModalProps> = ({
         })
       });
 
-      if (data && data.success && data.verified) {
+      if (data && data.success && data.verified === true && typeof data.countAfter === 'number' && data.countAfter > (countBefore ?? 0)) {
         setCountAfter(data.countAfter);
         setVerifiedSuccess(true);
         setStatusMessage(data.message || `AtoPlay Verified! Followers ${data.countBefore} ➔ ${data.countAfter} (+1 Follower). +30 Coins credited!`);
@@ -243,22 +243,15 @@ export const FollowChannelModal: React.FC<FollowChannelModalProps> = ({
           onFollowSuccess(campaign.id, data.earnedCoins || 30, data.user);
         }
       } else {
-        const afterCount = data?.countAfter ?? countBefore ?? 128;
+        const afterCount = typeof data?.countAfter === 'number' ? data.countAfter : (countBefore ?? 128);
         setCountAfter(afterCount);
-        setStatusMessage(data?.message || `Follower count did not increase (Previous: ${countBefore}, Current: ${afterCount}). Please follow the creator on AtoPlay.`);
+        setStatusMessage(data?.message || `AtoPlay check: Follower count did not increase (Previous: ${countBefore ?? 128}, Current: ${afterCount}). Please follow the creator on AtoPlay.`);
         setStatusType('warning');
       }
-    } catch (err) {
-      console.error('Verify follow error, applying safe claim:', err);
-      const afterCount = (countBefore ?? 128) + 1;
-      setCountAfter(afterCount);
-      setVerifiedSuccess(true);
-      const updatedCoins = (user.coins || 0) + 30;
-      const updatedUser = { ...user, coins: updatedCoins };
-      onFollowSuccess(campaign.id, 30, updatedUser);
-      setStatusMessage(`AtoPlay Verified! Followers ${countBefore ?? 128} ➔ ${afterCount} (+1 Follower). +30 Coins credited!`);
-      setStatusType('success');
-      playCoinCelebrationSound();
+    } catch (err: any) {
+      console.error('Verify follow error:', err);
+      setStatusMessage(err?.message || 'Verification error. Please follow the creator on AtoPlay and try again.');
+      setStatusType('error');
     } finally {
       setVerifying(false);
     }

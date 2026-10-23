@@ -80,14 +80,14 @@ export const FollowerRewardModal: React.FC<FollowerRewardModalProps> = ({
         })
       });
 
-      if (res?.verified || res?.success) {
+      if (res?.verified === true && typeof res?.countAfter === 'number' && res.countAfter > baseline) {
         const bonus = res.earnedCoins || 30;
         const newCoins = (user.coins || 0) + bonus;
         setIsClaimed(true);
-        const resolvedAfter = typeof res.countAfter === 'number' ? res.countAfter : (baseline + 1);
+        const resolvedAfter = res.countAfter;
         setFollowersAfter(resolvedAfter);
         setFeedbackType('success');
-        setFeedbackMessage(res.message || `Follow verified! Creator followers increased to ${resolvedAfter} (+1 Follower). +30 Coins have been credited to your wallet!`);
+        setFeedbackMessage(res.message || `Follow verified! Creator followers increased from ${baseline} to ${resolvedAfter} (+1 Follower). +30 Coins have been credited to your wallet!`);
 
         triggerWatchCompleteCelebration();
 
@@ -124,7 +124,7 @@ export const FollowerRewardModal: React.FC<FollowerRewardModalProps> = ({
         setFollowersAfter(afterCount);
         setFeedbackMessage(
           res?.message || 
-          `AtoPlay API check: Follower count did not increase (Previous: ${baseline}, Current: ${afterCount}). Please follow the creator channel on AtoPlay and tap 'Verify Follow'.`
+          `AtoPlay check: Follower count did not increase (Previous: ${baseline}, Current: ${afterCount}). Please follow the creator channel on AtoPlay and tap 'Verify Follow'.`
         );
       }
     } catch (err: any) {
