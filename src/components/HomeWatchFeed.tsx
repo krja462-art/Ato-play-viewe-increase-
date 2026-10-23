@@ -748,9 +748,9 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
     }
   };
 
-  // Start video playback: ONLY when user starts video does the 60s countdown begin!
-  const startVideoPlaybackAndTimer = async () => {
-    if (!selectedCampaign) return;
+  // Start video playback: Starts 60s countdown and opens AtoPlay directly
+  const handleStartWatch = async (targetCamp: Campaign) => {
+    if (!targetCamp) return;
     try {
       setStartingSession(true);
       setErrorStatus(null);
@@ -770,7 +770,7 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
           'Content-Type': 'application/json',
           'x-user-id': user.id
         },
-        body: JSON.stringify({ campaignId: selectedCampaign.id })
+        body: JSON.stringify({ campaignId: targetCamp.id })
       });
 
       if (!data?.success) {
@@ -785,7 +785,7 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
       const newSession: ActiveWatchState = {
         sessionId: data.sessionId,
         sessionToken: data.sessionToken,
-        campaign: selectedCampaign,
+        campaign: targetCamp,
         startTime: now,
         durationSeconds: 60,
         userId: user.id,
@@ -801,6 +801,7 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
       hasLeftAppRef.current = false;
       wasBackgroundedRef.current = false;
 
+      setSelectedCampaign(targetCamp);
       setSessionId(data.sessionId);
       setSessionToken(data.sessionToken);
       setTimeLeft(60);
@@ -811,8 +812,8 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
 
       // Step 3: Open AtoPlay video in external browser / custom tab
       try {
-        const safeUrl = cleanVideoUrl(selectedCampaign.videoUrl);
-        window.open(safeUrl, '_blank', 'noopener,noreferrer');
+        const safeUrl = cleanVideoUrl(targetCamp.videoUrl);
+        openAtoPlayUrl(safeUrl);
       } catch (e) {
         console.error('Popup open error:', e);
       }
@@ -821,6 +822,12 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
       alert('Network error while starting watch session. Please try again.');
     } finally {
       setStartingSession(false);
+    }
+  };
+
+  const startVideoPlaybackAndTimer = () => {
+    if (selectedCampaign) {
+      handleStartWatch(selectedCampaign);
     }
   };
 
@@ -913,7 +920,7 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
     if (remaining.length > 0) {
       const nextCamp = remaining[0];
       setTimeout(() => {
-        handleSelectCampaign(nextCamp);
+        handleStartWatch(nextCamp);
       }, 300);
     } else {
       fetchCampaigns();
@@ -929,454 +936,71 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
     );
   }
 
-  // Active External Watch Screen (Shows security token details & 60s rule)
-  if (selectedCampaign) {
-    const elapsedNow = startTime ? Math.max(0, (Date.now() - startTime) / 1000) : 0;
-    const progressPercent = Math.min(100, Math.round((elapsedNow / 60) * 100));
-    const tokenPreview = sessionToken ? `${sessionToken.substring(0, 10)}...${sessionToken.slice(-6)}` : 'Validating...';
-
-    return (
-      <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6 mb-28 bg-white min-h-screen">
-        
-        {/* Top Back Navigation */}
-        <button
-          onClick={handleAbortAndLeave}
-          className="inline-flex items-center space-x-2 text-zinc-600 hover:text-zinc-900 font-semibold text-sm transition-colors cursor-pointer"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          <span>Cancel & Back to Video List</span>
-        </button>
-
-        <div className="bg-white rounded-3xl overflow-hidden border border-zinc-200 shadow-xl space-y-6 p-4 sm:p-7">
-          
-          {/* Video Banner (Waiting vs Active) */}
-          {!videoStarted ? (
-            <div className="p-4 rounded-2xl bg-zinc-50 border border-zinc-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-              <div className="flex items-center space-x-3">
-                <div className="w-10 h-10 rounded-xl bg-red-600 text-white flex items-center justify-center shrink-0 shadow-sm">
-                  <Play className="w-5 h-5 fill-current ml-0.5" />
-                </div>
-                <div>
-                  <h4 className="text-sm font-extrabold text-zinc-900">
-                    Ready to Watch & Earn 60 Coins
-                  </h4>
-                  <p className="text-xs text-zinc-600">
-                    Click the Play button below. The countdown timer starts once the video begins.
-                  </p>
-                </div>
-              </div>
-
-              <button
-                onClick={startVideoPlaybackAndTimer}
-                disabled={startingSession}
-                className="px-5 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-black text-xs flex items-center space-x-2 shadow-md shadow-red-600/20 transition-all shrink-0 cursor-pointer active:scale-95"
-              >
-                <Play className="w-4 h-4 fill-current" />
-                <span>{startingSession ? 'Starting Video...' : 'Start Video & Timer'}</span>
-              </button>
-            </div>
-          ) : (
-            /* External Browser Background Watch Banner */
-            <div className="p-4 rounded-2xl bg-blue-50 border border-blue-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-              <div className="flex items-center space-x-3">
-                <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-sm">
-                  <ExternalLink className="w-5 h-5" />
-                </div>
-                <div>
-                  <h4 className="text-sm font-extrabold text-blue-900">
-                    Video & Creator Channel Opened in External Tab
-                  </h4>
-                  <p className="text-xs text-blue-700">
-                    Watch the full 60s video and follow the creator's channel on AtoPlay to earn 90 total coins.
-                  </p>
-                </div>
-              </div>
-
-              <button
-                onClick={handleOpenBrowserAgain}
-                className="px-4 py-2 rounded-xl bg-white hover:bg-blue-100 text-blue-700 border border-blue-300 font-bold text-xs flex items-center space-x-1.5 shadow-xs transition-colors shrink-0 cursor-pointer"
-              >
-                <span>Re-open Video / Channel</span>
-                <ExternalLink className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          )}
-
-          {/* Unified Reward Task Breakdown Card */}
-          <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-50 via-yellow-50 to-amber-50 border border-amber-200 shadow-2xs space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-2">
-                <Sparkles className="w-4 h-4 text-amber-600" />
-                <span className="text-xs font-black text-amber-900 uppercase tracking-wide">
-                  Earn: 60 Coins (Watch) + 30 Coins (Follow Bonus) = 90 Coins Total
-                </span>
-              </div>
-              <span className="text-xs font-black text-amber-800 bg-amber-200/80 px-2.5 py-0.5 rounded-full border border-amber-300">
-                Max 90 Coins
-              </span>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
-              {/* Task 1: 60s Watch */}
-              <div className={`p-3 rounded-xl border flex items-center justify-between ${
-                timeLeft === 0 
-                  ? 'bg-emerald-50 border-emerald-300 text-emerald-900' 
-                  : videoStarted
-                    ? 'bg-white border-zinc-200 text-zinc-800'
-                    : 'bg-zinc-50 border-zinc-200 text-zinc-600'
-              }`}>
-                <div className="space-y-0.5">
-                  <div className="font-bold flex items-center space-x-1.5">
-                    {timeLeft === 0 ? (
-                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                    ) : videoStarted ? (
-                      <Clock className="w-4 h-4 text-blue-600 animate-spin" />
-                    ) : (
-                      <Clock className="w-4 h-4 text-zinc-400" />
-                    )}
-                    <span>1. Watch 60s Video</span>
-                  </div>
-                  <div className="text-[11px] text-zinc-500">
-                    {timeLeft === 0 ? '60s Time Met!' : videoStarted ? `${timeLeft}s remaining` : 'Waiting for video play (60s timer)'}
-                  </div>
-                </div>
-                <span className="font-black text-emerald-600 text-xs">+60 Coins</span>
-              </div>
-
-              {/* Task 2: Follow Creator Channel on AtoPlay (With live background follower verification & auto coin crediting) */}
-              <div 
-                className={`p-3 rounded-xl border flex flex-col justify-between gap-2.5 transition-all ${
-                  followAutoCredited 
-                    ? 'bg-emerald-50 border-emerald-300 ring-2 ring-emerald-200' 
-                    : isCheckingFollow 
-                      ? 'bg-blue-50/80 border-blue-300' 
-                      : userFollowedChannel 
-                        ? 'bg-amber-50 border-amber-300' 
-                        : 'bg-white border-amber-300 hover:border-amber-400'
-                }`}
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <div className="space-y-0.5">
-                    <div className="font-bold flex items-center space-x-1.5 text-zinc-900">
-                      <UserPlus className={`w-4 h-4 ${followAutoCredited ? 'text-emerald-600' : 'text-amber-600'}`} />
-                      <span>2. Follow on AtoPlay</span>
-                    </div>
-                    <div className="text-[11px] text-zinc-500">
-                      {followAutoCredited 
-                        ? 'Follower Verified (+1)! +30 Coins Credited' 
-                        : isCheckingFollow 
-                          ? 'Checking follower count in background...' 
-                          : userFollowedChannel 
-                            ? 'AtoPlay Follow tapped • Auto-verifying' 
-                            : 'Follow on AtoPlay to earn +30 bonus coins'}
-                    </div>
-                  </div>
-
-                  {followAutoCredited ? (
-                    <span className="px-2.5 py-1 rounded-lg text-[11px] font-black bg-emerald-600 text-white flex items-center space-x-1 shadow-2xs">
-                      <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-                      <span>+30 Credited ✓</span>
-                    </span>
-                  ) : (
-                    <button
-                      type="button"
-                      disabled={isCheckingFollow}
-                      onClick={handleFollowFromWatchScreen}
-                      className="px-3 py-1.5 rounded-lg text-[11px] font-extrabold bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white shadow-2xs transition-all flex items-center space-x-1 cursor-pointer active:scale-95 shrink-0"
-                    >
-                      {isCheckingFollow ? (
-                        <>
-                          <RefreshCw className="w-3 h-3 animate-spin shrink-0" />
-                          <span>Checking...</span>
-                        </>
-                      ) : (
-                        <>
-                          <span>Follow (+30)</span>
-                          <ExternalLink className="w-3 h-3 shrink-0" />
-                        </>
-                      )}
-                    </button>
-                  )}
-                </div>
-
-                {/* Follower check feedback banner */}
-                {followCheckMessage && (
-                  <div className={`text-[11px] p-2 rounded-lg font-medium flex items-center justify-between gap-2 ${
-                    followAutoCredited 
-                      ? 'bg-emerald-100/90 text-emerald-900 border border-emerald-300' 
-                      : isCheckingFollow 
-                        ? 'bg-blue-100 text-blue-900 border border-blue-200 animate-pulse' 
-                        : 'bg-amber-100/90 text-amber-900 border border-amber-200'
-                  }`}>
-                    <span className="line-clamp-2">{followCheckMessage}</span>
-                    {!followAutoCredited && (
-                      <button
-                        type="button"
-                        disabled={isCheckingFollow}
-                        onClick={() => triggerBackgroundFollowCheck(selectedCampaign)}
-                        className="px-2 py-0.5 rounded bg-white text-zinc-800 border border-zinc-300 font-bold text-[10px] shrink-0 hover:bg-zinc-50 cursor-pointer"
-                      >
-                        Re-check
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {typeof channelCountBefore === 'number' && (
-              <div className="text-[11px] text-zinc-600 flex items-center justify-between px-1 pt-1 border-t border-amber-200/50">
-                <span>Creator: <strong className="text-zinc-900">{selectedCampaign.userName || 'AtoPlay Creator'}</strong></span>
-                <span>Followers at start: <strong className="text-zinc-900">{channelCountBefore}</strong></span>
-              </div>
-            )}
-          </div>
-
-          {/* Real Video Thumbnail Banner */}
-          <div className="relative w-full aspect-video sm:h-72 rounded-2xl overflow-hidden border border-zinc-200 shadow-md bg-zinc-950">
-            {/* AtoPlay Official Video Badge */}
-            <AtoPlayBadge size="md" className="absolute top-3 left-3 z-20 shadow-lg" />
-
-            <img
-              src={selectedCampaign.thumbnailUrl}
-              alt={selectedCampaign.title}
-              referrerPolicy="no-referrer"
-              onError={(e) => {
-                const target = e.currentTarget;
-                if (!target.src.includes('unsplash.com')) {
-                  target.src = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80";
-                }
-              }}
-              className="w-full h-full object-cover"
-            />
-
-            {!videoStarted && (
-              <div
-                onClick={startVideoPlaybackAndTimer}
-                className="absolute inset-0 bg-black/40 hover:bg-black/30 transition-all flex flex-col items-center justify-center cursor-pointer group z-10"
-              >
-                <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-blue-600 group-hover:bg-blue-500 group-hover:scale-110 text-white flex items-center justify-center shadow-2xl transition-all">
-                  {startingSession ? (
-                    <div className="w-8 h-8 border-3 border-white border-t-transparent rounded-full animate-spin" />
-                  ) : (
-                    <Play className="w-8 h-8 sm:w-10 sm:h-10 fill-current ml-1" />
-                  )}
-                </div>
-                <span className="mt-3 px-3.5 py-1.5 rounded-xl bg-black/80 text-white font-extrabold text-xs sm:text-sm tracking-wide shadow-md border border-white/20">
-                  {startingSession ? 'Starting Session...' : '▶ Click to Start Video & 60s Countdown'}
-                </span>
-              </div>
-            )}
-            
-            <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/30 to-transparent flex flex-col justify-end p-4 sm:p-6 text-white pointer-events-none">
-              <div className="inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-full bg-blue-600 text-white text-[11px] font-bold uppercase tracking-wider w-max mb-2 shadow-sm">
-                {videoStarted ? (
-                  <>
-                    <Play className="w-3 h-3 fill-current" />
-                    <span>External 60s Session Active ({timeLeft}s)</span>
-                  </>
-                ) : (
-                  <>
-                    <Clock className="w-3 h-3 text-white" />
-                    <span>Ready • Countdown Starts on Video Play</span>
-                  </>
-                )}
-              </div>
-              <h2 className="font-extrabold text-base sm:text-xl line-clamp-2 text-white drop-shadow-sm">
-                {selectedCampaign.title}
-              </h2>
-              <p className="text-xs text-zinc-300 font-mono pt-1">
-                ID: #{format4CharId(selectedCampaign.displayId, selectedCampaign.id)} • Creator: {selectedCampaign.userName || 'AtoPlay Creator'}
-              </p>
-            </div>
-          </div>
-
-          {/* Token & Security Badge Card */}
-          <div className="space-y-3 p-5 rounded-2xl bg-zinc-50 border border-zinc-200">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-2.5">
-                <Clock className={`w-5 h-5 ${timeLeft === 0 ? 'text-emerald-600' : videoStarted ? 'text-blue-600 animate-spin' : 'text-zinc-400'}`} />
-                <div>
-                  <div className="flex items-center space-x-2">
-                    <p className="text-xs text-zinc-500 font-bold uppercase tracking-wider">60s Watch Timer</p>
-                    <span className="inline-flex items-center text-[10px] px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-bold">
-                      <ShieldCheck className="w-3 h-3 mr-1" />
-                      {videoStarted ? 'Token Validated' : 'Ready to Start'}
-                    </span>
-                  </div>
-                  <p className="text-sm sm:text-base font-extrabold text-zinc-900 pt-0.5">
-                    {!videoStarted ? (
-                      <span className="text-zinc-600 font-medium text-xs sm:text-sm">Paused (Click &apos;Start Video&apos; to begin 60s countdown)</span>
-                    ) : timeLeft > 0 ? (
-                      <span>{timeLeft}s Remaining in Background <span className="text-xs text-zinc-500 font-normal">({progressPercent}%)</span></span>
-                    ) : verifying ? (
-                      <span className="text-blue-600 flex items-center space-x-1.5">
-                        <RefreshCw className="w-4 h-4 animate-spin" />
-                        <span>Validating single-use token on server...</span>
-                      </span>
-                    ) : isCompleted ? (
-                      <span className="text-emerald-600 flex items-center space-x-1">
-                        <CheckCircle2 className="w-4 h-4 inline" />
-                        <span>60 Seconds Complete! Coins Claimed 🎉</span>
-                      </span>
-                    ) : errorStatus ? (
-                      <span className="text-red-600 flex items-center space-x-1">
-                        <AlertCircle className="w-4 h-4 inline" />
-                        <span>{errorStatus}</span>
-                      </span>
-                    ) : (
-                      <span className="text-emerald-600">60 Seconds Completed!</span>
-                    )}
-                  </p>
-                </div>
-              </div>
-
-              <div className="text-right">
-                <span className="inline-block px-3 py-1 rounded-full bg-amber-100 border border-amber-300 text-amber-800 text-xs font-black">
-                  90 Coins Reward
-                </span>
-              </div>
-            </div>
-
-            {/* Countdown Progress Bar */}
-            <div className="w-full h-3.5 bg-zinc-200 rounded-full overflow-hidden p-0.5">
-              <div
-                className={`h-full rounded-full transition-all duration-500 ${
-                  timeLeft === 0 ? 'bg-emerald-500' : 'bg-blue-600'
-                }`}
-                style={{ width: `${videoStarted ? progressPercent : 0}%` }}
-              />
-            </div>
-
-            {/* Security Token Live Metadata */}
-            <div className="p-3 bg-white rounded-xl border border-zinc-200 flex items-center justify-between text-xs font-mono text-zinc-600">
-              <div className="flex items-center space-x-1.5">
-                <Key className="w-3.5 h-3.5 text-blue-600" />
-                <span>Token: <span className="text-zinc-900 font-semibold">{videoStarted ? tokenPreview : 'Issued on playback start'}</span></span>
-              </div>
-              <span className="text-[10px] text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full font-sans font-bold">
-                Anti-Cheat Protected
-              </span>
-            </div>
-
-            {/* Crucial Rule Notice */}
-            <div className="p-3 bg-amber-50 border border-amber-200 text-amber-900 rounded-xl text-xs space-y-1">
-              <div className="font-extrabold flex items-center space-x-1">
-                <AlertCircle className="w-3.5 h-3.5 text-amber-700" />
-                <span>Strict Security Rule (Token Invalidation):</span>
-              </div>
-              <p className="text-[11px] leading-relaxed">
-                Background elapsed time is calculated upon returning to the app. If less than 60 seconds elapsed, no reward is granted and the session expires.
-              </p>
-            </div>
-
-            {isCompleted && (
-              <div className="p-3.5 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold rounded-xl flex items-center space-x-2.5">
-                <Award className="w-5 h-5 text-emerald-600 shrink-0" />
-                <span>Backend token verified! Coins have been securely added to your wallet.</span>
-              </div>
-            )}
-          </div>
-
-          {/* Action Buttons */}
-          <div className="pt-2 flex flex-col items-center space-y-3">
-            {!videoStarted ? (
-              <button
-                onClick={startVideoPlaybackAndTimer}
-                disabled={startingSession}
-                className="w-full py-4 px-8 rounded-2xl font-extrabold text-sm sm:text-base shadow-lg bg-blue-600 hover:bg-blue-700 text-white shadow-blue-500/30 hover:scale-102 transition-all cursor-pointer flex items-center justify-center space-x-2"
-              >
-                {startingSession ? (
-                  <>
-                    <RefreshCw className="w-5 h-5 animate-spin" />
-                    <span>Starting Video &amp; 60s Countdown...</span>
-                  </>
-                ) : (
-                  <>
-                    <Play className="w-5 h-5 fill-current" />
-                    <span>Start Video &amp; 60s Countdown</span>
-                  </>
-                )}
-              </button>
-            ) : (
-              <button
-                onClick={handleManualCheckReward}
-                disabled={verifying}
-                className={`w-full py-4 px-8 rounded-2xl font-extrabold text-sm sm:text-base shadow-lg transition-all ${
-                  timeLeft === 0
-                    ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-500/30 ring-4 ring-emerald-100 hover:scale-102 cursor-pointer'
-                    : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-500/30 hover:scale-102 cursor-pointer'
-                }`}
-              >
-                {timeLeft === 0 
-                  ? (userFollowedChannel ? 'Claim 90 Coins (Watch + Follow Complete! 🎉)' : 'Claim 60 Coins (Watch Complete! 🎉)') 
-                  : verifying 
-                    ? 'Verifying Token & Follow Status...' 
-                    : `Check & Claim Reward (${timeLeft}s remaining)`}
-              </button>
-            )}
-
-            <button
-              onClick={handleAbortAndLeave}
-              className="text-xs text-red-500 hover:text-red-700 hover:underline transition-colors cursor-pointer font-semibold"
-            >
-              {videoStarted ? 'Cancel session (expire token now)' : 'Back to video list'}
-            </button>
-          </div>
-
-        </div>
-
-        {/* Celebratory Pop Notification Modal (60s completed) */}
-        <RewardPopupModal
-          isOpen={showRewardModal}
-          onClose={handleCloseRewardModal}
-          earnedCoins={rewardData?.earnedCoins || 60}
-          newBalance={rewardData?.newBalance || user.coins}
-          campaign={rewardData?.campaign || selectedCampaign}
-          baseCoins={rewardData?.baseCoins ?? 60}
-          bonusCoins={rewardData?.bonusCoins ?? 30}
-          followedBonus={rewardData?.followedBonus}
-          message={rewardData?.message}
-          countBefore={rewardData?.countBefore}
-          countAfter={rewardData?.countAfter}
-          onWatchNext={handleWatchNextVideo}
-          onPromoteVideo={() => {
-            handleCloseRewardModal();
-            setActiveTab('campaigns');
-          }}
-          user={user}
-          onCoinEarned={onCoinEarned}
-        />
-
-        {/* Session Expired Modal (< 60s completed) */}
-        <SessionExpiredModal
-          isOpen={showExpiredModal}
-          onClose={handleCloseSessionExpired}
-          elapsedSeconds={expiredElapsed}
-          campaign={expiredCampaign}
-          onRetry={() => {
-            isExpiringRef.current = false;
-            isVerifyingRef.current = false;
-            hasLeftAppRef.current = false;
-            wasBackgroundedRef.current = false;
-            setShowExpiredModal(false);
-            localStorage.removeItem(STORAGE_KEY);
-            if (expiredCampaign) {
-              handleSelectCampaign(expiredCampaign);
-            }
-          }}
-        />
-
-      </div>
-    );
-  }
-
   const videoCampaigns = campaigns.filter(c => c.campaignType !== 'follower');
   const followerCampaigns = campaigns.filter(c => c.campaignType === 'follower' || campaigns.length === 0);
 
   // Main Home Feed Listing
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6 mb-20 bg-white min-h-screen">
+
+      {/* Active Watch Session Status Card */}
+      {isPlaying && selectedCampaign && (
+        <div className="p-4 rounded-2xl bg-gradient-to-r from-red-50 via-amber-50 to-orange-50 border-2 border-red-200 shadow-sm space-y-2 animate-in fade-in duration-200">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div className="flex items-center space-x-3">
+              <div className="w-10 h-10 rounded-xl bg-red-600 text-white flex items-center justify-center font-bold shrink-0 shadow-sm">
+                <Clock className="w-5 h-5 animate-spin" />
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center space-x-1.5">
+                  <span className="text-[10px] uppercase font-black tracking-wider px-2 py-0.5 rounded-full bg-red-100 text-red-800">
+                    60s Session Active
+                  </span>
+                  <span className="text-xs font-mono font-bold text-zinc-500">
+                    #{format4CharId(selectedCampaign.displayId, selectedCampaign.id)}
+                  </span>
+                </div>
+                <h4 className="text-xs sm:text-sm font-extrabold text-zinc-900 truncate max-w-[240px] sm:max-w-md mt-0.5">
+                  {selectedCampaign.title}
+                </h4>
+                <p className="text-[11px] text-zinc-600 font-medium">
+                  {timeLeft > 0 
+                    ? `${timeLeft}s remaining in AtoPlay • Return after 60s to claim +60 Coins` 
+                    : '60s time met! Click claim reward below'}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center space-x-2 w-full sm:w-auto justify-end shrink-0">
+              <button
+                type="button"
+                onClick={handleOpenBrowserAgain}
+                className="px-3 py-1.5 rounded-xl bg-white hover:bg-zinc-100 text-blue-700 border border-blue-200 font-bold text-xs flex items-center space-x-1 transition-colors cursor-pointer"
+              >
+                <span>Re-open Video</span>
+                <ExternalLink className="w-3 h-3" />
+              </button>
+              {timeLeft === 0 ? (
+                <button
+                  type="button"
+                  onClick={handleManualCheckReward}
+                  className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs shadow-md transition-all cursor-pointer animate-bounce"
+                >
+                  Claim +60 Coins
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleAbortAndLeave}
+                  className="px-3 py-1.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-bold text-xs transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
       
       {/* Home Section Segmented Control: Video Views vs Followers */}
       <div className="flex rounded-xl bg-zinc-100 p-1 border border-zinc-200/80">
@@ -1538,7 +1162,7 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
             return (
               <div
                 key={camp.id}
-                onClick={() => !startingSession && handleSelectCampaign(camp)}
+                onClick={() => !startingSession && handleStartWatch(camp)}
                 className="bg-white rounded-2xl border border-zinc-200/80 shadow-2xs hover:shadow-xs hover:border-zinc-300 transition-all p-3 sm:p-4 cursor-pointer group"
               >
                 {/* Top Row: Thumbnail + Info */}
@@ -1607,63 +1231,9 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
                   {/* Watch Video Button */}
                   <button 
                     disabled={startingSession}
-                    onClick={async (e) => {
+                    onClick={(e) => {
                       e.stopPropagation();
-                      try {
-                        setStartingSession(true);
-                        const data = await apiFetch('/api/watch/start-session', {
-                          method: 'POST',
-                          headers: {
-                            'Content-Type': 'application/json',
-                            'x-user-id': user.id
-                          },
-                          body: JSON.stringify({ campaignId: camp.id })
-                        });
-
-                        if (data?.success) {
-                          const now = data.startTime || Date.now();
-                          const newSession: ActiveWatchState = {
-                            sessionId: data.sessionId,
-                            sessionToken: data.sessionToken,
-                            campaign: camp,
-                            startTime: now,
-                            durationSeconds: 60,
-                            userId: user.id,
-                            countBefore: data.countBefore,
-                            userClickedFollow: false
-                          };
-                          localStorage.setItem(STORAGE_KEY, JSON.stringify(newSession));
-                          setSelectedCampaign(camp);
-                          setSessionId(data.sessionId);
-                          setSessionToken(data.sessionToken);
-                          setTimeLeft(60);
-                          setStartTime(now);
-                          setVideoStarted(true);
-                          setIsPlaying(true);
-                          setIsCompleted(false);
-                          hasLeftAppRef.current = false;
-
-                          // Ensure clean canonical video URL (fixes double paste or malformed links)
-                          const targetUrl = cleanVideoUrl(camp.videoUrl || '');
-
-                          // Directly open the video URL instantly in a new tab/window
-                          try {
-                            const newWindow = window.open(targetUrl, '_blank');
-                            if (!newWindow) {
-                              window.location.href = targetUrl;
-                            }
-                          } catch (err) {
-                            console.error('Popup open error:', err);
-                            window.location.href = targetUrl;
-                          }
-                        } else {
-                          alert(data?.message || 'Could not start watch session.');
-                        }
-                      } catch (err) {
-                        console.error('Error starting session:', err);
-                      } finally {
-                        setStartingSession(false);
-                      }
+                      handleStartWatch(camp);
                     }}
                     className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-black text-xs sm:text-sm shadow-md shadow-blue-500/20 transition-all hover:scale-102 active:scale-95 cursor-pointer flex items-center space-x-1.5 shrink-0"
                   >
@@ -1754,6 +1324,47 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
         />
       )}
 
+
+      {/* Celebration Pop Reward Modal (60s Completed) */}
+      <RewardPopupModal
+        isOpen={showRewardModal}
+        onClose={handleCloseRewardModal}
+        earnedCoins={rewardData?.earnedCoins || 60}
+        newBalance={rewardData?.newBalance || user.coins}
+        campaign={rewardData?.campaign || selectedCampaign}
+        baseCoins={rewardData?.baseCoins ?? 60}
+        bonusCoins={rewardData?.bonusCoins ?? 30}
+        followedBonus={rewardData?.followedBonus}
+        message={rewardData?.message}
+        countBefore={rewardData?.countBefore}
+        countAfter={rewardData?.countAfter}
+        onWatchNext={handleWatchNextVideo}
+        onPromoteVideo={() => {
+          handleCloseRewardModal();
+          setActiveTab('campaigns');
+        }}
+        user={user}
+        onCoinEarned={onCoinEarned}
+      />
+
+      {/* Session Expired Modal (< 60s completed) */}
+      <SessionExpiredModal
+        isOpen={showExpiredModal}
+        onClose={handleCloseSessionExpired}
+        elapsedSeconds={expiredElapsed}
+        campaign={expiredCampaign}
+        onRetry={() => {
+          isExpiringRef.current = false;
+          isVerifyingRef.current = false;
+          hasLeftAppRef.current = false;
+          wasBackgroundedRef.current = false;
+          setShowExpiredModal(false);
+          localStorage.removeItem(STORAGE_KEY);
+          if (expiredCampaign) {
+            handleStartWatch(expiredCampaign);
+          }
+        }}
+      />
     </div>
   );
 };
