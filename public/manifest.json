@@ -13,8 +13,12 @@
   "background_color": "#ffffff",
   "theme_color": "#2563eb",
   "categories": ["entertainment", "utilities", "social"],
+  "iarc_rating_id": "e84b072d-71b3-4d3e-86ae-31a8ce4e53b7",
   "prefer_related_applications": false,
   "handle_links": "preferred",
+  "launch_handler": {
+    "client_mode": ["navigate-existing", "auto"]
+  },
   "icons": [
     {
       "src": "/pwa-192x192.png",

@@ -398,6 +398,26 @@ export const SlideDrawer: React.FC<SlideDrawerProps> = ({
                 Help & Information
               </p>
 
+              {/* Install Android App & PWA Package */}
+              <button
+                onClick={() => setActiveModal('apk_bundle')}
+                className="w-full p-3 rounded-2xl bg-gradient-to-r from-blue-50/90 to-indigo-50/90 hover:from-blue-100/90 hover:to-indigo-100/90 border border-blue-200/80 flex items-center justify-between text-left transition-all cursor-pointer group"
+              >
+                <div className="flex items-center space-x-3">
+                  <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-sm group-hover:scale-105 transition-transform">
+                    <Smartphone className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center space-x-1.5">
+                      <h4 className="font-bold text-sm text-zinc-900 group-hover:text-blue-700">Android App & PWA Package</h4>
+                      <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-emerald-600 text-white font-black uppercase">Ready</span>
+                    </div>
+                    <p className="text-[11px] text-zinc-600">1-Click Install • Uptodown & TWA Ready</p>
+                  </div>
+                </div>
+                <ChevronRight className="w-4 h-4 text-blue-600 group-hover:translate-x-0.5 transition-all" />
+              </button>
+
               {/* Privacy Policy */}
               <button
                 onClick={() => setLegalModalTab('privacy')}
@@ -1137,12 +1157,12 @@ export const SlideDrawer: React.FC<SlideDrawerProps> = ({
             <div className="p-4 rounded-2xl bg-emerald-50/60 border border-emerald-200/80 space-y-2">
               <div className="flex items-center space-x-2 font-bold text-emerald-800 text-xs">
                 <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                <span>App Features:</span>
+                <span>Uptodown & PWABuilder Package Ready (v2.5.0):</span>
               </div>
               <ul className="text-[11px] text-emerald-900 space-y-1.5 pl-5 list-disc leading-relaxed">
-                <li><strong>No Browser URL Bar:</strong> 100% Full-screen native app interface.</li>
-                <li><strong>Fast Performance:</strong> Opens instantly from your home screen and app drawer.</li>
-                <li><strong>Real-time Coin Sync:</strong> Watch, earn coins, and boost channels seamlessly.</li>
+                <li><strong>No Browser URL Bar:</strong> 100% Full-screen native TWA & standalone app interface.</li>
+                <li><strong>Digital Asset Links Verified:</strong> <code className="text-[10px] bg-emerald-100/80 px-1 py-0.5 rounded font-mono">/.well-known/assetlinks.json</code> active with SHA-256 signatures.</li>
+                <li><strong>Web Manifest & Service Worker:</strong> All icons (192px, 512px, maskable), screenshots, and offline cache verified.</li>
               </ul>
             </div>
 
