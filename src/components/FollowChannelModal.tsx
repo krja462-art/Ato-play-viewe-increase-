@@ -197,7 +197,7 @@ export const FollowChannelModal: React.FC<FollowChannelModalProps> = ({
     const effectiveUsername = user?.atoPlayUsername || user?.name || user?.email?.split('@')[0] || 'atoplay_user';
 
     setVerifying(true);
-    setStatusMessage('Checking AtoPlay API live: Has the follower count increased...?');
+    setStatusMessage(null);
     setStatusType('info');
 
     try {

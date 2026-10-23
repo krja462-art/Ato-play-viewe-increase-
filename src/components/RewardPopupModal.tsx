@@ -134,7 +134,7 @@ export const RewardPopupModal: React.FC<RewardPopupModalProps> = ({
         })
       });
 
-      if (res?.verified || res?.success) {
+      if (res?.verified === true && typeof res?.countAfter === 'number' && res.countAfter > baseline) {
         const bonus = res.earnedCoins || 30;
         const newTotal = baseCoins + bonus;
         const updatedCoins = res.newBalance ?? (currentWalletBalance + bonus);

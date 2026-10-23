@@ -265,30 +265,36 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
     }
   }, [user.id]);
 
+  const prevRefreshTriggerRef = useRef(refreshTrigger);
+
   useEffect(() => {
     fetchCampaigns();
     fetchFollowedCampaigns();
-    // Cleanly reset any open modal or video screen and return to clean home feed
-    setShowExpiredModal(false);
-    setExpiredCampaign(null);
-    setExpiredElapsed(0);
-    setShowRewardModal(false);
-    setRewardData(null);
-    setFollowModalCampaign(null);
-    setShowFollowerRewardModal(false);
-    setSelectedCampaign(null);
-    setIsPlaying(false);
-    setVideoStarted(false);
-    setIsCompleted(false);
-    setStartTime(null);
-    setSessionId(null);
-    setSessionToken(null);
-    isExpiringRef.current = false;
-    isVerifyingRef.current = false;
-    hasLeftAppRef.current = false;
-    wasBackgroundedRef.current = false;
-    localStorage.removeItem(STORAGE_KEY);
-    document.title = 'AtoPlay Booster - Video Promotion Exchange';
+
+    // Only reset modals and active watch state when user explicitly triggers a refresh
+    if (prevRefreshTriggerRef.current !== refreshTrigger) {
+      prevRefreshTriggerRef.current = refreshTrigger;
+      setShowExpiredModal(false);
+      setExpiredCampaign(null);
+      setExpiredElapsed(0);
+      setShowRewardModal(false);
+      setRewardData(null);
+      setFollowModalCampaign(null);
+      setShowFollowerRewardModal(false);
+      setSelectedCampaign(null);
+      setIsPlaying(false);
+      setVideoStarted(false);
+      setIsCompleted(false);
+      setStartTime(null);
+      setSessionId(null);
+      setSessionToken(null);
+      isExpiringRef.current = false;
+      isVerifyingRef.current = false;
+      hasLeftAppRef.current = false;
+      wasBackgroundedRef.current = false;
+      localStorage.removeItem(STORAGE_KEY);
+      document.title = 'AtoPlay Booster - Video Promotion Exchange';
+    }
   }, [user.id, refreshTrigger, fetchFollowedCampaigns]);
 
   const handleFollowSuccess = (campaignId: string, earnedCoins: number, updatedUser: User) => {
@@ -493,6 +499,7 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
     didFollow?: boolean
   ) => {
     if (isVerifyingRef.current) return;
+    isVerifyingRef.current = true;
     try {
       setVerifying(true);
       setErrorStatus(null);
@@ -574,6 +581,7 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
       console.error('Watch verification network error', err);
       setErrorStatus('Network error while claiming reward. Please check your connection.');
     } finally {
+      isVerifyingRef.current = false;
       setVerifying(false);
     }
   }, [user.id, onCoinEarned]);
@@ -621,6 +629,12 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
       return;
     }
 
+    // If window already lost focus or became hidden when external tab opened before effect mounted
+    if (document.hidden || document.visibilityState === 'hidden' || !document.hasFocus()) {
+      hasLeftAppRef.current = true;
+      wasBackgroundedRef.current = true;
+    }
+
     // App minimized / backgrounded handler
     const handleVisibilityHidden = () => {
       if (document.hidden || document.visibilityState === 'hidden') {
@@ -636,6 +650,9 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
 
     // Immediate resume handler: executes on the exact instant user returns to the app
     const checkAndProcessResume = () => {
+      const elapsed = (Date.now() - startTime) / 1000;
+      if (elapsed < 0.6) return;
+
       // Check if visible in foreground and not currently processing
       if (
         document.visibilityState === 'visible' &&
@@ -643,8 +660,6 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
         !isVerifyingRef.current &&
         !isExpiringRef.current
       ) {
-        const elapsed = (Date.now() - startTime) / 1000;
-
         // If user returned after tapping follow on AtoPlay, trigger background check right away
         if (userFollowedChannel && !followAutoCredited && selectedCampaign) {
           triggerBackgroundFollowCheck(selectedCampaign);
@@ -654,13 +669,11 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
         if (wasBackgroundedRef.current || hasLeftAppRef.current) {
           if (elapsed >= 60) {
             // Success: 60s completed! Claim coins with single-use security token
-            isVerifyingRef.current = true;
             setIsPlaying(false);
             setTimeLeft(0);
             verifyWatchSession(selectedCampaign.id, sessionId, sessionToken, selectedCampaign);
           } else {
             // Expired: User returned BEFORE 60 seconds!
-            isExpiringRef.current = true;
             handleExpireSession(sessionId, sessionToken, elapsed, selectedCampaign);
           }
         }
@@ -670,7 +683,7 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
     // Frame-based monitor: wakes up instantly as soon as tab restores to foreground
     let animFrameId: number;
     const frameLoop = () => {
-      if (document.visibilityState === 'visible' && !document.hidden) {
+      if (document.visibilityState === 'visible' && !document.hidden && document.hasFocus()) {
         if (wasBackgroundedRef.current || hasLeftAppRef.current) {
           checkAndProcessResume();
         }
@@ -685,7 +698,7 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
       const remaining = Math.max(0, 60 - Math.floor(elapsed));
       setTimeLeft(remaining);
 
-      if (document.hidden || document.visibilityState === 'hidden') {
+      if (document.hidden || document.visibilityState === 'hidden' || !document.hasFocus()) {
         hasLeftAppRef.current = true;
         wasBackgroundedRef.current = true;
         if (remaining > 0) {
@@ -694,17 +707,28 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
           document.title = `(🎉 60s Complete! Return to claim) AtoPlay`;
         }
       } else {
-        // App is visible in foreground! Check if user came back from external browser
+        // App is visible & focused in foreground! Check if user came back from external browser
         if (wasBackgroundedRef.current || hasLeftAppRef.current) {
           checkAndProcessResume();
         }
       }
-    }, 500);
+    }, 300);
 
     const onVisibilityChange = () => {
       if (document.hidden || document.visibilityState === 'hidden') {
         handleVisibilityHidden();
       } else {
+        hasLeftAppRef.current = true;
+        wasBackgroundedRef.current = true;
+        checkAndProcessResume();
+      }
+    };
+
+    const onFocusOrPageShow = () => {
+      const elapsed = (Date.now() - startTime) / 1000;
+      if (elapsed >= 0.6) {
+        hasLeftAppRef.current = true;
+        wasBackgroundedRef.current = true;
         checkAndProcessResume();
       }
     };
@@ -712,18 +736,18 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
     // Attach lifecycle events across Android Chrome, iOS Safari, PWA, and desktop
     document.addEventListener('visibilitychange', onVisibilityChange);
     window.addEventListener('blur', handleWindowBlur);
-    window.addEventListener('focus', checkAndProcessResume);
-    window.addEventListener('pageshow', checkAndProcessResume);
-    document.addEventListener('resume', checkAndProcessResume);
+    window.addEventListener('focus', onFocusOrPageShow);
+    window.addEventListener('pageshow', onFocusOrPageShow);
+    document.addEventListener('resume', onFocusOrPageShow);
 
     return () => {
       cancelAnimationFrame(animFrameId);
       clearInterval(timerInterval);
       document.removeEventListener('visibilitychange', onVisibilityChange);
       window.removeEventListener('blur', handleWindowBlur);
-      window.removeEventListener('focus', checkAndProcessResume);
-      window.removeEventListener('pageshow', checkAndProcessResume);
-      document.removeEventListener('resume', checkAndProcessResume);
+      window.removeEventListener('focus', onFocusOrPageShow);
+      window.removeEventListener('pageshow', onFocusOrPageShow);
+      document.removeEventListener('resume', onFocusOrPageShow);
       document.title = 'AtoPlay Booster - Video Promotion Exchange';
     };
   }, [isPlaying, startTime, isCompleted, sessionId, sessionToken, selectedCampaign, verifyWatchSession, handleExpireSession]);
@@ -753,6 +777,8 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
     if (!targetCamp) return;
     try {
       setStartingSession(true);
+      setShowExpiredModal(false);
+      setShowRewardModal(false);
       setErrorStatus(null);
       setUserFollowedChannel(false);
       setIsCheckingFollow(false);
@@ -763,63 +789,72 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
         followPollingRef.current = null;
       }
 
-      // Step 1: Start secure session on server with crypto token, timestamp & countBefore
-      const data = await apiFetch('/api/watch/start-session', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-user-id': user.id
-        },
-        body: JSON.stringify({ campaignId: targetCamp.id })
-      });
-
-      if (!data?.success) {
-        alert(data?.message || 'Could not start watch session. Please try again.');
-        return;
-      }
-
-      const now = data.startTime || Date.now();
-      const countBefore = data.countBefore;
-      setChannelCountBefore(countBefore);
-
-      const newSession: ActiveWatchState = {
-        sessionId: data.sessionId,
-        sessionToken: data.sessionToken,
-        campaign: targetCamp,
-        startTime: now,
-        durationSeconds: 60,
-        userId: user.id,
-        countBefore: countBefore,
-        userClickedFollow: false
-      };
-
-      // Step 2: Persist token to localStorage
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(newSession));
+      const now = Date.now();
+      const fallbackSessionId = `ws_${now}`;
+      const fallbackToken = `sec_tok_${now}`;
 
       isExpiringRef.current = false;
       isVerifyingRef.current = false;
       hasLeftAppRef.current = false;
       wasBackgroundedRef.current = false;
 
+      const initialSession: ActiveWatchState = {
+        sessionId: fallbackSessionId,
+        sessionToken: fallbackToken,
+        campaign: targetCamp,
+        startTime: now,
+        durationSeconds: 60,
+        userId: user.id,
+        countBefore: targetCamp.channelFollowers,
+        userClickedFollow: false
+      };
+
+      // Persist immediately & set active watch state before opening external link
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(initialSession));
       setSelectedCampaign(targetCamp);
-      setSessionId(data.sessionId);
-      setSessionToken(data.sessionToken);
+      setSessionId(fallbackSessionId);
+      setSessionToken(fallbackToken);
       setTimeLeft(60);
       setStartTime(now);
       setVideoStarted(true);
       setIsPlaying(true);
       setIsCompleted(false);
 
-      // Step 3: Open AtoPlay video in external browser / custom tab
+      // Open AtoPlay video in external browser / custom tab synchronously on user tap
       try {
         const safeUrl = cleanVideoUrl(targetCamp.videoUrl);
         openAtoPlayUrl(safeUrl);
       } catch (e) {
         console.error('Popup open error:', e);
       }
+
+      // Sync official session token & baseline follower count with server in background
+      apiFetch('/api/watch/start-session', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': user.id
+        },
+        body: JSON.stringify({ campaignId: targetCamp.id })
+      }).then((data) => {
+        if (data?.success && data.sessionId && data.sessionToken) {
+          setChannelCountBefore(data.countBefore);
+          setSessionId(data.sessionId);
+          setSessionToken(data.sessionToken);
+          const updatedSession: ActiveWatchState = {
+            ...initialSession,
+            sessionId: data.sessionId,
+            sessionToken: data.sessionToken,
+            countBefore: data.countBefore
+          };
+          // Only update STORAGE_KEY if session is still active
+          if (localStorage.getItem(STORAGE_KEY)) {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedSession));
+          }
+        }
+      }).catch(() => {});
     } catch (err) {
       console.error('Failed to start watch session', err);
-      alert('Network error while starting watch session. Please try again.');
     } finally {
       setStartingSession(false);
     }
@@ -1187,47 +1222,6 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
           })}
         </div>
       )}
-
-      {/* Celebratory Pop Notification Modal */}
-      <RewardPopupModal
-        isOpen={showRewardModal}
-        onClose={handleCloseRewardModal}
-        earnedCoins={rewardData?.earnedCoins || 60}
-        newBalance={rewardData?.newBalance || user.coins}
-        campaign={rewardData?.campaign || null}
-        baseCoins={rewardData?.baseCoins ?? 60}
-        bonusCoins={rewardData?.bonusCoins ?? 30}
-        followedBonus={rewardData?.followedBonus}
-        message={rewardData?.message}
-        countBefore={rewardData?.countBefore}
-        countAfter={rewardData?.countAfter}
-        onWatchNext={handleWatchNextVideo}
-        onPromoteVideo={() => {
-          handleCloseRewardModal();
-          setActiveTab('campaigns');
-        }}
-        user={user}
-        onCoinEarned={onCoinEarned}
-      />
-
-      {/* Session Expired Modal (If restored and < 60s) */}
-      <SessionExpiredModal
-        isOpen={showExpiredModal}
-        onClose={handleCloseSessionExpired}
-        elapsedSeconds={expiredElapsed}
-        campaign={expiredCampaign}
-        onRetry={() => {
-          isExpiringRef.current = false;
-          isVerifyingRef.current = false;
-          hasLeftAppRef.current = false;
-          wasBackgroundedRef.current = false;
-          setShowExpiredModal(false);
-          localStorage.removeItem(STORAGE_KEY);
-          if (expiredCampaign) {
-            handleSelectCampaign(expiredCampaign);
-          }
-        }}
-      />
 
       {/* Follow Channel Modal (+30 Coins via AtoPlay API Follow Verification) */}
       <FollowChannelModal

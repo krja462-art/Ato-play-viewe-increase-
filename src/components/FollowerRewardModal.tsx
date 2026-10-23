@@ -169,16 +169,11 @@ export const FollowerRewardModal: React.FC<FollowerRewardModalProps> = ({
             {isClaimed ? "+30 Coins Added!" : "AtoPlay Follower Verification"}
           </h2>
 
-          <div className={`p-3 rounded-2xl text-xs sm:text-sm font-semibold border ${
-            isClaimed 
-              ? "bg-emerald-50 border-emerald-200 text-emerald-800" 
-              : "bg-amber-50 border-amber-200 text-amber-800"
-          }`}>
-            {isClaimed 
-              ? "Awesome! Follower verified via AtoPlay API. +30 Coins credited to your wallet!"
-              : "Checking AtoPlay API live: Has the follower count increased on the channel...?"
-            }
-          </div>
+          {isClaimed && (
+            <div className="p-3 rounded-2xl text-xs sm:text-sm font-semibold border bg-emerald-50 border-emerald-200 text-emerald-800">
+              Awesome! Follower verified via AtoPlay API. +30 Coins credited to your wallet!
+            </div>
+          )}
         </div>
 
         {/* Pehle ke followers vs Abhi ke followers Box */}
