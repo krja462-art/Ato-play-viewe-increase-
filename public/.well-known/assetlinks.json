@@ -3,6 +3,6 @@
       "target": {
         "namespace": "android_app",
         "package_name": "app.vercel.ato_play_viewe_increase.twa",
-        "sha256_cert_fingerprints": ["C5:AA:37:2D:D8:4B:8D:4B:00:32:CB:C7:F3:8E:2C:18:B7:1A:41:A1:EA:1D:3A:50:80:83:2F:48:3C:38:E3:33"]
+        "sha256_cert_fingerprints": ["41:BD:E7:95:33:64:35:0C:C3:F9:49:83:87:80:D1:B0:CB:5A:93:59:B0:97:AE:A4:F7:AB:1A:34:26:A2:71:D0"]
       }
     }]
