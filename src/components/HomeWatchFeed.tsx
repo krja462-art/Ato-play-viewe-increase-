@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { User, Campaign, format4CharId, ActiveWatchState } from '../types';
-import { Play, CheckCircle2, Clock, ArrowLeft, Video, ExternalLink, RefreshCw, Award, Coins, AlertCircle, ShieldCheck, Key, UserPlus, Sparkles, Users } from 'lucide-react';
-import { RewardPopupModal } from './RewardPopupModal';
+import { Play, CheckCircle2, Clock, ArrowLeft, Video, ExternalLink, RefreshCw, Award, Coins, AlertCircle, ShieldCheck, Key, UserPlus, Sparkles, Users, Loader2 } from 'lucide-react';
 import { SessionExpiredModal } from './SessionExpiredModal';
 import { FollowChannelModal } from './FollowChannelModal';
 import { FollowerRewardModal } from './FollowerRewardModal';
@@ -81,6 +80,10 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
   const [expiredElapsed, setExpiredElapsed] = useState(0);
   const [expiredCampaign, setExpiredCampaign] = useState<Campaign | null>(null);
 
+  // Animated on-screen "+60 Coins Added" overlay state (replaces blocking RewardPopupModal)
+  const [videoCoinToast, setVideoCoinToast] = useState<{ coins: number; key: number } | null>(null);
+  const coinToastTimerRef = useRef<NodeJS.Timeout | null>(null);
+
   // Home Section (Video Views vs Followers) & 4-second Anti-Cheat Follower State
   const [homeSection, setHomeSection] = useState<'video' | 'follower'>('video');
   const [selectedFollowCampaign, setSelectedFollowCampaign] = useState<Campaign | null>(null);
@@ -89,23 +92,32 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
   const [warningElapsed, setWarningElapsed] = useState(2);
   const [followElapsedMs, setFollowElapsedMs] = useState<number>(4500);
   const [followBaselineCount, setFollowBaselineCount] = useState<number | undefined>(undefined);
+  const [verifyingFollowId, setVerifyingFollowId] = useState<string | null>(null);
   const followLeftTimeRef = useRef<number | null>(null);
   const activeFollowTargetRef = useRef<Campaign | null>(null);
+  const isProcessingFollowReturnRef = useRef<boolean>(false);
 
   useEffect(() => {
     const handleReturnFromFollow = () => {
       if (document.hidden || document.visibilityState === 'hidden') return;
+      if (isProcessingFollowReturnRef.current) return;
       if (followLeftTimeRef.current && activeFollowTargetRef.current) {
         const elapsed = Date.now() - followLeftTimeRef.current;
         if (elapsed < 500) return; // Ignore immediate focus bounce when opening external link
+
+        isProcessingFollowReturnRef.current = true;
         followLeftTimeRef.current = null;
         const camp = activeFollowTargetRef.current;
         activeFollowTargetRef.current = null;
 
         if (elapsed < 4000) {
+          setVerifyingFollowId(null);
+          isProcessingFollowReturnRef.current = false;
           setWarningElapsed(Math.max(1, Math.round(elapsed / 1000)));
           setShowWarning4SecModal(true);
         } else {
+          // Clearly indicate 'Verifying...' in the follower UI and prevent double-tapping
+          setVerifyingFollowId(camp.id);
           setFollowElapsedMs(elapsed);
           setSelectedFollowCampaign(camp);
           setShowFollowerRewardModal(true);
@@ -123,6 +135,9 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
   }, []);
 
   const handleStartFollowTask = (camp: Campaign) => {
+    // Prevent double-tapping or multiple count triggers while verifying
+    if (verifyingFollowId === camp.id || isProcessingFollowReturnRef.current) return;
+
     activeFollowTargetRef.current = camp;
     followLeftTimeRef.current = Date.now();
     const initialF = camp.channelFollowers ?? camp.initialFollowers ?? 0;
@@ -366,7 +381,9 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
     }
   }, [user.id, refreshTrigger, fetchFollowedCampaigns]);
 
-  const handleFollowSuccess = (campaignId: string, earnedCoins: number, updatedUser: User) => {
+  const handleFollowSuccess = (campaignId: string, _earnedCoins: number, updatedUser: User) => {
+    setVerifyingFollowId(null);
+    isProcessingFollowReturnRef.current = false;
     setFollowedCampaignIds(prev => new Set([...prev, campaignId]));
     addWatchedId(user.id, campaignId);
     onCoinEarned(updatedUser);
@@ -604,6 +621,9 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
       });
 
       if (data?.success) {
+        try {
+          playCoinCelebrationSound();
+        } catch {}
         triggerWatchCompleteCelebration();
         const earned = data.earnedCoins || (data.followed ? 90 : 60);
         if (data.user) {
@@ -616,29 +636,30 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
         // Immediately register watched ID in persistent local storage
         addWatchedId(user.id, cId);
 
-        setIsCompleted(true);
+        setIsCompleted(false);
         setIsPlaying(false);
-        setTimeLeft(0);
+        setVideoStarted(false);
+        setSelectedCampaign(null);
+        setStartTime(null);
+        setSessionId(null);
+        setSessionToken(null);
+        setTimeLeft(60);
         localStorage.removeItem(STORAGE_KEY);
         hasLeftAppRef.current = false;
+        wasBackgroundedRef.current = false;
         setCampaigns(prev => prev.filter(c => c.id !== cId));
         
         // Restore document title
         document.title = 'AtoPlay Booster - Video Promotion Exchange';
 
-        // Trigger celebratory Pop Notification modal with exact user messaging & breakdown
-        setRewardData({
-          earnedCoins: earned,
-          newBalance: data.user?.coins ?? (user.coins + earned),
-          campaign: camp,
-          baseCoins: data.baseCoins ?? 60,
-          bonusCoins: data.bonusCoins ?? (data.followed ? 30 : 0),
-          followedBonus: Boolean(data.followed),
-          message: data.message,
-          countBefore: data.countBefore,
-          countAfter: data.countAfter
-        });
-        setShowRewardModal(true);
+        // Trigger animated on-screen "+60 Coins Added" toast that automatically fades out
+        if (coinToastTimerRef.current) {
+          clearTimeout(coinToastTimerRef.current);
+        }
+        setVideoCoinToast({ coins: earned, key: Date.now() });
+        coinToastTimerRef.current = setTimeout(() => {
+          setVideoCoinToast(null);
+        }, 2600);
       } else {
         // If server expired session due to < 60s or anti-cheat
         if (data.expired) {
@@ -1057,7 +1078,23 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
 
   // Main Home Feed Listing
   return (
-    <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6 mb-20 bg-white min-h-screen">
+    <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6 mb-20 bg-white min-h-screen relative">
+      
+      {/* Animated On-Screen +60 Coins Added Overlay (Auto-dismissing after 60s video watch) */}
+      {videoCoinToast && (
+        <div
+          key={videoCoinToast.key}
+          className="fixed inset-x-0 top-20 z-50 flex justify-center pointer-events-none px-4 animate-bounce"
+        >
+          <div className="inline-flex items-center space-x-2.5 px-5 py-3 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-blue-600 text-white font-black text-base sm:text-lg shadow-2xl border-2 border-white/80">
+            <div className="w-8 h-8 rounded-full bg-amber-400 text-amber-950 flex items-center justify-center shadow-inner">
+              <Coins className="w-5 h-5" />
+            </div>
+            <span>+{videoCoinToast.coins} Coins Added!</span>
+            <Sparkles className="w-5 h-5 text-amber-300 animate-spin" />
+          </div>
+        </div>
+      )}
       
       {/* Home Section Segmented Control: Video Views vs Followers */}
       <div className="flex rounded-xl bg-zinc-100 p-1 border border-zinc-200/80">
@@ -1170,24 +1207,35 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
                   </div>
 
                   <div className="flex items-center justify-between text-xs text-zinc-500">
-                    <div className="flex items-center space-x-2">
-                      <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 font-bold border border-emerald-200/80 tabular-nums">
-                        <Users className="w-3 h-3" />
-                        <span>{(camp.channelFollowers ?? camp.initialFollowers ?? 0).toLocaleString()} Live Followers</span>
+                    {verifyingFollowId === camp.id ? (
+                      <span className="inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-md bg-amber-50 text-amber-800 font-bold border border-amber-200">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-600" />
+                        <span>Verifying...</span>
                       </span>
-                      <span className="text-zinc-400 tabular-nums">
-                        {camp.viewsCompleted ?? camp.completedViews ?? 0}/{camp.viewsRequired ?? camp.targetViews ?? 10} Goal
+                    ) : (
+                      <span className="text-[11px] font-medium text-emerald-700">
+                        Subscribe on AtoPlay to claim reward
                       </span>
-                    </div>
+                    )}
                     <span className="font-mono text-xs text-zinc-400">#{shortId}</span>
                   </div>
 
                   <button
+                    disabled={verifyingFollowId === camp.id}
                     onClick={() => handleStartFollowTask(camp)}
-                    className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-semibold text-xs shadow-xs flex items-center justify-center space-x-2 cursor-pointer transition-transform"
+                    className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 disabled:cursor-not-allowed active:scale-95 text-white font-semibold text-xs shadow-xs flex items-center justify-center space-x-2 cursor-pointer transition-transform"
                   >
-                    <ExternalLink className="w-4 h-4" />
-                    <span>Follow Channel (+30 Coins)</span>
+                    {verifyingFollowId === camp.id ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Verifying...</span>
+                      </>
+                    ) : (
+                      <>
+                        <ExternalLink className="w-4 h-4" />
+                        <span>Follow Channel (+30 Coins)</span>
+                      </>
+                    )}
                   </button>
                 </div>
               );
@@ -1329,6 +1377,8 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
           onClose={() => {
             setShowFollowerRewardModal(false);
             setSelectedFollowCampaign(null);
+            setVerifyingFollowId(null);
+            isProcessingFollowReturnRef.current = false;
             fetchCampaigns();
           }}
           campaign={selectedFollowCampaign}
@@ -1349,29 +1399,6 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
           elapsedSeconds={warningElapsed}
         />
       )}
-
-
-      {/* Celebration Pop Reward Modal (60s Completed) */}
-      <RewardPopupModal
-        isOpen={showRewardModal}
-        onClose={handleCloseRewardModal}
-        earnedCoins={rewardData?.earnedCoins || 60}
-        newBalance={rewardData?.newBalance || user.coins}
-        campaign={rewardData?.campaign || selectedCampaign}
-        baseCoins={rewardData?.baseCoins ?? 60}
-        bonusCoins={rewardData?.bonusCoins ?? 30}
-        followedBonus={rewardData?.followedBonus}
-        message={rewardData?.message}
-        countBefore={rewardData?.countBefore}
-        countAfter={rewardData?.countAfter}
-        onWatchNext={handleWatchNextVideo}
-        onPromoteVideo={() => {
-          handleCloseRewardModal();
-          setActiveTab('campaigns');
-        }}
-        user={user}
-        onCoinEarned={onCoinEarned}
-      />
 
       {/* Session Expired Modal (< 60s completed) */}
       <SessionExpiredModal

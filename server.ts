@@ -1727,6 +1727,8 @@ app.post("/api/follow/start", async (req, res) => {
   });
 });
 
+const inFlightFollowVerifications = new Set<string>();
+
 // Dedicated Follow System: 2. Verify Follow with AtoPlay API ("ager user ek bhi follow badhe to coin mile")
 app.post("/api/follow/verify", async (req, res) => {
   const activeUser = getActiveUser(req);
@@ -1746,203 +1748,240 @@ app.post("/api/follow/verify", async (req, res) => {
   const {
     campaignId,
     countBefore: clientCountBefore,
-    followerUsername: clientUsername
+    followerUsername: clientUsername,
+    visited4Sec,
+    elapsedMs
   } = req.body;
   if (!campaignId) {
     return res.status(400).json({ success: false, message: "Campaign ID required" });
   }
 
-  // If user passed AtoPlay username or has one saved
-  if (clientUsername && clientUsername.trim()) {
-    activeUser.atoPlayUsername = clientUsername.trim().replace(/^@+/, '');
+  const sessionKey = `${activeUser.id}_${campaignId}`;
+
+  // Protect against duplicate / concurrent API calls for the same user & campaign
+  if (inFlightFollowVerifications.has(sessionKey)) {
+    return res.status(429).json({
+      success: false,
+      verifying: true,
+      message: "Verification is already in progress. Please wait..."
+    });
   }
 
-  let campaign = campaigns.find(c => c.id === campaignId || c.displayId === campaignId);
-  if (!campaign && req.body.videoUrl) {
-    const initF = typeof clientCountBefore === 'number' && clientCountBefore >= 0 ? clientCountBefore : 0;
-    campaign = {
-      id: campaignId,
-      displayId: req.body.displayId || '----',
-      userId: req.body.creatorId || 'creator',
-      userName: req.body.channelName || 'Creator Channel',
-      title: req.body.title || 'Follow AtoPlay Channel',
-      videoUrl: req.body.videoUrl,
-      thumbnailUrl: req.body.thumbnailUrl || '',
-      channelName: req.body.channelName,
-      channelId: req.body.channelId,
-      channelFollowers: initF,
-      initialFollowers: initF,
-      viewsRequired: req.body.viewsRequired || 10,
-      viewsCompleted: req.body.viewsCompleted || 0,
-      targetViews: req.body.viewsRequired || 10,
-      completedViews: req.body.viewsCompleted || 0,
-      rewardPerView: 30,
-      durationSeconds: 60,
-      totalCoinsCost: 0,
-      status: 'active',
-      campaignType: 'follower',
+  inFlightFollowVerifications.add(sessionKey);
+
+  try {
+    // If user passed AtoPlay username or has one saved
+    if (clientUsername && clientUsername.trim()) {
+      activeUser.atoPlayUsername = clientUsername.trim().replace(/^@+/, '');
+    }
+
+    let campaign = campaigns.find(c => c.id === campaignId || c.displayId === campaignId);
+    if (!campaign && req.body.videoUrl) {
+      const initF = typeof clientCountBefore === 'number' && clientCountBefore >= 0 ? clientCountBefore : 0;
+      campaign = {
+        id: campaignId,
+        displayId: req.body.displayId || '----',
+        userId: req.body.creatorId || 'creator',
+        userName: req.body.channelName || 'Creator Channel',
+        title: req.body.title || 'Follow AtoPlay Channel',
+        videoUrl: req.body.videoUrl,
+        thumbnailUrl: req.body.thumbnailUrl || '',
+        channelName: req.body.channelName,
+        channelId: req.body.channelId,
+        channelFollowers: initF,
+        initialFollowers: initF,
+        viewsRequired: req.body.viewsRequired || 10,
+        viewsCompleted: req.body.viewsCompleted || 0,
+        targetViews: req.body.viewsRequired || 10,
+        completedViews: req.body.viewsCompleted || 0,
+        rewardPerView: 30,
+        durationSeconds: 60,
+        totalCoinsCost: 0,
+        status: 'active',
+        campaignType: 'follower',
+        createdAt: new Date().toISOString()
+      };
+      campaigns.unshift(campaign);
+    }
+    if (!campaign) {
+      return res.status(404).json({ success: false, message: "Campaign not found" });
+    }
+
+    if (campaign.userId === activeUser.id) {
+      return res.status(400).json({ success: false, message: "You cannot earn coins by following your own channel." });
+    }
+
+    const alreadyFollowed = Boolean(
+      userFollowedCampaigns[activeUser.id]?.has(campaign.id) || 
+      campaign.followedUserIds?.includes(activeUser.id)
+    );
+
+    if (alreadyFollowed) {
+      return res.status(400).json({ 
+        success: false, 
+        alreadyFollowed: true, 
+        message: "You have already claimed 30 coins for this channel." 
+      });
+    }
+
+    const session = followSessions[sessionKey];
+    const channelKey = session?.channelKey || campaign.channelName || campaign.userName || campaign.id;
+
+    // Verify 4-second channel visit window
+    const actualElapsed = session?.startTime ? (Date.now() - session.startTime) : (typeof elapsedMs === 'number' ? elapsedMs : 4500);
+    if (actualElapsed < 3800 && visited4Sec === false) {
+      return res.status(400).json({
+        success: false,
+        verified: false,
+        message: "Please stay on the AtoPlay channel for at least 4 seconds to follow properly before returning."
+      });
+    }
+
+    const savedCampaignFollowers = typeof campaign.channelFollowers === 'number' && campaign.channelFollowers >= 0
+      ? campaign.channelFollowers
+      : (typeof campaign.initialFollowers === 'number' && campaign.initialFollowers >= 0 ? campaign.initialFollowers : 0);
+
+    // Use the exact baseline captured in /api/follow/start if available; otherwise use clientCountBefore or savedCampaignFollowers
+    const baseline = typeof session?.countBefore === 'number' && session.countBefore >= 0
+      ? session.countBefore
+      : (typeof clientCountBefore === 'number' && clientCountBefore >= 0
+        ? clientCountBefore
+        : savedCampaignFollowers);
+
+    // Re-fetch latest follower count directly from AtoPlay API!
+    let resultAfter = await fetchChannelFollowerCount(campaign, true);
+    // If AtoPlay DB took a moment to commit the new follow, retry once after 1.2s
+    if (!resultAfter.isRealAtoPlay || (typeof resultAfter.count === 'number' && resultAfter.count <= baseline)) {
+      await new Promise(r => setTimeout(r, 1200));
+      resultAfter = await fetchChannelFollowerCount(campaign, true);
+    }
+
+    if (!resultAfter.isRealAtoPlay || typeof resultAfter.count !== 'number') {
+      return res.json({
+        success: false,
+        verified: false,
+        countBefore: baseline,
+        countAfter: baseline,
+        message: `Could not verify live follower count from AtoPlay right now. Please make sure the channel link is valid and try again.`
+      });
+    }
+
+    const countAfter = resultAfter.count;
+    const followerIncreased = countAfter > baseline;
+
+    if (!followerIncreased) {
+      return res.json({
+        success: false,
+        verified: false,
+        countBefore: baseline,
+        countAfter,
+        message: `AtoPlay live check: Follower count did not increase (Previous: ${baseline}, Current: ${countAfter}). Please click 'Follow' on the AtoPlay channel first, then tap 'Verify Follow'.`
+      });
+    }
+
+    // Re-check alreadyFollowed after async fetch to guarantee idempotency
+    if (userFollowedCampaigns[activeUser.id]?.has(campaign.id) || campaign.followedUserIds?.includes(activeUser.id)) {
+      return res.status(400).json({
+        success: false,
+        alreadyFollowed: true,
+        message: "You have already claimed 30 coins for this channel."
+      });
+    }
+
+    // Persist updated live follower count in store and campaign
+    channelFollowerStore[channelKey] = countAfter;
+
+    // Follower increased by at least 1! Award 30 coins!
+    const reward = 30;
+    activeUser.coins += reward;
+
+    // Mark as followed and completed by this user
+    if (!userFollowedCampaigns[activeUser.id]) {
+      userFollowedCampaigns[activeUser.id] = new Set<string>();
+    }
+    userFollowedCampaigns[activeUser.id].add(campaign.id);
+
+    if (!userWatchedCampaigns[activeUser.id]) {
+      userWatchedCampaigns[activeUser.id] = new Set<string>();
+    }
+    userWatchedCampaigns[activeUser.id].add(campaign.id);
+
+    if (!campaign.followedUserIds) {
+      campaign.followedUserIds = [];
+    }
+    if (!campaign.followedUserIds.includes(activeUser.id)) {
+      campaign.followedUserIds.push(activeUser.id);
+    }
+    if (!campaign.completedUserIds) {
+      campaign.completedUserIds = [];
+    }
+    if (!campaign.completedUserIds.includes(activeUser.id)) {
+      campaign.completedUserIds.push(activeUser.id);
+    }
+    campaign.viewsCompleted = (campaign.viewsCompleted || 0) + 1;
+    campaign.completedViews = (campaign.completedViews || 0) + 1;
+    campaign.channelFollowers = countAfter;
+    campaign.lastCheckedFollowers = countAfter;
+    if (campaign.completedViews >= (campaign.viewsRequired || campaign.targetViews || 10)) {
+      campaign.status = 'completed';
+    }
+
+    // Clean up session
+    delete followSessions[sessionKey];
+
+    // Record Follow Log for Creator Transparency and Fake Follow Reporting
+    const resolvedFollowerUsername = activeUser.atoPlayUsername || activeUser.name || 'AtoPlay User';
+    const logId = `flog_${Date.now()}_${activeUser.id.slice(-4)}`;
+    let followLogEntry = followLogs.find(l => l.campaignId === campaign.id && l.followerUserId === activeUser.id);
+    if (!followLogEntry) {
+      followLogEntry = {
+        id: logId,
+        campaignId: campaign.id,
+        creatorId: campaign.userId,
+        followerUserId: activeUser.id,
+        followerUsername: resolvedFollowerUsername,
+        followerEmail: activeUser.email,
+        followerAvatar: activeUser.avatar,
+        followerName: activeUser.name,
+        timestamp: new Date().toISOString(),
+        status: 'active',
+        campaignTitle: campaign.title
+      };
+      followLogs.unshift(followLogEntry);
+    } else {
+      if (!followLogEntry.followerEmail && activeUser.email) followLogEntry.followerEmail = activeUser.email;
+      if (!followLogEntry.followerAvatar && activeUser.avatar) followLogEntry.followerAvatar = activeUser.avatar;
+      if (!followLogEntry.followerName && activeUser.name) followLogEntry.followerName = activeUser.name;
+    }
+
+    // Log transaction
+    const channelName = resultAfter.channelName || campaign.channelName || campaign.userName || "Creator";
+    transactions.unshift({
+      id: `tx_${Date.now()}_follow`,
+      userId: activeUser.id,
+      type: "earned_follow",
+      amount: reward,
+      description: `Followed "${channelName}" on AtoPlay (+30 coins)`,
       createdAt: new Date().toISOString()
-    };
-    campaigns.unshift(campaign);
-  }
-  if (!campaign) {
-    return res.status(404).json({ success: false, message: "Campaign not found" });
-  }
-
-  if (campaign.userId === activeUser.id) {
-    return res.status(400).json({ success: false, message: "You cannot earn coins by following your own channel." });
-  }
-
-  const alreadyFollowed = Boolean(
-    userFollowedCampaigns[activeUser.id]?.has(campaign.id) || 
-    campaign.followedUserIds?.includes(activeUser.id)
-  );
-
-  if (alreadyFollowed) {
-    return res.status(400).json({ 
-      success: false, 
-      alreadyFollowed: true, 
-      message: "You have already claimed 30 coins for this channel." 
     });
-  }
 
-  const sessionKey = `${activeUser.id}_${campaign.id}`;
-  const session = followSessions[sessionKey];
-  const channelKey = session?.channelKey || campaign.channelName || campaign.userName || campaign.id;
-
-  const savedCampaignFollowers = typeof campaign.channelFollowers === 'number' && campaign.channelFollowers >= 0
-    ? campaign.channelFollowers
-    : (typeof campaign.initialFollowers === 'number' && campaign.initialFollowers >= 0 ? campaign.initialFollowers : 0);
-
-  // Use the exact baseline captured in /api/follow/start if available; otherwise use clientCountBefore or savedCampaignFollowers
-  const baseline = typeof session?.countBefore === 'number' && session.countBefore >= 0
-    ? session.countBefore
-    : (typeof clientCountBefore === 'number' && clientCountBefore >= 0
-      ? clientCountBefore
-      : savedCampaignFollowers);
-
-  // Re-fetch latest follower count directly from AtoPlay API!
-  let resultAfter = await fetchChannelFollowerCount(campaign, true);
-  // If AtoPlay DB took a moment to commit the new follow, retry once after 1.2s
-  if (!resultAfter.isRealAtoPlay || (typeof resultAfter.count === 'number' && resultAfter.count <= baseline)) {
-    await new Promise(r => setTimeout(r, 1200));
-    resultAfter = await fetchChannelFollowerCount(campaign, true);
-  }
-
-  if (!resultAfter.isRealAtoPlay || typeof resultAfter.count !== 'number') {
     return res.json({
-      success: false,
-      verified: false,
-      countBefore: baseline,
-      countAfter: baseline,
-      message: `Could not verify live follower count from AtoPlay right now. Please make sure the channel link is valid and try again.`
-    });
-  }
-
-  const countAfter = resultAfter.count;
-  const followerIncreased = countAfter > baseline;
-
-  if (!followerIncreased) {
-    return res.json({
-      success: false,
-      verified: false,
+      success: true,
+      verified: true,
+      earnedCoins: reward,
+      newBalance: activeUser.coins,
       countBefore: baseline,
       countAfter,
-      message: `AtoPlay live check: Follower count did not increase (Previous: ${baseline}, Current: ${countAfter}). Please click 'Follow' on the AtoPlay channel first, then tap 'Verify Follow'.`
-    });
-  }
-
-  // Persist updated live follower count in store and campaign
-  channelFollowerStore[channelKey] = countAfter;
-
-  // Follower increased by at least 1! Award 30 coins!
-  const reward = 30;
-  activeUser.coins += reward;
-
-  // Mark as followed and completed by this user
-  if (!userFollowedCampaigns[activeUser.id]) {
-    userFollowedCampaigns[activeUser.id] = new Set<string>();
-  }
-  userFollowedCampaigns[activeUser.id].add(campaign.id);
-
-  if (!userWatchedCampaigns[activeUser.id]) {
-    userWatchedCampaigns[activeUser.id] = new Set<string>();
-  }
-  userWatchedCampaigns[activeUser.id].add(campaign.id);
-
-  if (!campaign.followedUserIds) {
-    campaign.followedUserIds = [];
-  }
-  if (!campaign.followedUserIds.includes(activeUser.id)) {
-    campaign.followedUserIds.push(activeUser.id);
-  }
-  if (!campaign.completedUserIds) {
-    campaign.completedUserIds = [];
-  }
-  if (!campaign.completedUserIds.includes(activeUser.id)) {
-    campaign.completedUserIds.push(activeUser.id);
-  }
-  campaign.viewsCompleted = (campaign.viewsCompleted || 0) + 1;
-  campaign.completedViews = (campaign.completedViews || 0) + 1;
-  campaign.channelFollowers = countAfter;
-  campaign.lastCheckedFollowers = countAfter;
-  if (campaign.completedViews >= (campaign.viewsRequired || campaign.targetViews || 10)) {
-    campaign.status = 'completed';
-  }
-
-  // Clean up session
-  delete followSessions[sessionKey];
-
-  // Record Follow Log for Creator Transparency and Fake Follow Reporting
-  const resolvedFollowerUsername = activeUser.atoPlayUsername || activeUser.name || 'AtoPlay User';
-  const logId = `flog_${Date.now()}_${activeUser.id.slice(-4)}`;
-  let followLogEntry = followLogs.find(l => l.campaignId === campaign.id && l.followerUserId === activeUser.id);
-  if (!followLogEntry) {
-    followLogEntry = {
-      id: logId,
+      channelName,
       campaignId: campaign.id,
-      creatorId: campaign.userId,
-      followerUserId: activeUser.id,
-      followerUsername: resolvedFollowerUsername,
-      followerEmail: activeUser.email,
-      followerAvatar: activeUser.avatar,
-      followerName: activeUser.name,
-      timestamp: new Date().toISOString(),
-      status: 'active',
-      campaignTitle: campaign.title
-    };
-    followLogs.unshift(followLogEntry);
-  } else {
-    if (!followLogEntry.followerEmail && activeUser.email) followLogEntry.followerEmail = activeUser.email;
-    if (!followLogEntry.followerAvatar && activeUser.avatar) followLogEntry.followerAvatar = activeUser.avatar;
-    if (!followLogEntry.followerName && activeUser.name) followLogEntry.followerName = activeUser.name;
+      campaign,
+      user: activeUser,
+      followLog: followLogEntry,
+      message: `AtoPlay Live Verified! Creator followers increased from ${baseline} to ${countAfter} (+1 Follower). +30 Coins added to your wallet!`
+    });
+  } finally {
+    inFlightFollowVerifications.delete(sessionKey);
   }
-
-  // Log transaction
-  const channelName = resultAfter.channelName || campaign.channelName || campaign.userName || "Creator";
-  transactions.unshift({
-    id: `tx_${Date.now()}_follow`,
-    userId: activeUser.id,
-    type: "earned_follow",
-    amount: reward,
-    description: `Followed "${channelName}" on AtoPlay (+30 coins)`,
-    createdAt: new Date().toISOString()
-  });
-
-  res.json({
-    success: true,
-    verified: true,
-    earnedCoins: reward,
-    newBalance: activeUser.coins,
-    countBefore: baseline,
-    countAfter,
-    channelName,
-    campaignId: campaign.id,
-    campaign,
-    user: activeUser,
-    followLog: followLogEntry,
-    message: `AtoPlay Live Verified! Creator followers increased from ${baseline} to ${countAfter} (+1 Follower). +30 Coins added to your wallet!`
-  });
 });
 
 
@@ -1994,6 +2033,7 @@ app.get("/api/campaigns/:id/follow-logs", (req, res) => {
 interface UserNotification {
   id: string;
   userId: string;
+  userEmail?: string;
   type: 'fake_follow_warning' | 'info';
   title: string;
   message: string;
@@ -2011,12 +2051,37 @@ app.post("/api/follow/report-fake", (req, res) => {
   if (!activeUser) {
     return res.status(401).json({ success: false, message: "Please log in" });
   }
-  const { logId, channelUrl: reqChannelUrl, channelTitle: reqChannelTitle } = req.body;
-  if (!logId) {
-    return res.status(400).json({ success: false, message: "Log ID is required" });
+  const {
+    logId,
+    followerUserId: reqFollowerUserId,
+    followerEmail: reqFollowerEmail,
+    followerUsername: reqFollowerUsername,
+    campaignId: reqCampaignId,
+    creatorId: reqCreatorId,
+    channelUrl: reqChannelUrl,
+    channelTitle: reqChannelTitle
+  } = req.body;
+
+  if (!logId && !reqFollowerUserId) {
+    return res.status(400).json({ success: false, message: "Log ID or follower user ID is required" });
   }
 
-  const log = followLogs.find(l => l.id === logId);
+  let log = followLogs.find(l => l.id === logId);
+  if (!log && reqFollowerUserId) {
+    log = {
+      id: logId || `flog_${Date.now()}`,
+      campaignId: reqCampaignId || 'camp',
+      creatorId: reqCreatorId || activeUser.id,
+      followerUserId: reqFollowerUserId,
+      followerUsername: reqFollowerUsername || 'AtoPlay User',
+      followerEmail: reqFollowerEmail,
+      timestamp: new Date().toISOString(),
+      status: 'active',
+      campaignTitle: reqChannelTitle || 'AtoPlay Channel'
+    };
+    followLogs.unshift(log);
+  }
+
   if (!log) {
     return res.status(404).json({ success: false, message: "Follow log not found" });
   }
@@ -2026,10 +2091,6 @@ app.post("/api/follow/report-fake", (req, res) => {
   );
   if (!isCreatorOrAdmin) {
     return res.status(403).json({ success: false, message: "Only the creator of this campaign can report fake follows." });
-  }
-
-  if (log.status === 'reported') {
-    return res.json({ success: true, message: "This follow has already been reported.", log });
   }
 
   log.status = 'reported';
@@ -2052,14 +2113,16 @@ app.post("/api/follow/report-fake", (req, res) => {
   }
 
   // Create and dispatch warning notification with channel link & block notice to reported user
-  const targetCampaign = campaigns.find(c => c.id === log.campaignId);
+  const targetCampaign = campaigns.find(c => c.id === log!.campaignId);
   const resolvedChannelUrl = reqChannelUrl || 
-    (targetCampaign?.channelId ? `https://atoplay.com/channel/${targetCampaign.channelId}` : targetCampaign?.videoUrl || 'https://atoplay.com');
+    (targetCampaign?.channelId ? `https://atoplay.com/channels/${targetCampaign.channelId}` : targetCampaign?.videoUrl || 'https://atoplay.com');
   const resolvedChannelTitle = reqChannelTitle || targetCampaign?.channelName || targetCampaign?.title || 'AtoPlay Channel';
+  const cleanEmail = (reqFollowerEmail || log.followerEmail || '').trim().toLowerCase();
 
   const newWarningNotif: UserNotification = {
     id: `notif_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
     userId: log.followerUserId,
+    userEmail: cleanEmail || undefined,
     type: 'fake_follow_warning',
     title: 'Channel Follow Warning: Action Required',
     message: `The creator of "${resolvedChannelTitle}" reported that you did not subscribe or you unfollowed their channel after claiming bonus coins.`,
@@ -2074,6 +2137,13 @@ app.post("/api/follow/report-fake", (req, res) => {
     userNotifications[log.followerUserId] = [];
   }
   userNotifications[log.followerUserId].unshift(newWarningNotif);
+
+  if (cleanEmail) {
+    if (!userNotifications[cleanEmail]) {
+      userNotifications[cleanEmail] = [];
+    }
+    userNotifications[cleanEmail].unshift(newWarningNotif);
+  }
 
   res.json({
     success: true,
@@ -2091,8 +2161,17 @@ app.get("/api/user/notifications", (req, res) => {
   if (!activeUser) {
     return res.json({ success: true, notifications: [] });
   }
-  const notifs = userNotifications[activeUser.id] || [];
-  res.json({ success: true, notifications: notifs.filter(n => !n.read) });
+  const byId = userNotifications[activeUser.id] || [];
+  const cleanEmail = (activeUser.email || '').trim().toLowerCase();
+  const byEmail = cleanEmail ? (userNotifications[cleanEmail] || []) : [];
+
+  const mergedMap = new Map<string, UserNotification>();
+  for (const n of [...byId, ...byEmail]) {
+    if (!n.read) {
+      mergedMap.set(n.id, n);
+    }
+  }
+  res.json({ success: true, notifications: Array.from(mergedMap.values()) });
 });
 
 // Endpoint to dismiss/acknowledge notification
@@ -2104,6 +2183,12 @@ app.post("/api/user/notifications/dismiss", (req, res) => {
   const { id } = req.body;
   if (userNotifications[activeUser.id]) {
     userNotifications[activeUser.id] = userNotifications[activeUser.id].map(n => 
+      n.id === id ? { ...n, read: true } : n
+    );
+  }
+  const cleanEmail = (activeUser.email || '').trim().toLowerCase();
+  if (cleanEmail && userNotifications[cleanEmail]) {
+    userNotifications[cleanEmail] = userNotifications[cleanEmail].map(n =>
       n.id === id ? { ...n, read: true } : n
     );
   }

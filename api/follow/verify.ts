@@ -1,5 +1,7 @@
 import { fetchLiveAtoPlayFollowerCount } from '../../src/lib/videoExtractor';
 
+const inFlightVerifications = new Set<string>();
+
 export default async function handler(req: any, res: any) {
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -15,8 +17,21 @@ export default async function handler(req: any, res: any) {
     return;
   }
 
+  const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
+  const userId = (req.headers?.['x-user-id'] as string) || body.userId || 'user';
+  const lockKey = `${userId}_${body.campaignId || 'camp'}`;
+
+  if (inFlightVerifications.has(lockKey)) {
+    return res.status(429).json({
+      success: false,
+      verifying: true,
+      message: 'Verification is already in progress. Please wait...'
+    });
+  }
+
+  inFlightVerifications.add(lockKey);
+
   try {
-    const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
     const {
       campaignId,
       countBefore: reqCountBefore,
@@ -25,8 +40,18 @@ export default async function handler(req: any, res: any) {
       channelName = 'AtoPlay Creator',
       creatorId = '',
       title = 'Follow AtoPlay Channel',
-      followerUsername = ''
+      followerUsername = '',
+      visited4Sec,
+      elapsedMs
     } = body;
+
+    if (visited4Sec === false || (typeof elapsedMs === 'number' && elapsedMs < 3800)) {
+      return res.status(400).json({
+        success: false,
+        verified: false,
+        message: 'Please stay on the AtoPlay channel for at least 4 seconds to follow properly before returning.'
+      });
+    }
 
     const baseline = typeof reqCountBefore === 'number' && reqCountBefore >= 0 ? reqCountBefore : 0;
 
@@ -69,7 +94,6 @@ export default async function handler(req: any, res: any) {
       });
     }
 
-    const userId = (req.headers?.['x-user-id'] as string) || body.userId || 'user';
     const currentCoins = req.headers?.['x-user-coins'] ? parseInt(req.headers['x-user-coins'] as string, 10) : undefined;
     const newBalance = typeof currentCoins === 'number' && !isNaN(currentCoins) ? currentCoins + 30 : undefined;
 
@@ -103,5 +127,7 @@ export default async function handler(req: any, res: any) {
       verified: false,
       message: err?.message || 'Failed to verify follow with AtoPlay API'
     });
+  } finally {
+    inFlightVerifications.delete(lockKey);
   }
 }

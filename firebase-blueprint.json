@@ -89,6 +89,25 @@
         "reportedAt": { "type": "string", "description": "Timestamp when reported as fake" }
       },
       "required": ["id", "campaignId", "creatorId", "followerUserId", "followerUsername", "timestamp", "status"]
+    },
+    "UserNotification": {
+      "title": "UserNotification",
+      "description": "Warning and system notifications delivered to users (e.g. fake follow report warnings)",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Notification ID" },
+        "userId": { "type": "string", "description": "Target user UID" },
+        "userEmail": { "type": "string", "description": "Target user email" },
+        "type": { "type": "string", "description": "Notification type" },
+        "title": { "type": "string", "description": "Notification title" },
+        "message": { "type": "string", "description": "Notification message body" },
+        "notice": { "type": "string", "description": "Policy warning notice" },
+        "channelUrl": { "type": "string", "description": "Channel URL to follow" },
+        "channelTitle": { "type": "string", "description": "Channel title" },
+        "timestamp": { "type": "string", "description": "ISO timestamp" },
+        "read": { "type": "boolean", "description": "Whether the user acknowledged the notification" }
+      },
+      "required": ["userId", "type", "title", "message", "timestamp", "read"]
     }
   },
   "firestore": {
@@ -107,6 +126,10 @@
     "/support_messages/{messageId}": {
       "schema": "SupportMessage",
       "description": "Stores customer support inquiries sent to krja462@gmail.com"
+    },
+    "/user_notifications/{notifId}": {
+      "schema": "UserNotification",
+      "description": "Stores warning notifications for reported users"
     }
   }
 }

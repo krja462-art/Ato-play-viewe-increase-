@@ -867,71 +867,109 @@ export const getFollowLogsFromFirestore = async (campaignId: string): Promise<Fo
 
 /**
  * Report fake follow in Firestore:
- * - Marks log as 'reported'
- * - Increments warningCount for follower
- * - If warningCount >= 3, sets isFollowRestricted = true and deducts 30 coins (minimum 0)
+ * - Marks log as 'reported' (using setDoc merge so it never fails if doc was missing)
+ * - Increments warningCount for follower and deducts 30 coins
+ * - Saves warning notification across user_notifications, users/{uid}/notifications, and users/{uid}.latestWarningNotification
  */
 export const reportFakeFollowInFirestore = async (
   logId: string, 
   followerUserId: string,
-  campaignDetails?: { channelUrl?: string; channelTitle?: string }
+  campaignDetails?: {
+    channelUrl?: string;
+    channelTitle?: string;
+    followerEmail?: string;
+    followerUsername?: string;
+    campaignId?: string;
+  }
 ): Promise<{ warningCount: number; isRestricted: boolean }> => {
   try {
-    // 1. Mark follow log as reported
-    const logRef = doc(db, 'follow_logs', logId);
-    await updateDoc(logRef, {
-      status: 'reported',
-      reportedAt: new Date().toISOString()
-    });
-
-    // 2. Fetch follower doc to check warnings and update
-    const followerRef = doc(db, 'users', followerUserId);
-    const followerSnap = await getDoc(followerRef);
-    let newWarningCount = 1;
-    let isRestricted = false;
-    let currentCoins = 0;
-
-    if (followerSnap.exists()) {
-      const fData = followerSnap.data();
-      const prevWarnings = typeof fData.warningCount === 'number' ? fData.warningCount : 0;
-      newWarningCount = prevWarnings + 1;
-      isRestricted = newWarningCount >= 3 || Boolean(fData.isFollowRestricted);
-      currentCoins = typeof fData.coins === 'number' ? fData.coins : 0;
-
-      // Deduct 30 coins for fake claim (clamped to 0)
-      const adjustedCoins = Math.max(0, currentCoins - 30);
-
-      await updateDoc(followerRef, {
-        warningCount: newWarningCount,
-        isFollowRestricted: isRestricted,
-        coins: adjustedCoins,
-        updatedAt: new Date().toISOString()
-      });
-    } else {
-      await setDoc(followerRef, {
-        warningCount: 1,
-        isFollowRestricted: false,
-        updatedAt: new Date().toISOString()
-      }, { merge: true });
+    const nowIso = new Date().toISOString();
+    // 1. Mark follow log as reported (safe setDoc with merge)
+    if (logId) {
+      try {
+        const logRef = doc(db, 'follow_logs', logId);
+        await setDoc(logRef, {
+          status: 'reported',
+          reportedAt: nowIso
+        }, { merge: true });
+      } catch (lErr) {
+        console.warn('Could not update follow_log doc:', lErr);
+      }
     }
 
-    // 3. Save notification document for reported user
+    const channelTitle = campaignDetails?.channelTitle || 'AtoPlay Channel';
+    const channelUrl = campaignDetails?.channelUrl || 'https://atoplay.com';
+    const cleanFollowerEmail = (campaignDetails?.followerEmail || '').trim().toLowerCase();
+    const notifId = `notif_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+
+    const notifPayload = {
+      id: notifId,
+      userId: followerUserId,
+      userEmail: cleanFollowerEmail || undefined,
+      followerUsername: campaignDetails?.followerUsername || undefined,
+      campaignId: campaignDetails?.campaignId || undefined,
+      type: 'fake_follow_warning',
+      title: 'Channel Follow Warning: Action Required',
+      message: `The creator of "${channelTitle}" reported that you did not follow or you unsubscribed from their channel after claiming bonus coins.`,
+      notice: 'Notice: Please subscribe to the channel properly using the link below. If you do not follow the channel or continue submitting fake follows, your account will be permanently blocked.',
+      channelUrl,
+      channelTitle,
+      timestamp: nowIso,
+      read: false
+    };
+
+    // 2. Fetch follower doc to check warnings, deduct 30 coins, and attach latestWarningNotification
+    let newWarningCount = 1;
+    let isRestricted = false;
+
+    if (followerUserId) {
+      try {
+        const followerRef = doc(db, 'users', followerUserId);
+        const followerSnap = await getDoc(followerRef);
+
+        if (followerSnap.exists()) {
+          const fData = followerSnap.data();
+          const prevWarnings = typeof fData.warningCount === 'number' ? fData.warningCount : 0;
+          newWarningCount = prevWarnings + 1;
+          isRestricted = newWarningCount >= 3 || Boolean(fData.isFollowRestricted);
+          const currentCoins = typeof fData.coins === 'number' ? fData.coins : 0;
+          const adjustedCoins = Math.max(0, currentCoins - 30);
+
+          await setDoc(followerRef, {
+            warningCount: newWarningCount,
+            isFollowRestricted: isRestricted,
+            coins: adjustedCoins,
+            latestWarningNotification: notifPayload,
+            updatedAt: nowIso
+          }, { merge: true });
+        } else {
+          await setDoc(followerRef, {
+            id: followerUserId,
+            warningCount: 1,
+            isFollowRestricted: false,
+            latestWarningNotification: notifPayload,
+            updatedAt: nowIso
+          }, { merge: true });
+        }
+      } catch (uErr) {
+        console.warn('Error updating follower user doc:', uErr);
+      }
+
+      // 3. Save in user's own notifications subcollection (/users/{uid}/notifications/{notifId})
+      try {
+        const userNotifRef = doc(db, 'users', followerUserId, 'notifications', notifId);
+        await setDoc(userNotifRef, notifPayload, { merge: true });
+      } catch (subErr) {
+        console.warn('Failed to save to users/{uid}/notifications:', subErr);
+      }
+    }
+
+    // 4. Save in top-level /user_notifications/{notifId} collection
     try {
-      const channelTitle = campaignDetails?.channelTitle || 'AtoPlay Channel';
-      const channelUrl = campaignDetails?.channelUrl || 'https://atoplay.com';
-      await addDoc(collection(db, 'user_notifications'), {
-        userId: followerUserId,
-        type: 'fake_follow_warning',
-        title: 'Channel Follow Warning: Action Required',
-        message: `The creator of "${channelTitle}" reported that you did not follow or you unsubscribed from their channel after claiming bonus coins.`,
-        notice: 'Notice: Please subscribe to the channel properly using the link below. If you do not follow the channel or continue submitting fake follows, your account will be permanently blocked.',
-        channelUrl,
-        channelTitle,
-        timestamp: new Date().toISOString(),
-        read: false
-      });
+      const topNotifRef = doc(db, 'user_notifications', notifId);
+      await setDoc(topNotifRef, notifPayload, { merge: true });
     } catch (nErr) {
-      console.warn('Failed to save notification document:', nErr);
+      console.warn('Failed to save top-level user_notification document:', nErr);
     }
 
     return { warningCount: newWarningCount, isRestricted };
@@ -942,38 +980,189 @@ export const reportFakeFollowInFirestore = async (
 };
 
 /**
- * Fetch unread notifications for user from Firestore
+ * Fetch unread notifications for user from Firestore (checks user doc, subcollection, and top-level collection)
  */
-export const fetchUserNotificationsFromFirestore = async (userId: string) => {
-  if (!userId) return [];
+export const fetchUserNotificationsFromFirestore = async (userId: string, userEmail?: string) => {
+  if (!userId && !userEmail) return [];
+  const resultsMap = new Map<string, any>();
+
   try {
-    const q = query(
-      collection(db, 'user_notifications'),
-      where('userId', '==', userId),
-      where('read', '==', false)
-    );
-    const snap = await getDocs(q);
-    const list: any[] = [];
-    snap.forEach(docSnap => {
-      list.push({ id: docSnap.id, ...docSnap.data() });
-    });
+    // 1. Check user document's latestWarningNotification
+    if (userId) {
+      try {
+        const userSnap = await getDoc(doc(db, 'users', userId));
+        if (userSnap.exists()) {
+          const uData = userSnap.data();
+          const latest = uData?.latestWarningNotification;
+          if (latest && latest.read === false && latest.id) {
+            resultsMap.set(latest.id, latest);
+          }
+        }
+      } catch {}
+
+      // 2. Check /users/{userId}/notifications subcollection
+      try {
+        const subQ = query(
+          collection(db, 'users', userId, 'notifications'),
+          where('read', '==', false)
+        );
+        const subSnap = await getDocs(subQ);
+        subSnap.forEach(docSnap => {
+          resultsMap.set(docSnap.id, { id: docSnap.id, ...docSnap.data() });
+        });
+      } catch {}
+
+      // 3. Check top-level /user_notifications by userId
+      try {
+        const q = query(
+          collection(db, 'user_notifications'),
+          where('userId', '==', userId),
+          where('read', '==', false)
+        );
+        const snap = await getDocs(q);
+        snap.forEach(docSnap => {
+          resultsMap.set(docSnap.id, { id: docSnap.id, ...docSnap.data() });
+        });
+      } catch {}
+    }
+
+    // 4. Also check top-level /user_notifications by userEmail if provided
+    const cleanEmail = (userEmail || '').trim().toLowerCase();
+    if (cleanEmail) {
+      try {
+        const emailQ = query(
+          collection(db, 'user_notifications'),
+          where('userEmail', '==', cleanEmail),
+          where('read', '==', false)
+        );
+        const emailSnap = await getDocs(emailQ);
+        emailSnap.forEach(docSnap => {
+          resultsMap.set(docSnap.id, { id: docSnap.id, ...docSnap.data() });
+        });
+      } catch {}
+    }
+
+    const list = Array.from(resultsMap.values());
+    list.sort((a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime());
     return list;
   } catch (err) {
     console.warn('Error fetching user notifications from Firestore:', err);
-    return [];
+    return Array.from(resultsMap.values());
   }
 };
 
 /**
- * Mark notification as read in Firestore
+ * Subscribe in real-time to unread warning notifications for the active user
  */
-export const markNotificationReadInFirestore = async (notifId: string) => {
+export const subscribeToUserNotificationsInFirestore = (
+  userId: string,
+  onNotification: (notif: any) => void
+): (() => void) => {
+  if (!userId) return () => {};
+  const unsubs: Array<() => void> = [];
+
+  // 1. Real-time listener on /users/{userId} for latestWarningNotification
+  try {
+    const unsubUser = onSnapshot(
+      doc(db, 'users', userId),
+      (docSnap) => {
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          const latest = data?.latestWarningNotification;
+          if (latest && latest.read === false) {
+            onNotification(latest);
+          }
+        }
+      },
+      () => {}
+    );
+    unsubs.push(unsubUser);
+  } catch {}
+
+  // 2. Real-time listener on /users/{userId}/notifications subcollection
+  try {
+    const subQ = query(
+      collection(db, 'users', userId, 'notifications'),
+      where('read', '==', false)
+    );
+    const unsubSub = onSnapshot(
+      subQ,
+      (snap) => {
+        snap.forEach((docSnap) => {
+          const data = docSnap.data();
+          if (data && data.read === false) {
+            onNotification({ id: docSnap.id, ...data });
+          }
+        });
+      },
+      () => {}
+    );
+    unsubs.push(unsubSub);
+  } catch {}
+
+  // 3. Real-time listener on top-level /user_notifications
+  try {
+    const topQ = query(
+      collection(db, 'user_notifications'),
+      where('userId', '==', userId),
+      where('read', '==', false)
+    );
+    const unsubTop = onSnapshot(
+      topQ,
+      (snap) => {
+        snap.forEach((docSnap) => {
+          const data = docSnap.data();
+          if (data && data.read === false) {
+            onNotification({ id: docSnap.id, ...data });
+          }
+        });
+      },
+      () => {}
+    );
+    unsubs.push(unsubTop);
+  } catch {}
+
+  return () => {
+    unsubs.forEach((u) => {
+      try {
+        u();
+      } catch {}
+    });
+  };
+};
+
+/**
+ * Mark notification as read in Firestore across all locations
+ */
+export const markNotificationReadInFirestore = async (notifId: string, userId?: string) => {
   if (!notifId) return;
+  const nowIso = new Date().toISOString();
+
+  // 1. Top-level /user_notifications/{notifId}
   try {
     const nRef = doc(db, 'user_notifications', notifId);
-    await updateDoc(nRef, { read: true, acknowledgedAt: new Date().toISOString() });
-  } catch (err) {
-    console.warn('Error marking notification read in Firestore:', err);
+    await setDoc(nRef, { read: true, acknowledgedAt: nowIso }, { merge: true });
+  } catch {}
+
+  // 2. User subcollection & latestWarningNotification field
+  if (userId) {
+    try {
+      const subRef = doc(db, 'users', userId, 'notifications', notifId);
+      await setDoc(subRef, { read: true, acknowledgedAt: nowIso }, { merge: true });
+    } catch {}
+
+    try {
+      const uRef = doc(db, 'users', userId);
+      const uSnap = await getDoc(uRef);
+      if (uSnap.exists()) {
+        const latest = uSnap.data()?.latestWarningNotification;
+        if (latest && latest.id === notifId) {
+          await setDoc(uRef, {
+            latestWarningNotification: { ...latest, read: true, acknowledgedAt: nowIso }
+          }, { merge: true });
+        }
+      }
+    } catch {}
   }
 };
 

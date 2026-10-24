@@ -244,10 +244,16 @@ export const Campaigns: React.FC<CampaignsProps> = ({
     }
   };
 
-  const handleReportFollower = async (campaign: Campaign, logId: string, followerUserId: string) => {
+  const handleReportFollower = async (
+    campaign: Campaign,
+    logId: string,
+    followerUserId: string,
+    followerEmail?: string,
+    followerUsername?: string
+  ) => {
     try {
       const channelUrl = campaign.channelId 
-        ? `https://atoplay.com/channel/${campaign.channelId}`
+        ? `https://atoplay.com/channels/${campaign.channelId}`
         : (cleanVideoUrl(campaign.videoUrl) || 'https://atoplay.com');
       const channelTitle = campaign.channelName || campaign.title || 'AtoPlay Channel';
 
@@ -256,6 +262,11 @@ export const Campaigns: React.FC<CampaignsProps> = ({
         headers: { 'Content-Type': 'application/json', 'x-user-id': user.id },
         body: JSON.stringify({ 
           logId,
+          followerUserId,
+          followerEmail,
+          followerUsername,
+          campaignId: campaign.id,
+          creatorId: campaign.userId,
           channelUrl,
           channelTitle
         })
@@ -263,7 +274,10 @@ export const Campaigns: React.FC<CampaignsProps> = ({
 
       await reportFakeFollowInFirestore(logId, followerUserId, {
         channelUrl,
-        channelTitle
+        channelTitle,
+        followerEmail,
+        followerUsername,
+        campaignId: campaign.id
       }).catch(() => null);
 
       setCampaigns(prev => prev.map(c => {
@@ -662,15 +676,6 @@ export const Campaigns: React.FC<CampaignsProps> = ({
                       <span className="font-semibold text-zinc-700 text-[11px] tabular-nums">
                         {isFollowerCamp ? '30 Coins / follower' : '60 Coins / view'}
                       </span>
-                      {typeof camp.channelFollowers === 'number' && (
-                        <>
-                          <span className="text-zinc-300">·</span>
-                          <span className="inline-flex items-center space-x-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200/80 tabular-nums">
-                            <Users className="w-3 h-3" />
-                            <span>{camp.channelFollowers.toLocaleString()} Live Followers</span>
-                          </span>
-                        </>
-                      )}
                       <span className="text-zinc-300">·</span>
                       <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-md ${
                         isCompleted 
@@ -849,7 +854,13 @@ export const Campaigns: React.FC<CampaignsProps> = ({
                                   <button
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      handleReportFollower(camp, log.id, log.followerUserId);
+                                      handleReportFollower(
+                                        camp,
+                                        log.id,
+                                        log.followerUserId,
+                                        log.followerEmail,
+                                        log.followerUsername
+                                      );
                                     }}
                                     className="px-2 py-1 rounded-lg bg-white hover:bg-red-50 text-red-600 text-[10px] font-bold border border-red-200 shadow-2xs cursor-pointer transition-colors"
                                     title="Report fake follow if this user didn't subscribe"

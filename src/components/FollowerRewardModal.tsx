@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Coins, CheckCircle2, Award, Sparkles, X, Play, Loader2, ExternalLink, AlertCircle, UserPlus, UserCheck } from 'lucide-react';
 import { Campaign, User, format4CharId, FollowLog } from '../types';
 import { playCoinCelebrationSound } from '../utils/audio';
@@ -33,6 +33,8 @@ export const FollowerRewardModal: React.FC<FollowerRewardModalProps> = ({
 }) => {
   const [isClaimed, setIsClaimed] = useState(false);
   const [verifying, setVerifying] = useState(false);
+  const verifyingRef = useRef(false);
+  const claimedRef = useRef(false);
   const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
   const [feedbackType, setFeedbackType] = useState<'success' | 'error' | null>(null);
   
@@ -49,6 +51,8 @@ export const FollowerRewardModal: React.FC<FollowerRewardModalProps> = ({
   useEffect(() => {
     if (isOpen && campaign) {
       setIsClaimed(false);
+      claimedRef.current = false;
+      verifyingRef.current = false;
       const initCount = countBefore ?? campaign.channelFollowers ?? campaign.initialFollowers ?? 0;
       setFollowersBefore(initCount);
       setFollowersAfter(countAfter);
@@ -66,7 +70,8 @@ export const FollowerRewardModal: React.FC<FollowerRewardModalProps> = ({
   const channelUrl = campaign.videoUrl || 'https://atoplay.com';
 
   const handleVerifyFollow = async (overrideInitial?: number) => {
-    if (verifying || isClaimed) return;
+    if (verifyingRef.current || verifying || claimedRef.current || isClaimed) return;
+    verifyingRef.current = true;
     setVerifying(true);
     setFeedbackMessage(null);
     setFeedbackType(null);
@@ -103,6 +108,7 @@ export const FollowerRewardModal: React.FC<FollowerRewardModalProps> = ({
       if (res?.verified === true && typeof res?.countAfter === 'number' && res.countAfter > effectiveBefore) {
         const bonus = res.earnedCoins || 30;
         const newCoins = (user.coins || 0) + bonus;
+        claimedRef.current = true;
         setIsClaimed(true);
         const resolvedAfter = res.countAfter;
         setFollowersAfter(resolvedAfter);
@@ -154,6 +160,7 @@ export const FollowerRewardModal: React.FC<FollowerRewardModalProps> = ({
       setFeedbackType('error');
       setFeedbackMessage(err?.message || 'Verification error. Please check your internet connection and try again.');
     } finally {
+      verifyingRef.current = false;
       setVerifying(false);
     }
   };
@@ -167,7 +174,8 @@ export const FollowerRewardModal: React.FC<FollowerRewardModalProps> = ({
 
         <button
           onClick={onClose}
-          className="absolute top-4 right-4 p-2 rounded-xl text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 transition-colors cursor-pointer"
+          disabled={verifying}
+          className="absolute top-4 right-4 p-2 rounded-xl text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 disabled:opacity-40 transition-colors cursor-pointer"
         >
           <X className="w-5 h-5" />
         </button>
@@ -189,7 +197,7 @@ export const FollowerRewardModal: React.FC<FollowerRewardModalProps> = ({
           </div>
 
           <h2 className="text-xl sm:text-2xl font-black text-zinc-900 tracking-tight">
-            {isClaimed ? "+30 Coins Added!" : "AtoPlay Follower Verification"}
+            {isClaimed ? "+30 Coins Added!" : (verifying ? "Verifying..." : "AtoPlay Follower Verification")}
           </h2>
 
           {isClaimed && (
@@ -205,8 +213,17 @@ export const FollowerRewardModal: React.FC<FollowerRewardModalProps> = ({
             <span className="text-xs font-extrabold text-zinc-700 uppercase tracking-wider">
               AtoPlay Live Follower Comparison
             </span>
-            <span className="text-xs font-black text-emerald-700">
-              {isClaimed ? "+1 Follower Verified ✓" : (verifying ? "Checking..." : "Pending")}
+            <span className="text-xs font-black text-emerald-700 flex items-center space-x-1">
+              {isClaimed ? (
+                <span>+1 Follower Verified ✓</span>
+              ) : verifying ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-600" />
+                  <span>Verifying...</span>
+                </>
+              ) : (
+                <span>Pending</span>
+              )}
             </span>
           </div>
 
@@ -233,7 +250,10 @@ export const FollowerRewardModal: React.FC<FollowerRewardModalProps> = ({
               </span>
               <div className="text-xl sm:text-2xl font-black text-emerald-700 mt-1">
                 {verifying ? (
-                  <Loader2 className="w-5 h-5 animate-spin mx-auto text-emerald-600 my-1" />
+                  <div className="flex items-center justify-center space-x-1.5 py-1 text-xs font-extrabold text-emerald-600">
+                    <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+                    <span>Verifying...</span>
+                  </div>
                 ) : (
                   <span>
                     {typeof followersAfter === 'number' ? followersAfter : followersBefore}
@@ -242,7 +262,7 @@ export const FollowerRewardModal: React.FC<FollowerRewardModalProps> = ({
                 )}
               </div>
               <span className={`text-[10px] font-bold ${isClaimed ? 'text-emerald-700' : 'text-zinc-400'}`}>
-                {isClaimed ? '+1 Gained!' : 'Live API Count'}
+                {isClaimed ? '+1 Gained!' : (verifying ? 'Verifying...' : 'Live API Count')}
               </span>
             </div>
           </div>
@@ -254,12 +274,12 @@ export const FollowerRewardModal: React.FC<FollowerRewardModalProps> = ({
                 type="button"
                 onClick={() => handleVerifyFollow()}
                 disabled={verifying}
-                className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-extrabold text-xs sm:text-sm shadow-md flex items-center justify-center space-x-2 cursor-pointer disabled:opacity-60 transition-transform active:scale-98"
+                className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-extrabold text-xs sm:text-sm shadow-md flex items-center justify-center space-x-2 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed transition-transform active:scale-98"
               >
                 {verifying ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Verifying with AtoPlay API...</span>
+                    <span>Verifying...</span>
                   </>
                 ) : (
                   <>

@@ -108,6 +108,9 @@ export function addFollowedId(userId: string, campaignId: string): void {
   localStorage.setItem(`${STORAGE_KEYS.FOLLOWED}_${userId}`, JSON.stringify(Array.from(set)));
 }
 
+// In-flight deduplication map for /api/follow/verify to prevent duplicate concurrent API calls
+const inFlightFollowVerifyPromises = new Map<string, Promise<any>>();
+
 /**
  * Universal safe API caller that tries real backend first,
  * and seamlessly falls back to resilient client storage on static platforms like Vercel.
@@ -122,28 +125,56 @@ export async function apiFetch<T = any>(endpoint: string, options?: RequestInit)
     headers.set('x-user-coins', String(user.coins));
   }
 
-  try {
-    const res = await fetch(endpoint, {
-      ...options,
-      headers
-    });
-
-    const contentType = res.headers.get('content-type') || '';
-    // If response is valid JSON from backend, parse and return it
-    if (contentType.includes('application/json')) {
-      return await res.json();
-    }
-    
-    // If 401 on /api/user, return standard unauthorized format
-    if (res.status === 401 && endpoint === '/api/user') {
-      return { success: false, user: null } as any;
-    }
-  } catch {
-    // Network failed, proceed to client fallback
+  // Deduplicate concurrent /api/follow/verify calls for the same campaign
+  let dedupeKey: string | null = null;
+  if (endpoint.startsWith('/api/follow/verify')) {
+    try {
+      const parsedBody = options?.body && typeof options.body === 'string' ? JSON.parse(options.body) : (options?.body || {});
+      const cId = (parsedBody as any)?.campaignId || 'default';
+      dedupeKey = `${user?.id || 'anon'}_${cId}`;
+      const existingPromise = inFlightFollowVerifyPromises.get(dedupeKey);
+      if (existingPromise) {
+        return existingPromise as Promise<T>;
+      }
+    } catch {}
   }
 
-  // --- CLIENT-SIDE RESILIENT FALLBACK ENGINE (e.g. for Vercel static host or offline) ---
-  return await handleClientFallback<T>(endpoint, options, user);
+  const executeCall = async (): Promise<T> => {
+    try {
+      const res = await fetch(endpoint, {
+        ...options,
+        headers
+      });
+
+      const contentType = res.headers.get('content-type') || '';
+      // If response is valid JSON from backend, parse and return it
+      if (contentType.includes('application/json')) {
+        return await res.json();
+      }
+      
+      // If 401 on /api/user, return standard unauthorized format
+      if (res.status === 401 && endpoint === '/api/user') {
+        return { success: false, user: null } as any;
+      }
+    } catch {
+      // Network failed, proceed to client fallback
+    }
+
+    // --- CLIENT-SIDE RESILIENT FALLBACK ENGINE (e.g. for Vercel static host or offline) ---
+    return await handleClientFallback<T>(endpoint, options, user);
+  };
+
+  if (dedupeKey) {
+    const promise = executeCall().finally(() => {
+      if (dedupeKey) {
+        inFlightFollowVerifyPromises.delete(dedupeKey);
+      }
+    });
+    inFlightFollowVerifyPromises.set(dedupeKey, promise);
+    return promise;
+  }
+
+  return executeCall();
 }
 
 async function handleClientFallback<T>(endpoint: string, options?: RequestInit, activeUser?: User | null): Promise<T> {
@@ -645,7 +676,33 @@ async function handleClientFallback<T>(endpoint: string, options?: RequestInit, 
 
   // 14. Follow Channel Verify (Strict Real AtoPlay API Check - NO fake +1 bump)
   if (endpoint.startsWith('/api/follow/verify')) {
-    const { campaignId, countBefore: reqCountBefore, videoUrl: reqVideoUrl, channelId: reqChannelId, channelName: reqChannelName } = parsedBody;
+    const {
+      campaignId,
+      countBefore: reqCountBefore,
+      videoUrl: reqVideoUrl,
+      channelId: reqChannelId,
+      channelName: reqChannelName,
+      visited4Sec,
+      elapsedMs
+    } = parsedBody;
+
+    if (activeUser?.id && campaignId && getFollowedIds(activeUser.id).has(campaignId)) {
+      return {
+        success: false,
+        alreadyFollowed: true,
+        verified: false,
+        message: 'You have already claimed 30 coins for following this channel.'
+      } as any;
+    }
+
+    if (visited4Sec === false || (typeof elapsedMs === 'number' && elapsedMs < 3800)) {
+      return {
+        success: false,
+        verified: false,
+        message: 'Please stay on the AtoPlay channel for at least 4 seconds to follow properly before returning.'
+      } as any;
+    }
+
     const campaigns = getStoredCampaigns();
     const targetCamp = campaigns.find(c => c.id === campaignId);
 

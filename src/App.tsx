@@ -20,6 +20,7 @@ import {
   getUserCoinsFromFirestore,
   subscribeToUserCoins,
   fetchUserNotificationsFromFirestore,
+  subscribeToUserNotificationsInFirestore,
   markNotificationReadInFirestore
 } from './lib/firebase';
 import { apiFetch } from './lib/api';
@@ -243,7 +244,7 @@ export default function App() {
     return () => unsub();
   }, [user?.id]);
 
-  // Check for fake follow warning notifications for active user
+  // Check and subscribe in real-time for fake follow warning notifications for active user
   useEffect(() => {
     if (!user || !user.id) return;
     let isMounted = true;
@@ -258,7 +259,7 @@ export default function App() {
           return;
         }
 
-        const fNotifs = await fetchUserNotificationsFromFirestore(user.id);
+        const fNotifs = await fetchUserNotificationsFromFirestore(user.id, user.email);
         if (fNotifs && fNotifs.length > 0 && isMounted) {
           setActiveWarningNotif(fNotifs[0]);
         }
@@ -268,23 +269,30 @@ export default function App() {
     };
 
     checkNotifications();
-    const interval = setInterval(checkNotifications, 12000);
+    const unsubRealtime = subscribeToUserNotificationsInFirestore(user.id, (incomingNotif) => {
+      if (isMounted && incomingNotif && incomingNotif.read === false) {
+        setActiveWarningNotif(incomingNotif);
+      }
+    });
+    const interval = setInterval(checkNotifications, 6000);
+
     return () => {
       isMounted = false;
+      unsubRealtime();
       clearInterval(interval);
     };
-  }, [user?.id]);
+  }, [user?.id, user?.email]);
 
   const handleDismissWarning = async (notifId: string) => {
     setActiveWarningNotif(null);
     try {
       await apiFetch('/api/user/notifications/dismiss', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-user-id': user?.id },
+        headers: { 'Content-Type': 'application/json', 'x-user-id': user?.id || '' },
         body: JSON.stringify({ id: notifId })
       }).catch(() => {});
 
-      await markNotificationReadInFirestore(notifId).catch(() => {});
+      await markNotificationReadInFirestore(notifId, user?.id).catch(() => {});
     } catch (e) {
       console.warn('Error dismissing warning notification:', e);
     }
