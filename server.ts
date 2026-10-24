@@ -2,18 +2,280 @@ import express from "express";
 import path from "path";
 import fs from "fs";
 import crypto from "crypto";
-import type { User, Campaign, Transaction } from "./src/types.ts";
-import { fetchLiveAtoPlayFollowerCount } from "./src/lib/videoExtractor.ts";
-import { GoogleGenAI } from "@google/genai";
+import { fileURLToPath } from "url";
 
-const ai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY || "ai-studio-placeholder-key",
-  httpOptions: {
-    headers: {
-      'User-Agent': 'aistudio-build',
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+export interface FollowLog {
+  id: string;
+  campaignId: string;
+  creatorId: string;
+  followerUserId: string;
+  followerUsername: string;
+  followerEmail?: string;
+  followerAvatar?: string;
+  followerName?: string;
+  timestamp: string;
+  status: 'active' | 'reported';
+  campaignTitle?: string;
+  reportedAt?: string;
+}
+
+export interface User {
+  id: string;
+  name: string;
+  email: string;
+  coins: number;
+  avatar: string;
+  streak: number;
+  lastCheckIn?: string;
+  createdAt: string;
+  referralCode?: string;
+  referralsCount?: number;
+  referralEarnings?: number;
+  referredBy?: string;
+  isAdmin?: boolean;
+  isBlocked?: boolean;
+  atoPlayUsername?: string;
+  channelName?: string;
+  channelBanner?: string;
+  channelImage?: string;
+  warningCount?: number;
+  isFollowRestricted?: boolean;
+  loginMethod?: 'google' | 'atoplay';
+}
+
+export interface Campaign {
+  id: string;
+  userId: string;
+  userName?: string;
+  videoUrl: string;
+  title: string;
+  thumbnailUrl: string;
+  viewsRequired: number;
+  viewsCompleted: number;
+  rewardPerView: number;
+  targetViews: number;
+  completedViews: number;
+  durationSeconds: number;
+  totalCoinsCost: number;
+  status: 'active' | 'completed' | 'paused' | 'cancelled';
+  createdAt: string;
+  displayId?: string;
+  countryFlag?: string;
+  channelName?: string;
+  durationText?: string;
+  completedUserIds?: string[];
+  followedUserIds?: string[];
+  channelFollowers?: number;
+  initialFollowers?: number;
+  lastCheckedFollowers?: number;
+  channelId?: string;
+  followLogs?: FollowLog[];
+  campaignType?: 'video' | 'follower';
+}
+
+export interface Transaction {
+  id: string;
+  userId: string;
+  type: 'earned_watch' | 'earned_follow' | 'spent_campaign' | 'bonus_signup' | 'daily_checkin' | 'rewarded_ad' | 'iap_purchase' | 'refund_campaign' | 'referral_bonus' | 'referral_received';
+  amount: number;
+  description: string;
+  createdAt: string;
+}
+
+interface LiveAtoPlayFollowerResult {
+  count: number | null;
+  channelId?: string;
+  channelName?: string;
+  channelBanner?: string;
+  channelImage?: string;
+  isRealAtoPlay: boolean;
+}
+
+function parseFollowersNumber(val: any): number | undefined {
+  if (typeof val === 'number' && !isNaN(val)) return Math.max(0, Math.floor(val));
+  if (val === null || val === undefined || typeof val !== 'string') return undefined;
+  const s = val.trim().toUpperCase();
+  if (!s) return undefined;
+  const mMatch = s.match(/^([0-9.]+)\s*M$/i);
+  if (mMatch) return Math.round(parseFloat(mMatch[1]) * 1000000);
+  const kMatch = s.match(/^([0-9.]+)\s*K$/i);
+  if (kMatch) return Math.round(parseFloat(kMatch[1]) * 1000);
+  const n = parseInt(s.replace(/,/g, ''), 10);
+  return isNaN(n) ? undefined : Math.max(0, n);
+}
+
+function parseAtoPlayUrlIdentifiers(rawUrl?: string, explicitChannelId?: string): {
+  channelSlug?: string;
+  videoId?: string;
+  isChannelUrl: boolean;
+} {
+  const s = (rawUrl || '').trim();
+  const isChannelUrl = /(?:channels?\/|c\/|user\/|@)/i.test(s);
+  let channelSlug = explicitChannelId && explicitChannelId !== 'channel' && explicitChannelId !== 'channels'
+    ? explicitChannelId.trim()
+    : undefined;
+  let videoId: string | undefined = undefined;
+
+  if (isChannelUrl) {
+    const match = s.match(/(?:channels?\/|c\/|user\/|@)([a-zA-Z0-9_-]+)/i);
+    if (match && match[1] && match[1].toLowerCase() !== 'channel' && match[1].toLowerCase() !== 'channels') {
+      channelSlug = match[1];
+    }
+  } else {
+    const uuidMatch = s.match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
+    if (uuidMatch && uuidMatch[1]) {
+      videoId = uuidMatch[1].toLowerCase();
+    } else {
+      const hex32Match = s.match(/(?:video\/|v\/|watch\/|post\/)?([0-9a-f]{32})/i);
+      if (hex32Match && hex32Match[1] && hex32Match[1].length === 32) {
+        const h = hex32Match[1].toLowerCase();
+        videoId = `${h.slice(0,8)}-${h.slice(8,12)}-${h.slice(12,16)}-${h.slice(16,20)}-${h.slice(20,32)}`;
+      }
+    }
+    if (channelSlug && videoId && channelSlug.toLowerCase() === videoId.toLowerCase()) {
+      channelSlug = undefined;
     }
   }
-});
+
+  return { channelSlug, videoId, isChannelUrl };
+}
+
+async function fetchLiveAtoPlayFollowerCount(input: {
+  videoUrl?: string;
+  channelId?: string;
+  channelName?: string;
+}): Promise<LiveAtoPlayFollowerResult> {
+  const { channelSlug: initialChannelId, videoId } = parseAtoPlayUrlIdentifiers(input.videoUrl, input.channelId);
+  let resolvedChannelId = initialChannelId;
+  let resolvedChannelName = input.channelName;
+  let resolvedBanner: string | undefined = undefined;
+  let resolvedImage: string | undefined = undefined;
+  let liveCount: number | null = null;
+  let isRealAtoPlay = false;
+
+  const ts = Date.now();
+  const reqHeaders: Record<string, string> = {
+    'Accept': 'application/json',
+    'Cache-Control': 'no-cache, no-store, must-revalidate',
+    'Pragma': 'no-cache'
+  };
+
+  if (!resolvedChannelId && videoId) {
+    try {
+      const vRes = await fetch(`https://api.atoplay.com/api/videos/v2/${videoId}?_t=${ts}`, {
+        headers: reqHeaders
+      });
+      if (vRes.ok) {
+        const vData = await vRes.json();
+        const chObj = vData?.channel || vData?.data?.channel || {};
+        if (chObj?.id || vData?.channelId) {
+          resolvedChannelId = chObj?.id || vData?.channelId;
+        }
+        if (chObj?.name || vData?.channelName) {
+          resolvedChannelName = chObj?.name || vData?.channelName;
+        }
+        const vFollowers = parseFollowersNumber(
+          chObj?.followersCount ?? chObj?.followers ?? vData?.followersCount
+        );
+        if (vFollowers !== undefined) {
+          liveCount = vFollowers;
+          isRealAtoPlay = true;
+        }
+      }
+    } catch {}
+  }
+
+  if (resolvedChannelId) {
+    try {
+      const countRes = await fetch(`https://api.atoplay.com/api/channel/${resolvedChannelId}/count?_t=${ts}`, {
+        headers: reqHeaders
+      });
+      if (countRes.ok) {
+        const countData = await countRes.json();
+        const parsed = parseFollowersNumber(
+          countData?.followersCount ?? countData?.count ?? countData?.followers ?? countData?.data?.followersCount
+        );
+        if (parsed !== undefined) {
+          liveCount = parsed;
+          isRealAtoPlay = true;
+        }
+      }
+    } catch {}
+
+    try {
+      const chRes = await fetch(`https://api.atoplay.com/api/channels/${resolvedChannelId}?_t=${ts}`, {
+        headers: reqHeaders
+      });
+      if (chRes.ok) {
+        const chData = await chRes.json();
+        const chObj = chData?.channel || chData?.data?.channel || chData?.data || chData;
+        if (chObj && typeof chObj === 'object') {
+          if (chObj.id) resolvedChannelId = chObj.id;
+          if (chObj.name || chObj.username || chObj.title) {
+            resolvedChannelName = chObj.name || chObj.username || chObj.title;
+          }
+          if (chObj.channelBanner) {
+            resolvedBanner = chObj.channelBanner.startsWith('http')
+              ? chObj.channelBanner
+              : `https://cdn.atoplay.in/${chObj.channelBanner.replace(/^\//, '')}`;
+          }
+          if (chObj.channelImage) {
+            resolvedImage = chObj.channelImage.startsWith('http')
+              ? chObj.channelImage
+              : `https://cdn.atoplay.in/${chObj.channelImage.replace(/^\//, '')}`;
+          }
+          const chFollowers = parseFollowersNumber(
+            chObj.followersCount ?? chObj.followers ?? chObj.subscribersCount
+          );
+          if (chFollowers !== undefined) {
+            liveCount = liveCount !== null ? Math.max(liveCount, chFollowers) : chFollowers;
+            isRealAtoPlay = true;
+          }
+        }
+      } else if (!isRealAtoPlay && resolvedChannelId) {
+        const uuidMatch = resolvedChannelId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
+        if (uuidMatch) {
+          try {
+            const vRes2 = await fetch(`https://api.atoplay.com/api/videos/v2/${resolvedChannelId}?_t=${ts}`, {
+              headers: reqHeaders
+            });
+            if (vRes2.ok) {
+              const vData2 = await vRes2.json();
+              const realChId = vData2?.channelId || vData2?.channel?.id;
+              if (realChId && realChId !== resolvedChannelId) {
+                resolvedChannelId = realChId;
+                if (vData2?.channel?.name) resolvedChannelName = vData2.channel.name;
+                const cRes2 = await fetch(`https://api.atoplay.com/api/channel/${realChId}/count?_t=${ts}`, {
+                  headers: reqHeaders
+                });
+                if (cRes2.ok) {
+                  const cData2 = await cRes2.json();
+                  const p2 = parseFollowersNumber(cData2?.followersCount ?? cData2?.count);
+                  if (p2 !== undefined) {
+                    liveCount = p2;
+                    isRealAtoPlay = true;
+                  }
+                }
+              }
+            }
+          } catch {}
+        }
+      }
+    } catch {}
+  }
+
+  return {
+    count: liveCount,
+    channelId: resolvedChannelId,
+    channelName: resolvedChannelName,
+    channelBanner: resolvedBanner,
+    channelImage: resolvedImage,
+    isRealAtoPlay
+  };
+}
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
@@ -2600,96 +2862,14 @@ app.get("/api/transactions", (req, res) => {
   res.json({ success: true, transactions });
 });
 
-// Google Search Console & SEO Routes
-app.get("/robots.txt", (req, res) => {
-  const host = req.get("host") || "ais-dev-wpjs2egvjyghfr7d3stbsk-1074165775969.asia-southeast1.run.app";
-  const protocol = req.protocol === "https" || req.headers["x-forwarded-proto"] === "https" ? "https" : "http";
-  const baseUrl = `${protocol}://${host}`;
-
-  const robots = `# Google Search Console & Web Crawler Directives
-User-agent: *
-Allow: /
-Disallow: /api/
-
-User-agent: Googlebot
-Allow: /
-Disallow: /api/
-
-User-agent: Googlebot-Image
-Allow: /
-Allow: /public/
-
-User-agent: Bingbot
-Allow: /
-Disallow: /api/
-
-User-agent: Twitterbot
-Allow: /
-
-User-agent: facebookexternalhit
-Allow: /
-
-# Canonical Sitemap URL
-Sitemap: ${baseUrl}/sitemap.xml
-`;
-
-  res.setHeader("Content-Type", "text/plain; charset=utf-8");
-  res.send(robots);
-});
-
-app.get("/sitemap.xml", (req, res) => {
-  const host = req.get("host") || "ais-dev-wpjs2egvjyghfr7d3stbsk-1074165775969.asia-southeast1.run.app";
-  const protocol = req.protocol === "https" || req.headers["x-forwarded-proto"] === "https" ? "https" : "http";
-  const baseUrl = `${protocol}://${host}`;
-  const currentDate = new Date().toISOString().split("T")[0];
-
-  const xml = `<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
-        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-        xsi:schemaLocation="http://www.sitemaps.org/schemas/sitemap/0.9
-        http://www.sitemaps.org/schemas/sitemap/0.9/sitemap.xsd">
-  <url>
-    <loc>${baseUrl}/</loc>
-    <lastmod>${currentDate}</lastmod>
-    <changefreq>daily</changefreq>
-    <priority>1.0</priority>
-  </url>
-  <url>
-    <loc>${baseUrl}/?tab=watch</loc>
-    <lastmod>${currentDate}</lastmod>
-    <changefreq>hourly</changefreq>
-    <priority>0.9</priority>
-  </url>
-  <url>
-    <loc>${baseUrl}/?tab=campaigns</loc>
-    <lastmod>${currentDate}</lastmod>
-    <changefreq>daily</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>${baseUrl}/?tab=wallet</loc>
-    <lastmod>${currentDate}</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.7</priority>
-  </url>
-  <url>
-    <loc>${baseUrl}/?tab=referral</loc>
-    <lastmod>${currentDate}</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.7</priority>
-  </url>
-</urlset>`;
-
-  res.setHeader("Content-Type", "application/xml; charset=utf-8");
-  res.send(xml);
-});
-
 // PWA Manifest route
 app.get("/manifest.json", (_req, res) => {
   res.setHeader("Content-Type", "application/manifest+json; charset=utf-8");
-  const manifestPath = path.join(process.cwd(), "public", "manifest.json");
-  if (fs.existsSync(manifestPath)) {
-    res.sendFile(manifestPath);
+  const publicManifest = path.join(process.cwd(), "public", "manifest.json");
+  const distManifest = path.join(process.cwd(), "dist", "manifest.json");
+  const target = fs.existsSync(publicManifest) ? publicManifest : distManifest;
+  if (fs.existsSync(target)) {
+    res.sendFile(target);
   } else {
     res.status(404).json({ error: "manifest.json not found" });
   }
@@ -2700,9 +2880,11 @@ app.get("/sw.js", (_req, res) => {
   res.setHeader("Content-Type", "application/javascript; charset=utf-8");
   res.setHeader("Service-Worker-Allowed", "/");
   res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
-  const swPath = path.join(process.cwd(), "public", "sw.js");
-  if (fs.existsSync(swPath)) {
-    res.sendFile(swPath);
+  const publicSw = path.join(process.cwd(), "public", "sw.js");
+  const distSw = path.join(process.cwd(), "dist", "sw.js");
+  const target = fs.existsSync(publicSw) ? publicSw : distSw;
+  if (fs.existsSync(target)) {
+    res.sendFile(target);
   } else {
     res.status(404).send("// sw.js not found");
   }
@@ -2741,7 +2923,6 @@ function buildSitemapXml(activeCampaigns: Campaign[]): string {
   xml += `        xmlns:video="http://www.google.com/schemas/sitemap-video/1.1"\n`;
   xml += `        xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">\n`;
 
-  // App Pages
   for (const page of appPages) {
     xml += `  <url>\n`;
     xml += `    <loc>${baseUrl}${page.path}</loc>\n`;
@@ -2751,7 +2932,6 @@ function buildSitemapXml(activeCampaigns: Campaign[]): string {
     xml += `  </url>\n`;
   }
 
-  // Active Videos in the App
   for (const camp of activeCampaigns) {
     if (!camp || camp.status !== 'active') continue;
     const campDate = camp.createdAt ? camp.createdAt.split('T')[0] : today;
@@ -2778,8 +2958,11 @@ function buildSitemapXml(activeCampaigns: Campaign[]): string {
 
 function persistSitemapToDisk(): void {
   try {
-    const publicSitemap = path.join(process.cwd(), "public", "sitemap.xml");
-    fs.writeFileSync(publicSitemap, buildSitemapXml(campaigns), "utf-8");
+    const publicDir = path.join(process.cwd(), "public");
+    if (fs.existsSync(publicDir)) {
+      const publicSitemap = path.join(publicDir, "sitemap.xml");
+      fs.writeFileSync(publicSitemap, buildSitemapXml(campaigns), "utf-8");
+    }
   } catch (err) {
     console.warn("Could not write sitemap.xml to disk:", err);
   }
@@ -2789,9 +2972,11 @@ function persistSitemapToDisk(): void {
 app.get("/robots.txt", (_req, res) => {
   res.setHeader("Content-Type", "text/plain; charset=utf-8");
   res.setHeader("Cache-Control", "public, max-age=3600");
-  const robotsPath = path.join(process.cwd(), "public", "robots.txt");
-  if (fs.existsSync(robotsPath)) {
-    res.sendFile(robotsPath);
+  const publicRobots = path.join(process.cwd(), "public", "robots.txt");
+  const distRobots = path.join(process.cwd(), "dist", "robots.txt");
+  const target = fs.existsSync(publicRobots) ? publicRobots : distRobots;
+  if (fs.existsSync(target)) {
+    res.sendFile(target);
   } else {
     res.send(`# Robots.txt for AtoViewer\nUser-agent: *\nAllow: /\nDisallow: /api/\n\nSitemap: https://ato-play-viewe-increase.vercel.app/sitemap.xml\n`);
   }
@@ -2806,8 +2991,8 @@ app.get("/sitemap.xml", (_req, res) => {
 });
 
 // Support Google Search Console HTML File Verification (e.g. google1234567890abcdef.html)
-app.get("/google:code([a-zA-Z0-9_-]+).html", (req, res) => {
-  const code = req.params.code;
+app.get(/^\/google([a-zA-Z0-9_-]+)\.html$/, (req, res) => {
+  const code = req.params[0] || "";
   res.setHeader("Content-Type", "text/html; charset=utf-8");
   res.send(`google-site-verification: google${code}.html`);
 });
@@ -2818,6 +3003,8 @@ const servePublicImage = (filename: string, contentType: string = "image/png") =
   res.setHeader("Cache-Control", "public, max-age=300, must-revalidate");
   const p = path.join(process.cwd(), "public", filename);
   if (fs.existsSync(p)) return res.sendFile(p);
+  const d = path.join(process.cwd(), "dist", filename);
+  if (fs.existsSync(d)) return res.sendFile(d);
   const rootP = path.join(process.cwd(), filename);
   if (fs.existsSync(rootP)) return res.sendFile(rootP);
   res.status(404).end();
@@ -2886,7 +3073,6 @@ function loadAssetLinks(): AssetLinkEntry[] {
     console.warn("Failed reading assetlinks.json:", e);
   }
 
-  // Merge base entries and customAssetLinks without duplicates
   const map = new Map<string, AssetLinkEntry>();
   for (const item of [...baseEntries, ...customAssetLinks]) {
     const key = `${item.target.package_name}_${item.target.sha256_cert_fingerprints.join('_')}`;
@@ -2918,7 +3104,6 @@ app.post("/api/assetlinks", (req, res) => {
     }
 
     const cleanPkg = String(packageName).trim();
-    // Normalize fingerprint: uppercase, ensure colons or space-delimited
     const cleanFp = String(sha256Fingerprint).trim().toUpperCase();
 
     const newEntry: AssetLinkEntry = {
@@ -2932,18 +3117,20 @@ app.post("/api/assetlinks", (req, res) => {
 
     customAssetLinks.push(newEntry);
 
-    // Also persist to public/.well-known/assetlinks.json so it survives
     const all = loadAssetLinks();
-    const publicDir = path.join(process.cwd(), "public", ".well-known");
-    if (!fs.existsSync(publicDir)) {
-      fs.mkdirSync(publicDir, { recursive: true });
-    }
-    fs.writeFileSync(path.join(publicDir, "assetlinks.json"), JSON.stringify(all, null, 2), 'utf-8');
-
-    const distDir = path.join(process.cwd(), "dist", ".well-known");
-    if (fs.existsSync(distDir)) {
-      fs.writeFileSync(path.join(distDir, "assetlinks.json"), JSON.stringify(all, null, 2), 'utf-8');
-    }
+    try {
+      const publicDir = path.join(process.cwd(), "public", ".well-known");
+      if (fs.existsSync(path.join(process.cwd(), "public"))) {
+        if (!fs.existsSync(publicDir)) {
+          fs.mkdirSync(publicDir, { recursive: true });
+        }
+        fs.writeFileSync(path.join(publicDir, "assetlinks.json"), JSON.stringify(all, null, 2), 'utf-8');
+      }
+      const distDir = path.join(process.cwd(), "dist", ".well-known");
+      if (fs.existsSync(distDir)) {
+        fs.writeFileSync(path.join(distDir, "assetlinks.json"), JSON.stringify(all, null, 2), 'utf-8');
+      }
+    } catch {}
 
     res.json({
       success: true,
@@ -2955,13 +3142,21 @@ app.post("/api/assetlinks", (req, res) => {
   }
 });
 
-
 function serveStatic(distPath: string) {
-  app.use(express.static(distPath, { dotfiles: 'allow' }));
+  if (fs.existsSync(distPath)) {
+    app.use(express.static(distPath, { dotfiles: 'allow' }));
+  }
+  const publicPath = path.resolve(process.cwd(), 'public');
+  if (fs.existsSync(publicPath)) {
+    app.use(express.static(publicPath, { dotfiles: 'allow' }));
+  }
   app.get('*', (_req, res) => {
     const indexPath = path.join(distPath, 'index.html');
+    const fallbackIndexPath = path.resolve(__dirname, 'dist', 'index.html');
     if (fs.existsSync(indexPath)) {
       res.sendFile(indexPath);
+    } else if (fs.existsSync(fallbackIndexPath)) {
+      res.sendFile(fallbackIndexPath);
     } else {
       res.status(200).send('<!DOCTYPE html><html><head><title>AtoPlay Booster</title></head><body><h1>AtoPlay Booster Server</h1><p>Status: OK</p></body></html>');
     }
@@ -2969,10 +3164,16 @@ function serveStatic(distPath: string) {
 }
 
 async function startServer() {
-  const distPath = path.resolve(process.cwd(), 'dist');
+  const cwdDist = path.resolve(process.cwd(), 'dist');
+  const dirDist = path.resolve(__dirname, 'dist');
+  const distPath = fs.existsSync(path.join(cwdDist, 'index.html')) ? cwdDist : dirDist;
   const hasDist = fs.existsSync(path.join(distPath, 'index.html'));
-  const isDevCommand = process.env.npm_lifecycle_event === "dev";
-  const isProduction = process.env.NODE_ENV === "production" || (hasDist && !isDevCommand);
+  const isDevCommand = process.env.npm_lifecycle_event === "dev" && !process.env.K_SERVICE && process.env.NODE_ENV !== "production";
+  const isProduction = !isDevCommand || process.env.NODE_ENV === "production" || Boolean(process.env.K_SERVICE) || (hasDist && !isDevCommand);
+
+  if (isProduction) {
+    serveStatic(distPath);
+  }
 
   const server = app.listen(PORT, "0.0.0.0", () => {
     console.log(`AtoPlay Booster Server running on http://0.0.0.0:${PORT} (mode: ${isProduction ? 'production' : 'development'})`);
@@ -2994,8 +3195,6 @@ async function startServer() {
       console.warn("Vite dev middleware unavailable, serving static dist:", err);
       serveStatic(distPath);
     }
-  } else {
-    serveStatic(distPath);
   }
 }
 
