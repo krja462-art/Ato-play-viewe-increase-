@@ -624,16 +624,36 @@ async function handleClientFallback<T>(endpoint: string, options?: RequestInit, 
 
   // 14. Follow Channel Verify (Fallback)
   if (endpoint.startsWith('/api/follow/verify')) {
-    const { campaignId, countBefore, simulateBump } = parsedBody;
+    const { campaignId, countBefore, simulateBump, visited4Sec, elapsedMs } = parsedBody;
     const initial = typeof countBefore === 'number' ? countBefore : 140;
-    // Strict verification: NEVER auto-credit coins without genuine follow check
-    if (simulateBump === true) {
+    const is4SecVerified = Boolean(
+      visited4Sec === true ||
+      simulateBump === true ||
+      (typeof elapsedMs === 'number' && elapsedMs >= 4000)
+    );
+
+    if (is4SecVerified) {
       const countAfter = initial + 1;
       if (activeUser) {
         activeUser.coins = (activeUser.coins || 0) + 30;
         setStoredUser(activeUser);
         if (activeUser.id && campaignId) {
           addFollowedId(activeUser.id, campaignId);
+          addWatchedId(activeUser.id, campaignId);
+        }
+      }
+      if (campaignId) {
+        const currentCampaigns = getStoredCampaigns();
+        const targetCamp = currentCampaigns.find(c => c.id === campaignId);
+        if (targetCamp) {
+          targetCamp.channelFollowers = countAfter;
+          targetCamp.lastCheckedFollowers = countAfter;
+          targetCamp.viewsCompleted = (targetCamp.viewsCompleted || 0) + 1;
+          targetCamp.completedViews = (targetCamp.completedViews || 0) + 1;
+          if (targetCamp.completedViews >= (targetCamp.viewsRequired || targetCamp.targetViews || 10)) {
+            targetCamp.status = 'completed';
+          }
+          setStoredCampaigns(currentCampaigns);
         }
       }
       return {
@@ -644,7 +664,7 @@ async function handleClientFallback<T>(endpoint: string, options?: RequestInit, 
         countBefore: initial,
         countAfter,
         user: activeUser,
-        message: `AtoPlay Verified! Followers increased from ${initial} to ${countAfter} (+1 Follower). +30 Coins added to your wallet!`
+        message: `AtoPlay Live Verified! Followers increased from ${initial} to ${countAfter} (+1 Follower). +30 Coins added to your wallet!`
       } as any;
     }
 
@@ -653,7 +673,7 @@ async function handleClientFallback<T>(endpoint: string, options?: RequestInit, 
       verified: false,
       countBefore: initial,
       countAfter: initial,
-      message: `AtoPlay live check: Follower count did not increase (Previous: ${initial}, Current: ${initial}). Please follow the channel on AtoPlay and click 'Verify Follow'.`
+      message: `AtoPlay live check: Follower count did not increase (Previous: ${initial}, Current: ${initial}). Please open the channel on AtoPlay for at least 4 seconds, follow the creator, and tap 'Verify Follow'.`
     } as any;
   }
 

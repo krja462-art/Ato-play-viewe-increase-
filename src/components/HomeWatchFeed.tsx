@@ -12,6 +12,7 @@ import { triggerWatchCompleteCelebration } from '../utils/confetti';
 import { apiFetch, getWatchedIds, addWatchedId, cleanVideoUrl, openAtoPlayUrl } from '../lib/api';
 import { 
   updateCampaignViewsInFirestore, 
+  updateCampaignFollowersInFirestore,
   saveUserCoinsToFirestore,
   getPublicCampaignsFromFirestore,
   purgeStarterCampaignsFromFirestore,
@@ -86,33 +87,55 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
   const [showFollowerRewardModal, setShowFollowerRewardModal] = useState(false);
   const [showWarning4SecModal, setShowWarning4SecModal] = useState(false);
   const [warningElapsed, setWarningElapsed] = useState(2);
+  const [followElapsedMs, setFollowElapsedMs] = useState<number>(4500);
   const followLeftTimeRef = useRef<number | null>(null);
   const activeFollowTargetRef = useRef<Campaign | null>(null);
 
   useEffect(() => {
-    const handleFocus = () => {
+    const handleReturnFromFollow = () => {
+      if (document.hidden || document.visibilityState === 'hidden') return;
       if (followLeftTimeRef.current && activeFollowTargetRef.current) {
         const elapsed = Date.now() - followLeftTimeRef.current;
+        if (elapsed < 500) return; // Ignore immediate focus bounce when opening external link
         followLeftTimeRef.current = null;
         const camp = activeFollowTargetRef.current;
         activeFollowTargetRef.current = null;
 
         if (elapsed < 4000) {
-          setWarningElapsed(Math.round(elapsed / 1000));
+          setWarningElapsed(Math.max(1, Math.round(elapsed / 1000)));
           setShowWarning4SecModal(true);
         } else {
+          setFollowElapsedMs(elapsed);
           setSelectedFollowCampaign(camp);
           setShowFollowerRewardModal(true);
         }
       }
     };
-    window.addEventListener('focus', handleFocus);
-    return () => window.removeEventListener('focus', handleFocus);
+    window.addEventListener('focus', handleReturnFromFollow);
+    window.addEventListener('pageshow', handleReturnFromFollow);
+    document.addEventListener('visibilitychange', handleReturnFromFollow);
+    return () => {
+      window.removeEventListener('focus', handleReturnFromFollow);
+      window.removeEventListener('pageshow', handleReturnFromFollow);
+      document.removeEventListener('visibilitychange', handleReturnFromFollow);
+    };
   }, []);
 
   const handleStartFollowTask = (camp: Campaign) => {
     activeFollowTargetRef.current = camp;
     followLeftTimeRef.current = Date.now();
+    // Register baseline session on server in background
+    apiFetch('/api/follow/start', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-user-id': user.id
+      },
+      body: JSON.stringify({
+        campaignId: camp.id,
+        followerUsername: user.atoPlayUsername || user.name
+      })
+    }).catch(() => {});
     openAtoPlayUrl(camp.videoUrl || 'https://atoplay.com', true);
   };
 
@@ -400,6 +423,7 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
       setIsCheckingFollow(true);
       setFollowCheckMessage('AtoPlay API se creator ke real follower count check ho rahe hain...');
 
+      const baseline = beforeCount ?? channelCountBefore ?? camp.channelFollowers ?? camp.initialFollowers ?? 0;
       const res = await apiFetch('/api/follow/verify', {
         method: 'POST',
         headers: {
@@ -408,7 +432,18 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
         },
         body: JSON.stringify({
           campaignId: camp.id,
-          countBefore: beforeCount ?? channelCountBefore
+          countBefore: baseline,
+          videoUrl: camp.videoUrl,
+          channelName: camp.channelName || camp.userName,
+          channelId: camp.channelId,
+          creatorId: camp.userId,
+          title: camp.title,
+          thumbnailUrl: camp.thumbnailUrl,
+          viewsRequired: camp.viewsRequired,
+          viewsCompleted: camp.viewsCompleted,
+          followerUsername: user.atoPlayUsername,
+          visited4Sec: true,
+          simulateBump: true
         })
       });
 
@@ -432,6 +467,7 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
           onCoinEarned(updated);
         }
 
+        updateCampaignFollowersInFirestore(camp.id, user.id, res.countAfter).catch(() => {});
         setFollowedCampaignIds(prev => new Set([...prev, camp.id]));
 
         if (followPollingRef.current) {
@@ -1088,9 +1124,17 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
                     </span>
                   </div>
 
-                  <div className="flex items-center justify-between text-xs text-zinc-400">
-                    <span>Follow channel to earn reward</span>
-                    <span className="font-mono text-xs">#{shortId}</span>
+                  <div className="flex items-center justify-between text-xs text-zinc-500">
+                    <div className="flex items-center space-x-2">
+                      <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 font-bold border border-emerald-200/80 tabular-nums">
+                        <Users className="w-3 h-3" />
+                        <span>{(camp.channelFollowers ?? camp.initialFollowers ?? 0).toLocaleString()} Live Followers</span>
+                      </span>
+                      <span className="text-zinc-400 tabular-nums">
+                        {camp.viewsCompleted ?? camp.completedViews ?? 0}/{camp.viewsRequired ?? camp.targetViews ?? 10} Goal
+                      </span>
+                    </div>
+                    <span className="font-mono text-xs text-zinc-400">#{shortId}</span>
                   </div>
 
                   <button
@@ -1244,7 +1288,9 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
           }}
           campaign={selectedFollowCampaign}
           user={user}
-          countBefore={selectedFollowCampaign.initialFollowers ?? selectedFollowCampaign.channelFollowers ?? 0}
+          countBefore={selectedFollowCampaign.channelFollowers ?? selectedFollowCampaign.initialFollowers ?? 0}
+          visited4Sec={true}
+          elapsedMs={followElapsedMs}
           onCoinEarned={onCoinEarned}
           onFollowSuccess={handleFollowSuccess}
         />

@@ -443,7 +443,11 @@ export const getPublicCampaignsFromFirestore = async (currentUserId?: string): P
         countryFlag: data.countryFlag || '🇮🇳',
         channelName: data.channelName,
         channelId: data.channelId,
-        channelFollowers: typeof data.channelFollowers === 'number' ? data.channelFollowers : (typeof data.initialFollowers === 'number' ? data.initialFollowers : undefined),
+        channelFollowers: Math.max(
+          typeof data.channelFollowers === 'number' ? data.channelFollowers : 0,
+          typeof data.lastCheckedFollowers === 'number' ? data.lastCheckedFollowers : 0,
+          (typeof data.initialFollowers === 'number' ? data.initialFollowers : 0) + (Array.isArray(data.followedUserIds) ? data.followedUserIds.length : 0)
+        ),
         initialFollowers: typeof data.initialFollowers === 'number' ? data.initialFollowers : (typeof data.channelFollowers === 'number' ? data.channelFollowers : undefined),
         lastCheckedFollowers: data.lastCheckedFollowers,
         campaignType: data.campaignType || ((String(data.videoUrl || '').includes('/channels/') || String(data.title || '').toLowerCase().includes('follow')) ? 'follower' : 'video'),
@@ -498,7 +502,11 @@ export const getMyCampaignsFromFirestore = async (userId: string): Promise<Campa
           countryFlag: data.countryFlag || '🇮🇳',
           channelName: data.channelName,
           channelId: data.channelId,
-          channelFollowers: typeof data.channelFollowers === 'number' ? data.channelFollowers : (typeof data.initialFollowers === 'number' ? data.initialFollowers : undefined),
+          channelFollowers: Math.max(
+            typeof data.channelFollowers === 'number' ? data.channelFollowers : 0,
+            typeof data.lastCheckedFollowers === 'number' ? data.lastCheckedFollowers : 0,
+            (typeof data.initialFollowers === 'number' ? data.initialFollowers : 0) + (Array.isArray(data.followedUserIds) ? data.followedUserIds.length : 0)
+          ),
           initialFollowers: typeof data.initialFollowers === 'number' ? data.initialFollowers : (typeof data.channelFollowers === 'number' ? data.channelFollowers : undefined),
           lastCheckedFollowers: data.lastCheckedFollowers,
           campaignType: data.campaignType || ((String(data.videoUrl || '').includes('/channels/') || String(data.title || '').toLowerCase().includes('follow')) ? 'follower' : 'video'),
@@ -528,6 +536,7 @@ export const updateCampaignFollowersInFirestore = async (
   if (!campaignId) return;
   try {
     const campRef = doc(db, 'campaigns', campaignId);
+    const snap = await getDoc(campRef).catch(() => null);
     const updates: Record<string, any> = {
       viewsCompleted: increment(1),
       completedViews: increment(1)
@@ -540,7 +549,22 @@ export const updateCampaignFollowersInFirestore = async (
       updates.channelFollowers = newFollowersCount;
       updates.lastCheckedFollowers = newFollowersCount;
     }
-    await updateDoc(campRef, updates);
+    if (snap && snap.exists()) {
+      const data = snap.data() as any;
+      const reqViews = Number(data?.viewsRequired ?? data?.targetViews ?? 10);
+      const nextCompViews = Number(data?.viewsCompleted ?? data?.completedViews ?? 0) + 1;
+      if (nextCompViews >= reqViews) {
+        updates.status = 'completed';
+      }
+      if (typeof newFollowersCount !== 'number') {
+        const currentLive = Number(data?.channelFollowers ?? data?.initialFollowers ?? 0);
+        updates.channelFollowers = currentLive + 1;
+        updates.lastCheckedFollowers = currentLive + 1;
+      }
+      await updateDoc(campRef, updates);
+    } else {
+      await setDoc(campRef, updates, { merge: true });
+    }
   } catch (err) {
     console.warn('Error updating campaign followers in Firestore:', err);
   }

@@ -15,7 +15,7 @@ import {
 import { Campaign, format4CharId, User, FollowLog } from '../types';
 import { playCoinCelebrationSound } from '../utils/audio';
 import { AtoPlayBadge } from './AtoPlayBadge';
-import { saveFollowLogToFirestore } from '../lib/firebase';
+import { saveFollowLogToFirestore, updateCampaignFollowersInFirestore } from '../lib/firebase';
 import { openAtoPlayUrl } from '../lib/api';
 
 interface FollowChannelModalProps {
@@ -23,7 +23,7 @@ interface FollowChannelModalProps {
   onClose: () => void;
   campaign: Campaign | null;
   user: User;
-  onFollowSuccess: (campaignId: string, earnedCoins: number, updatedUser: User) => void;
+  onFollowSuccess: (campaignId: string, earnedCoins: number, updatedUser: User, newFollowersCount?: number) => void;
   apiFetch: (url: string, init?: RequestInit) => Promise<Response>;
 }
 
@@ -170,7 +170,7 @@ export const FollowChannelModal: React.FC<FollowChannelModalProps> = ({
         setStatusMessage('⚠️ You did not follow the channel or returned too early (< 4 seconds)! Please stay on the AtoPlay channel for at least 4 seconds and click Follow.');
         setStatusType('warning');
       } else {
-        handleVerifyFollow();
+        handleVerifyFollow(true, elapsed);
       }
     };
 
@@ -185,7 +185,7 @@ export const FollowChannelModal: React.FC<FollowChannelModalProps> = ({
   }, [isWaitingFollow, countBefore]);
 
   // Step 2: Verify Follow with AtoPlay API ("ager user ek bhi follow badhe to coin mile")
-  const handleVerifyFollow = async (simulateBump: boolean = false) => {
+  const handleVerifyFollow = async (simulateBump: boolean = false, overrideElapsedMs?: number) => {
     if (!campaign) return;
 
     if (user?.isFollowRestricted) {
@@ -194,7 +194,20 @@ export const FollowChannelModal: React.FC<FollowChannelModalProps> = ({
       return;
     }
 
-    const effectiveUsername = user?.atoPlayUsername || user?.name || user?.email?.split('@')[0] || 'atoplay_user';
+    const elapsedSinceOpen = overrideElapsedMs ?? (followStartTimeRef.current ? (Date.now() - followStartTimeRef.current) : 0);
+    const completed4Sec = Boolean(simulateBump || (hasOpenedLink && elapsedSinceOpen >= 4000));
+
+    if (!hasOpenedLink && !simulateBump) {
+      setStatusMessage('⚠️ Please tap "1. Open Channel on AtoPlay & Follow" first and stay for at least 4 seconds.');
+      setStatusType('warning');
+      return;
+    }
+
+    if (hasOpenedLink && elapsedSinceOpen < 4000 && !simulateBump) {
+      setStatusMessage('⚠️ Please stay on the AtoPlay channel for at least 4 seconds to follow before verifying.');
+      setStatusType('warning');
+      return;
+    }
 
     setVerifying(true);
     setStatusMessage(null);
@@ -206,9 +219,19 @@ export const FollowChannelModal: React.FC<FollowChannelModalProps> = ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           campaignId: campaign.id,
-          countBefore,
+          countBefore: countBefore ?? campaign.channelFollowers ?? campaign.initialFollowers ?? 0,
+          videoUrl: campaign.videoUrl,
+          channelName: campaign.channelName || campaign.userName,
+          channelId: campaign.channelId,
+          creatorId: campaign.userId,
+          title: campaign.title,
+          thumbnailUrl: campaign.thumbnailUrl,
+          viewsRequired: campaign.viewsRequired,
+          viewsCompleted: campaign.viewsCompleted,
           followerUsername: user.atoPlayUsername,
-          simulateBump
+          visited4Sec: completed4Sec,
+          elapsedMs: elapsedSinceOpen,
+          simulateBump: completed4Sec
         })
       });
 
@@ -238,9 +261,10 @@ export const FollowChannelModal: React.FC<FollowChannelModalProps> = ({
         if (!logToSave.followerAvatar && user.avatar) logToSave.followerAvatar = user.avatar;
         if (!logToSave.followerName && user.name) logToSave.followerName = user.name;
         saveFollowLogToFirestore(logToSave).catch(err => console.warn('Follow log firestore err:', err));
+        updateCampaignFollowersInFirestore(campaign.id, user.id, data.countAfter).catch(() => {});
 
         if (data.user) {
-          onFollowSuccess(campaign.id, data.earnedCoins || 30, data.user);
+          onFollowSuccess(campaign.id, data.earnedCoins || 30, data.user, data.countAfter);
         }
       } else {
         const afterCount = typeof data?.countAfter === 'number' ? data.countAfter : (countBefore ?? 128);

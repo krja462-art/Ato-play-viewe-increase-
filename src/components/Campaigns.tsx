@@ -160,6 +160,7 @@ export const Campaigns: React.FC<CampaignsProps> = ({
           campMap.set(c.id, {
             ...prev,
             ...c,
+            channelFollowers: Math.max(prev.channelFollowers ?? 0, c.channelFollowers ?? 0),
             viewsCompleted: Math.max(prev.viewsCompleted ?? 0, c.viewsCompleted ?? 0),
             completedViews: Math.max(prev.completedViews ?? 0, c.completedViews ?? 0)
           });
@@ -172,7 +173,7 @@ export const Campaigns: React.FC<CampaignsProps> = ({
       }));
       mergedList.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
-      // Fetch follow logs for each campaign so followers (avatar, email, name) are immediately loaded
+      // Fetch follow logs for each campaign so followers (avatar, email, name) and live counts are immediately synced
       const campaignsWithLogs = await Promise.all(
         mergedList.map(async (camp) => {
           let logs = camp.followLogs || [];
@@ -186,8 +187,22 @@ export const Campaigns: React.FC<CampaignsProps> = ({
               console.warn('Error loading follow logs for camp:', camp.id, fErr);
             }
           }
+          const isFollowerCamp = camp.campaignType === 'follower' || String(camp.title || '').toLowerCase().includes('follow') || String(camp.videoUrl || '').toLowerCase().includes('/channels/') || String(camp.videoUrl || '').toLowerCase().includes('/channel/');
+          const verifiedCount = Math.max(logs.length, Array.isArray(camp.followedUserIds) ? camp.followedUserIds.length : 0);
+          const initF = typeof camp.initialFollowers === 'number' ? camp.initialFollowers : (typeof camp.channelFollowers === 'number' ? camp.channelFollowers : 0);
+          const syncedChannelFollowers = Math.max(
+            typeof camp.channelFollowers === 'number' ? camp.channelFollowers : 0,
+            initF + verifiedCount
+          );
+          const syncedViewsCompleted = isFollowerCamp
+            ? Math.max(camp.viewsCompleted ?? 0, camp.completedViews ?? 0, verifiedCount)
+            : Math.max(camp.viewsCompleted ?? 0, camp.completedViews ?? 0);
+
           return {
             ...camp,
+            channelFollowers: syncedChannelFollowers,
+            viewsCompleted: syncedViewsCompleted,
+            completedViews: syncedViewsCompleted,
             followLogs: logs
           };
         })
@@ -639,6 +654,15 @@ export const Campaigns: React.FC<CampaignsProps> = ({
                       <span className="font-semibold text-zinc-700 text-[11px] tabular-nums">
                         {isFollowerCamp ? '30 Coins / follower' : '60 Coins / view'}
                       </span>
+                      {typeof camp.channelFollowers === 'number' && (
+                        <>
+                          <span className="text-zinc-300">·</span>
+                          <span className="inline-flex items-center space-x-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200/80 tabular-nums">
+                            <Users className="w-3 h-3" />
+                            <span>{camp.channelFollowers.toLocaleString()} Live Followers</span>
+                          </span>
+                        </>
+                      )}
                       <span className="text-zinc-300">·</span>
                       <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-md ${
                         isCompleted 
