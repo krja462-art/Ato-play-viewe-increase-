@@ -7,7 +7,7 @@ import { fetchLiveAtoPlayFollowerCount } from "./src/lib/videoExtractor.ts";
 import { GoogleGenAI } from "@google/genai";
 
 const ai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY,
+  apiKey: process.env.GEMINI_API_KEY || "ai-studio-placeholder-key",
   httpOptions: {
     headers: {
       'User-Agent': 'aistudio-build',
@@ -16,12 +16,12 @@ const ai = new GoogleGenAI({
 });
 
 const app = express();
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 3000;
 
 app.use(express.json());
 
 // Cloud Run & Load Balancer Health Probes (MUST BE FIRST)
-app.get(["/api/health", "/healthz"], (_req, res) => {
+app.get(["/api/health", "/healthz", "/_ah/health"], (_req, res) => {
   res.status(200).json({ status: "ok", uptime: process.uptime() });
 });
 
@@ -2971,8 +2971,16 @@ function serveStatic(distPath: string) {
 async function startServer() {
   const distPath = path.resolve(process.cwd(), 'dist');
   const hasDist = fs.existsSync(path.join(distPath, 'index.html'));
+  const isDevCommand = process.env.npm_lifecycle_event === "dev";
+  const isProduction = process.env.NODE_ENV === "production" || (hasDist && !isDevCommand);
 
-  const isProduction = process.env.NODE_ENV === "production";
+  const server = app.listen(PORT, "0.0.0.0", () => {
+    console.log(`AtoPlay Booster Server running on http://0.0.0.0:${PORT} (mode: ${isProduction ? 'production' : 'development'})`);
+  });
+
+  server.on('error', (err: any) => {
+    console.error('Server listen error:', err);
+  });
 
   if (!isProduction) {
     try {
@@ -2989,14 +2997,6 @@ async function startServer() {
   } else {
     serveStatic(distPath);
   }
-
-  const server = app.listen(PORT, "0.0.0.0", () => {
-    console.log(`AtoPlay Booster Server running on http://0.0.0.0:${PORT}`);
-  });
-
-  server.on('error', (err: any) => {
-    console.error('Server listen error:', err);
-  });
 }
 
 process.on('uncaughtException', (err) => {

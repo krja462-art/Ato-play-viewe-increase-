@@ -13,6 +13,7 @@ interface CampaignsProps {
   isCreateModalOpen?: boolean;
   onCloseCreateModal?: () => void;
   onOpenCreateModal?: () => void;
+  refreshTrigger?: number;
 }
 
 export const Campaigns: React.FC<CampaignsProps> = ({ 
@@ -20,7 +21,8 @@ export const Campaigns: React.FC<CampaignsProps> = ({
   onCampaignCreated,
   isCreateModalOpen,
   onCloseCreateModal,
-  onOpenCreateModal
+  onOpenCreateModal,
+  refreshTrigger
 }) => {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [loading, setLoading] = useState(true);
@@ -303,7 +305,7 @@ export const Campaigns: React.FC<CampaignsProps> = ({
         clearTimeout(debounceTimerRef.current);
       }
     };
-  }, [user.id]);
+  }, [user.id, refreshTrigger]);
 
   // Fetch real video metadata on demand with client-side memoized cache ref
   const handleFetchMetadata = async (urlToFetch?: string) => {

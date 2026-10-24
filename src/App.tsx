@@ -400,14 +400,30 @@ export default function App() {
     setIsRefreshing(true);
     setRefreshTrigger((prev) => prev + 1);
 
-    // Refresh user balance if logged in
+    // Refresh user balance from both Cloud Firestore and server API if logged in
     if (user?.id) {
       try {
+        let bestCoins = user.coins || 100;
+        if (!user.isAdmin && !user.id.startsWith('guest_')) {
+          const fsCoins = await getUserCoinsFromFirestore(user.id).catch(() => null);
+          if (typeof fsCoins === 'number') {
+            bestCoins = Math.max(bestCoins, fsCoins);
+          }
+        }
         const res = await apiFetch('/api/user', {
-          headers: { 'x-user-id': user.id }
+          headers: { 
+            'x-user-id': user.id,
+            'x-user-coins': String(bestCoins)
+          }
         });
         if (res?.success && res?.user) {
-          handleUpdateUser(res.user);
+          const updated = {
+            ...res.user,
+            coins: user.isAdmin ? 999999999 : Math.max(bestCoins, res.user.coins || 100)
+          };
+          handleUpdateUser(updated);
+        } else if (bestCoins !== user.coins) {
+          handleUpdateUser({ ...user, coins: bestCoins });
         }
       } catch (err) {
         console.warn('Silent refresh user error:', err);
@@ -510,6 +526,7 @@ export default function App() {
             isCreateModalOpen={isCreateModalOpen}
             onCloseCreateModal={handleCloseCreateModal}
             onOpenCreateModal={handleOpenCreateModal}
+            refreshTrigger={refreshTrigger}
           />
         )}
 

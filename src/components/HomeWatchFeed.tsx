@@ -1,17 +1,16 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { User, Campaign, format4CharId, ActiveWatchState } from '../types';
+import { User, Campaign, FollowLog, format4CharId, ActiveWatchState } from '../types';
 import { Play, CheckCircle2, Clock, ArrowLeft, Video, ExternalLink, RefreshCw, Award, Coins, AlertCircle, ShieldCheck, Key, UserPlus, Sparkles, Users, Loader2 } from 'lucide-react';
 import { SessionExpiredModal } from './SessionExpiredModal';
-import { FollowChannelModal } from './FollowChannelModal';
-import { FollowerRewardModal } from './FollowerRewardModal';
 import { Warning4SecModal } from './Warning4SecModal';
 import { AtoPlayBadge } from './AtoPlayBadge';
 import { playCoinCelebrationSound } from '../utils/audio';
 import { triggerWatchCompleteCelebration } from '../utils/confetti';
-import { apiFetch, getWatchedIds, addWatchedId, cleanVideoUrl, openAtoPlayUrl, fetchLiveAtoPlayFollowerCount } from '../lib/api';
+import { apiFetch, getWatchedIds, addWatchedId, addFollowedId, cleanVideoUrl, openAtoPlayUrl, fetchLiveAtoPlayFollowerCount } from '../lib/api';
 import { 
   updateCampaignViewsInFirestore, 
   updateCampaignFollowersInFirestore,
+  saveFollowLogToFirestore,
   saveUserCoinsToFirestore,
   getPublicCampaignsFromFirestore,
   purgeStarterCampaignsFromFirestore,
@@ -57,8 +56,7 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
   const [followCheckMessage, setFollowCheckMessage] = useState<string | null>(null);
   const followPollingRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Dedicated Follow System Modal State
-  const [followModalCampaign, setFollowModalCampaign] = useState<Campaign | null>(null);
+  // Followed Campaign IDs Set
   const [followedCampaignIds, setFollowedCampaignIds] = useState<Set<string>>(new Set());
 
   // Pop notification celebration modal state
@@ -80,22 +78,147 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
   const [expiredElapsed, setExpiredElapsed] = useState(0);
   const [expiredCampaign, setExpiredCampaign] = useState<Campaign | null>(null);
 
-  // Animated on-screen "+60 Coins Added" overlay state (replaces blocking RewardPopupModal)
+  // Animated on-screen "+60 Coins Added" / "+30 Coins Added" overlay state (replaces blocking Reward modals)
   const [videoCoinToast, setVideoCoinToast] = useState<{ coins: number; key: number } | null>(null);
   const coinToastTimerRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Non-blocking toast notice when follow verification does not detect a follower increase
+  const [followNoticeToast, setFollowNoticeToast] = useState<{ message: string; key: number } | null>(null);
+  const followNoticeTimerRef = useRef<NodeJS.Timeout | null>(null);
+
   // Home Section (Video Views vs Followers) & 4-second Anti-Cheat Follower State
   const [homeSection, setHomeSection] = useState<'video' | 'follower'>('video');
-  const [selectedFollowCampaign, setSelectedFollowCampaign] = useState<Campaign | null>(null);
-  const [showFollowerRewardModal, setShowFollowerRewardModal] = useState(false);
   const [showWarning4SecModal, setShowWarning4SecModal] = useState(false);
   const [warningElapsed, setWarningElapsed] = useState(2);
-  const [followElapsedMs, setFollowElapsedMs] = useState<number>(4500);
-  const [followBaselineCount, setFollowBaselineCount] = useState<number | undefined>(undefined);
   const [verifyingFollowId, setVerifyingFollowId] = useState<string | null>(null);
+  const followBaselineCountRef = useRef<number | undefined>(undefined);
   const followLeftTimeRef = useRef<number | null>(null);
   const activeFollowTargetRef = useRef<Campaign | null>(null);
   const isProcessingFollowReturnRef = useRef<boolean>(false);
+
+  const showCoinAddedScreen = useCallback((coinsAmount: number) => {
+    if (coinToastTimerRef.current) {
+      clearTimeout(coinToastTimerRef.current);
+    }
+    setFollowNoticeToast(null);
+    setVideoCoinToast({ coins: coinsAmount, key: Date.now() });
+    coinToastTimerRef.current = setTimeout(() => {
+      setVideoCoinToast(null);
+    }, 2800);
+  }, []);
+
+  const showFollowNotice = useCallback((msg: string) => {
+    if (followNoticeTimerRef.current) {
+      clearTimeout(followNoticeTimerRef.current);
+    }
+    setFollowNoticeToast({ message: msg, key: Date.now() });
+    followNoticeTimerRef.current = setTimeout(() => {
+      setFollowNoticeToast(null);
+    }, 3600);
+  }, []);
+
+  // Silent background verification when user returns from AtoPlay channel after >= 4s
+  const verifyFollowSilentlyInBackground = useCallback(async (camp: Campaign, elapsedMs: number, initialBaseline?: number) => {
+    const baseline = typeof initialBaseline === 'number'
+      ? initialBaseline
+      : (camp.channelFollowers ?? camp.initialFollowers ?? 0);
+
+    try {
+      const requestBody = {
+        campaignId: camp.id,
+        countBefore: baseline,
+        videoUrl: camp.videoUrl,
+        channelName: camp.channelName || camp.userName,
+        channelId: camp.channelId,
+        creatorId: camp.userId,
+        title: camp.title,
+        thumbnailUrl: camp.thumbnailUrl,
+        viewsRequired: camp.viewsRequired,
+        viewsCompleted: camp.viewsCompleted,
+        followerUsername: user.atoPlayUsername,
+        visited4Sec: true,
+        elapsedMs
+      };
+
+      let res = await apiFetch('/api/follow/verify', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': user.id
+        },
+        body: JSON.stringify(requestBody)
+      });
+
+      // If AtoPlay API took a moment to propagate the new follower, retry once silently in background
+      if (!res?.verified && !res?.alreadyFollowed && !res?.restricted) {
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        res = await apiFetch('/api/follow/verify', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-user-id': user.id
+          },
+          body: JSON.stringify(requestBody)
+        });
+      }
+
+      const effectiveBefore = typeof res?.countBefore === 'number' ? res.countBefore : baseline;
+
+      if (res?.verified === true && typeof res?.countAfter === 'number' && res.countAfter > effectiveBefore) {
+        const bonus = res.earnedCoins || 30;
+        const newCoins = (user.coins || 0) + bonus;
+        const resolvedAfter = res.countAfter;
+
+        try {
+          playCoinCelebrationSound();
+        } catch {}
+        triggerWatchCompleteCelebration();
+
+        const updatedUser: User = res.user || { ...user, coins: newCoins };
+        onCoinEarned(updatedUser);
+        saveUserCoinsToFirestore(updatedUser.id, updatedUser.coins, updatedUser.email).catch(() => {});
+
+        const logToSave: FollowLog = res.followLog || {
+          id: `flog_${Date.now()}_${user.id.slice(-4)}`,
+          campaignId: camp.id,
+          creatorId: camp.userId,
+          followerUserId: user.id,
+          followerUsername: user.atoPlayUsername || user.name,
+          followerEmail: user.email,
+          followerAvatar: user.avatar,
+          followerName: user.name,
+          timestamp: new Date().toISOString(),
+          status: 'active',
+          campaignTitle: camp.title
+        };
+        saveFollowLogToFirestore(logToSave).catch(() => {});
+        updateCampaignFollowersInFirestore(camp.id, user.id, resolvedAfter).catch(() => {});
+
+        setFollowedCampaignIds(prev => new Set([...prev, camp.id]));
+        addFollowedId(user.id, camp.id);
+        addWatchedId(user.id, camp.id);
+        setCampaigns(prev => prev.filter(c => c.id !== camp.id));
+
+        // Show +30 Coins Added on-screen celebration instead of popup modal
+        showCoinAddedScreen(bonus);
+      } else if (res?.alreadyFollowed) {
+        setFollowedCampaignIds(prev => new Set([...prev, camp.id]));
+        addFollowedId(user.id, camp.id);
+        addWatchedId(user.id, camp.id);
+        setCampaigns(prev => prev.filter(c => c.id !== camp.id));
+        showFollowNotice('You have already claimed +30 Coins for following this channel.');
+      } else {
+        showFollowNotice(
+          res?.message || 'Follower increase not detected on AtoPlay yet. Please follow the channel to get +30 Coins!'
+        );
+      }
+    } catch (err: any) {
+      showFollowNotice(err?.message || 'Could not verify follow right now. Please try again.');
+    } finally {
+      setVerifyingFollowId(null);
+      isProcessingFollowReturnRef.current = false;
+    }
+  }, [user, onCoinEarned, showCoinAddedScreen, showFollowNotice]);
 
   useEffect(() => {
     const handleReturnFromFollow = () => {
@@ -116,11 +239,9 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
           setWarningElapsed(Math.max(1, Math.round(elapsed / 1000)));
           setShowWarning4SecModal(true);
         } else {
-          // Clearly indicate 'Verifying...' in the follower UI and prevent double-tapping
+          // Clearly indicate 'Verifying...' in the follower UI and verify silently in background
           setVerifyingFollowId(camp.id);
-          setFollowElapsedMs(elapsed);
-          setSelectedFollowCampaign(camp);
-          setShowFollowerRewardModal(true);
+          verifyFollowSilentlyInBackground(camp, elapsed, followBaselineCountRef.current);
         }
       }
     };
@@ -132,7 +253,7 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
       window.removeEventListener('pageshow', handleReturnFromFollow);
       document.removeEventListener('visibilitychange', handleReturnFromFollow);
     };
-  }, []);
+  }, [verifyFollowSilentlyInBackground]);
 
   const handleStartFollowTask = (camp: Campaign) => {
     // Prevent double-tapping or multiple count triggers while verifying
@@ -141,7 +262,7 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
     activeFollowTargetRef.current = camp;
     followLeftTimeRef.current = Date.now();
     const initialF = camp.channelFollowers ?? camp.initialFollowers ?? 0;
-    setFollowBaselineCount(initialF);
+    followBaselineCountRef.current = initialF;
 
     // Register baseline session & fetch live AtoPlay follower count right when user opens channel
     apiFetch('/api/follow/start', {
@@ -160,7 +281,7 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
       })
     }).then((data: any) => {
       if (data?.success && typeof data.countBefore === 'number') {
-        setFollowBaselineCount(data.countBefore);
+        followBaselineCountRef.current = data.countBefore;
         if (activeFollowTargetRef.current && activeFollowTargetRef.current.id === camp.id) {
           activeFollowTargetRef.current = {
             ...activeFollowTargetRef.current,
@@ -168,7 +289,6 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
             channelId: data.channelId || activeFollowTargetRef.current.channelId
           };
         }
-        setSelectedFollowCampaign(prev => prev && prev.id === camp.id ? { ...prev, channelFollowers: data.countBefore } : prev);
         setCampaigns(prev => prev.map(c => c.id === camp.id ? { ...c, channelFollowers: data.countBefore } : c));
       }
     }).catch(() => {});
@@ -363,8 +483,8 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
       setExpiredElapsed(0);
       setShowRewardModal(false);
       setRewardData(null);
-      setFollowModalCampaign(null);
-      setShowFollowerRewardModal(false);
+      setVerifyingFollowId(null);
+      isProcessingFollowReturnRef.current = false;
       setSelectedCampaign(null);
       setIsPlaying(false);
       setVideoStarted(false);
@@ -519,6 +639,8 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
         try {
           playCoinCelebrationSound();
         } catch {}
+        triggerWatchCompleteCelebration();
+        showCoinAddedScreen(30);
 
         if (res.user) {
           saveUserCoinsToFirestore(res.user.id, res.user.coins, res.user.email).catch(() => {});
@@ -531,6 +653,7 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
 
         updateCampaignFollowersInFirestore(camp.id, user.id, res.countAfter).catch(() => {});
         setFollowedCampaignIds(prev => new Set([...prev, camp.id]));
+        addFollowedId(user.id, camp.id);
 
         if (followPollingRef.current) {
           clearInterval(followPollingRef.current);
@@ -1080,7 +1203,7 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6 mb-20 bg-white min-h-screen relative">
       
-      {/* Animated On-Screen +60 Coins Added Overlay (Auto-dismissing after 60s video watch) */}
+      {/* Animated On-Screen +30 Coin Add / +60 Coin Add Overlay (Auto-dismissing) */}
       {videoCoinToast && (
         <div
           key={videoCoinToast.key}
@@ -1090,8 +1213,21 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
             <div className="w-8 h-8 rounded-full bg-amber-400 text-amber-950 flex items-center justify-center shadow-inner">
               <Coins className="w-5 h-5" />
             </div>
-            <span>+{videoCoinToast.coins} Coins Added!</span>
+            <span>+{videoCoinToast.coins} Coin Added!</span>
             <Sparkles className="w-5 h-5 text-amber-300 animate-spin" />
+          </div>
+        </div>
+      )}
+
+      {/* Non-blocking Follow Verification Notice Toast */}
+      {followNoticeToast && (
+        <div
+          key={followNoticeToast.key}
+          className="fixed inset-x-0 top-20 z-50 flex justify-center pointer-events-none px-4 animate-in fade-in slide-in-from-top-2 duration-200"
+        >
+          <div className="inline-flex items-center space-x-2.5 px-4 py-3 rounded-2xl bg-zinc-900/95 text-white font-semibold text-xs sm:text-sm shadow-xl border border-zinc-700 max-w-md text-center">
+            <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
+            <span>{followNoticeToast.message}</span>
           </div>
         </div>
       )}
@@ -1358,37 +1494,6 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
             );
           })}
         </div>
-      )}
-
-      {/* Follow Channel Modal (+30 Coins via AtoPlay API Follow Verification) */}
-      <FollowChannelModal
-        isOpen={Boolean(followModalCampaign)}
-        onClose={() => setFollowModalCampaign(null)}
-        campaign={followModalCampaign}
-        user={user}
-        onFollowSuccess={handleFollowSuccess}
-        apiFetch={apiFetch}
-      />
-
-      {/* Follower Reward Modal */}
-      {showFollowerRewardModal && selectedFollowCampaign && (
-        <FollowerRewardModal
-          isOpen={showFollowerRewardModal}
-          onClose={() => {
-            setShowFollowerRewardModal(false);
-            setSelectedFollowCampaign(null);
-            setVerifyingFollowId(null);
-            isProcessingFollowReturnRef.current = false;
-            fetchCampaigns();
-          }}
-          campaign={selectedFollowCampaign}
-          user={user}
-          countBefore={followBaselineCount ?? selectedFollowCampaign.channelFollowers ?? selectedFollowCampaign.initialFollowers ?? 0}
-          visited4Sec={true}
-          elapsedMs={followElapsedMs}
-          onCoinEarned={onCoinEarned}
-          onFollowSuccess={handleFollowSuccess}
-        />
       )}
 
       {/* 4-Second Rule Warning Notice Modal */}
