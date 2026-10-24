@@ -6,7 +6,7 @@ import { Warning4SecModal } from './Warning4SecModal';
 import { AtoPlayBadge } from './AtoPlayBadge';
 import { playCoinCelebrationSound } from '../utils/audio';
 import { triggerWatchCompleteCelebration } from '../utils/confetti';
-import { apiFetch, getWatchedIds, addWatchedId, addFollowedId, cleanVideoUrl, openAtoPlayUrl, fetchLiveAtoPlayFollowerCount } from '../lib/api';
+import { apiFetch, getWatchedIds, addWatchedId, addFollowedId, cleanVideoUrl, openAtoPlayUrl, fetchLiveAtoPlayFollowerCount, resolveCampaignType, getDeletedCampaignIds } from '../lib/api';
 import { 
   updateCampaignViewsInFirestore, 
   updateCampaignFollowersInFirestore,
@@ -309,9 +309,12 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
 
   const fetchCampaigns = async () => {
     try {
-      setLoading(true);
+      if (campaigns.length === 0) {
+        setLoading(true);
+      }
       const watchedLocal = getWatchedIds(user.id);
       const watchedArray = Array.from(watchedLocal);
+      const deletedSet = getDeletedCampaignIds();
 
       // User requested: "Home page per jitne campaign dikha rha usn sabko htao firebase se bhi htao"
       const wipedKey = 'atoplay_home_campaigns_wiped_v3';
@@ -322,53 +325,60 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
         localStorage.setItem(wipedKey, 'true');
       }
 
-      // Ensure dummy/starter campaigns are purged from Firestore & local storage
+      // Ensure dummy/starter campaigns are purged once per session
       purgeStarterCampaignsFromFirestore().catch(() => {});
-      try {
-        localStorage.removeItem('atoviewer_campaigns');
-      } catch {}
 
-      // 1. Fetch from server API
-      let serverCampaigns: Campaign[] = [];
-      try {
-        const data = await apiFetch('/api/campaigns', {
+      // 1 & 2. Fetch from server API and Firestore in parallel
+      const [serverResult, firestoreResult] = await Promise.allSettled([
+        apiFetch('/api/campaigns', {
           headers: { 
             'x-user-id': user.id,
             'x-watched-ids': watchedArray.join(',')
           }
-        });
-        if (data?.success && Array.isArray(data.campaigns)) {
-          serverCampaigns = data.campaigns;
-        }
-      } catch (err) {
-        console.warn('apiFetch /api/campaigns error:', err);
+        }),
+        getPublicCampaignsFromFirestore(user.id)
+      ]);
+
+      let serverCampaigns: Campaign[] = [];
+      if (serverResult.status === 'fulfilled' && serverResult.value?.success && Array.isArray(serverResult.value.campaigns)) {
+        serverCampaigns = serverResult.value.campaigns;
       }
 
-      // 2. Fetch live public campaigns from Firestore
       let firestoreCampaigns: Campaign[] = [];
-      try {
-        firestoreCampaigns = await getPublicCampaignsFromFirestore(user.id);
-      } catch (err) {
-        console.warn('Firestore getPublicCampaigns error:', err);
+      if (firestoreResult.status === 'fulfilled' && Array.isArray(firestoreResult.value)) {
+        firestoreCampaigns = firestoreResult.value;
       }
 
-      // 3. Merge server and Firestore campaigns into Map by campaign.id
+      // 3. Merge server and Firestore campaigns into Map by campaign.id, excluding deleted campaigns
       const map = new Map<string, Campaign>();
       for (const c of serverCampaigns) {
-        map.set(c.id, c);
+        if (!c || !c.id || deletedSet.has(c.id) || (c as any).status === 'deleted') continue;
+        map.set(c.id, {
+          ...c,
+          campaignType: resolveCampaignType(c.campaignType, c.videoUrl)
+        });
       }
       for (const c of firestoreCampaigns) {
+        if (!c || !c.id || deletedSet.has(c.id) || (c as any).status === 'deleted') continue;
         if (!map.has(c.id)) {
-          map.set(c.id, c);
+          map.set(c.id, {
+            ...c,
+            campaignType: resolveCampaignType(c.campaignType, c.videoUrl)
+          });
         } else {
           const existing = map.get(c.id)!;
           const mergedCompletedUserIds = Array.from(new Set([
             ...(existing.completedUserIds || []),
             ...(c.completedUserIds || [])
           ]));
+          const resolvedType = resolveCampaignType(
+            existing.campaignType === 'video' || c.campaignType === 'video' ? 'video' : (c.campaignType || existing.campaignType),
+            c.videoUrl || existing.videoUrl
+          );
           map.set(c.id, {
             ...existing,
             ...c,
+            campaignType: resolvedType,
             viewsCompleted: Math.max(existing.viewsCompleted ?? 0, c.viewsCompleted ?? 0),
             completedViews: Math.max(existing.completedViews ?? 0, c.completedViews ?? 0),
             completedUserIds: mergedCompletedUserIds
@@ -377,15 +387,8 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
       }
 
       // 4. Strict Public Home Video Rules:
-      // - "har user home page dusre user ke campaign dikhe":
-      //   c.userId !== user.id (only other users' campaigns)
-      // - "ek bar jo user 60 s dekh le us user ke page se hat":
-      //   !watchedLocal.has(c.id) && !c.completedUserIds?.includes(user.id)
-      // - "baki all user ke page per dikhe":
-      //   remains visible for all other users who haven't completed it yet
-      // - active status & remaining views:
-      //   c.status === 'active' && viewsCompleted < viewsRequired
       const publicFiltered = Array.from(map.values()).filter(c => {
+        if (deletedSet.has(c.id) || (c as any).status === 'deleted') return false;
         if (c.id === 'camp_starter_1' || c.id === 'camp_starter_2' || String(c.userId || '').startsWith('creator_starter')) return false;
         const reqViews = Number(c.viewsRequired ?? c.targetViews ?? 10);
         const compViews = Number(c.viewsCompleted ?? c.completedViews ?? 0);
@@ -401,57 +404,68 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
       // Sort newest first
       publicFiltered.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
-      const cleanedPublic = publicFiltered.map(c => {
-        let type = c.campaignType;
-        const url = (c.videoUrl || '').toLowerCase();
-        const title = (c.title || '').toLowerCase();
-        if (type !== 'follower' && (url.includes('/channel') || url.includes('/channels/') || url.includes('/@') || title.includes('follow'))) {
-          type = 'follower';
-        }
-        return {
-          ...c,
-          campaignType: type || 'video',
-          videoUrl: cleanVideoUrl(c.videoUrl || '')
-        };
-      });
+      const cleanedPublic = publicFiltered.map(c => ({
+        ...c,
+        campaignType: resolveCampaignType(c.campaignType, c.videoUrl),
+        videoUrl: cleanVideoUrl(c.videoUrl || '')
+      }));
 
       setCampaigns(cleanedPublic);
+      setLoading(false);
 
-      // Refresh live follower counts directly from AtoPlay API for follower campaigns
-      cleanedPublic.forEach(camp => {
-        if (camp.campaignType === 'follower' || camp.videoUrl?.includes('atoplay.com')) {
-          fetchLiveAtoPlayFollowerCount({
-            videoUrl: camp.videoUrl,
-            channelId: camp.channelId,
-            channelName: camp.channelName || camp.userName
-          }).then(liveRes => {
-            if (liveRes.isRealAtoPlay && typeof liveRes.count === 'number') {
-              setCampaigns(prev => prev.map(item =>
-                item.id === camp.id
-                  ? {
-                      ...item,
-                      channelFollowers: liveRes.count!,
-                      channelId: liveRes.channelId || item.channelId,
-                      channelName: liveRes.channelName || item.channelName
-                    }
-                  : item
-              ));
-            }
-          }).catch(() => {});
-        }
-      });
+      // Refresh live follower counts directly from AtoPlay API ONLY for follower campaigns (batched update)
+      const followerCamps = cleanedPublic.filter(c => c.campaignType === 'follower').slice(0, 6);
+      if (followerCamps.length > 0) {
+        Promise.all(
+          followerCamps.map(async (camp) => {
+            try {
+              const liveRes = await fetchLiveAtoPlayFollowerCount({
+                videoUrl: camp.videoUrl,
+                channelId: camp.channelId,
+                channelName: camp.channelName || camp.userName
+              });
+              if (liveRes.isRealAtoPlay && typeof liveRes.count === 'number') {
+                return {
+                  id: camp.id,
+                  channelFollowers: liveRes.count,
+                  channelId: liveRes.channelId || camp.channelId,
+                  channelName: liveRes.channelName || camp.channelName
+                };
+              }
+            } catch {}
+            return null;
+          })
+        ).then((results) => {
+          const validUpdates = results.filter(Boolean) as Array<{ id: string; channelFollowers: number; channelId?: string; channelName?: string }>;
+          if (validUpdates.length > 0) {
+            const updateMap = new Map(validUpdates.map(u => [u.id, u]));
+            const currentDeleted = getDeletedCampaignIds();
+            setCampaigns(prev =>
+              prev
+                .filter(item => !currentDeleted.has(item.id))
+                .map(item => {
+                  const u = updateMap.get(item.id);
+                  return u ? { ...item, ...u } : item;
+                })
+            );
+          }
+        }).catch(() => {});
+      }
 
-      // Background sync all active firestore campaigns to server in-memory store
-      if (firestoreCampaigns.length > 0) {
+      // Background sync active firestore campaigns and deletedIds to server in-memory store
+      const validFirestoreToSync = firestoreCampaigns.filter(c => c && !deletedSet.has(c.id) && (c as any).status !== 'deleted');
+      if (validFirestoreToSync.length > 0 || deletedSet.size > 0) {
         apiFetch('/api/campaigns/sync', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ campaigns: firestoreCampaigns })
+          body: JSON.stringify({
+            campaigns: validFirestoreToSync,
+            deletedIds: Array.from(deletedSet)
+          })
         }).catch(() => {});
       }
     } catch (err) {
       console.error('Failed to load campaigns', err);
-    } finally {
       setLoading(false);
     }
   };
@@ -905,23 +919,11 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
       }
     };
 
-    // Frame-based monitor: wakes up instantly as soon as tab restores to foreground
-    let animFrameId: number;
-    const frameLoop = () => {
-      if (document.visibilityState === 'visible' && !document.hidden && document.hasFocus()) {
-        if (wasBackgroundedRef.current || hasLeftAppRef.current) {
-          checkAndProcessResume();
-        }
-      }
-      animFrameId = requestAnimationFrame(frameLoop);
-    };
-    animFrameId = requestAnimationFrame(frameLoop);
-
-    // Keep page title informative while backgrounded & perform continuous check
+    // Keep page title informative while backgrounded & perform periodic check without 60fps loop
     const timerInterval = setInterval(() => {
       const elapsed = (Date.now() - startTime) / 1000;
       const remaining = Math.max(0, 60 - Math.floor(elapsed));
-      setTimeLeft(remaining);
+      setTimeLeft(prev => (prev !== remaining ? remaining : prev));
 
       if (document.hidden || document.visibilityState === 'hidden' || !document.hasFocus()) {
         hasLeftAppRef.current = true;
@@ -937,7 +939,7 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
           checkAndProcessResume();
         }
       }
-    }, 300);
+    }, 500);
 
     const onVisibilityChange = () => {
       if (document.hidden || document.visibilityState === 'hidden') {
@@ -966,7 +968,6 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
     document.addEventListener('resume', onFocusOrPageShow);
 
     return () => {
-      cancelAnimationFrame(animFrameId);
       clearInterval(timerInterval);
       document.removeEventListener('visibilitychange', onVisibilityChange);
       window.removeEventListener('blur', handleWindowBlur);

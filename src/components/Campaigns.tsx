@@ -3,7 +3,7 @@ import { Campaign, User, format4CharId } from '../types';
 import { Plus, MoreVertical, Clock, Trash2, Coins, AlertCircle, Sparkles, X, Video, ExternalLink, Check, Search, ShieldCheck, Clipboard, Image as ImageIcon, CheckCircle2, Users, Mail, UserCheck } from 'lucide-react';
 import { AtoPlayBadge } from './AtoPlayBadge';
 import { CreateFollowerCampaignModal } from './CreateFollowerCampaignModal';
-import { apiFetch, extractVideoMetadataClient, cleanVideoUrl, fetchLiveAtoPlayFollowerCount } from '../lib/api';
+import { apiFetch, extractVideoMetadataClient, cleanVideoUrl, fetchLiveAtoPlayFollowerCount, resolveCampaignType, getDeletedCampaignIds, addDeletedCampaignId } from '../lib/api';
 import { saveCampaignToFirestore, deleteCampaignInFirestore, saveUserCoinsToFirestore, getMyCampaignsFromFirestore, getFollowLogsFromFirestore, reportFakeFollowInFirestore } from '../lib/firebase';
 import { triggerCampaignGoalCelebration, triggerWatchCompleteCelebration } from '../utils/confetti';
 
@@ -112,56 +112,57 @@ export const Campaigns: React.FC<CampaignsProps> = ({
 
   const fetchMyCampaigns = async () => {
     try {
-      setLoading(true);
-
-      // Background Follower Growth Check & Auto-Reward
-      try {
-        const checkRes = await apiFetch('/api/campaigns/check-followers', {
-          headers: { 'x-user-id': user.id }
-        });
-        if (checkRes?.success && checkRes.totalBonusCoinsAwarded > 0 && checkRes.user) {
-          if (onCampaignCreated) {
-            onCampaignCreated(checkRes.user);
-          }
-        }
-      } catch (err) {
-        console.warn('Check followers background error:', err);
+      if (campaigns.length === 0) {
+        setLoading(true);
       }
 
-      // 1. Fetch from server API
+      const deletedSet = getDeletedCampaignIds();
+
+      // 1 & 2. Fetch from server API and Firestore in parallel for fast loading
+      const [serverResult, firestoreResult] = await Promise.allSettled([
+        apiFetch('/api/campaigns?filter=my', {
+          headers: { 'x-user-id': user.id }
+        }),
+        getMyCampaignsFromFirestore(user.id)
+      ]);
+
       let serverCamps: Campaign[] = [];
-      try {
-        const data = await apiFetch('/api/campaigns?filter=my', {
-          headers: { 'x-user-id': user.id }
-        });
-        if (data?.success && Array.isArray(data.campaigns)) {
-          serverCamps = data.campaigns;
-        }
-      } catch (err) {
-        console.warn('Server my campaigns error:', err);
+      if (serverResult.status === 'fulfilled' && serverResult.value?.success && Array.isArray(serverResult.value.campaigns)) {
+        serverCamps = serverResult.value.campaigns;
       }
 
-      // 2. Fetch from Firestore
       let firestoreCamps: Campaign[] = [];
-      try {
-        firestoreCamps = await getMyCampaignsFromFirestore(user.id);
-      } catch (err) {
-        console.warn('Firestore my campaigns error:', err);
+      if (firestoreResult.status === 'fulfilled' && Array.isArray(firestoreResult.value)) {
+        firestoreCamps = firestoreResult.value;
       }
 
-      // 3. Merge server and Firestore
+      // 3. Merge server and Firestore, excluding any deleted campaigns
       const campMap = new Map<string, Campaign>();
       for (const c of serverCamps) {
-        campMap.set(c.id, c);
+        if (!c || !c.id || deletedSet.has(c.id) || (c as any).status === 'deleted') continue;
+        campMap.set(c.id, {
+          ...c,
+          campaignType: resolveCampaignType(c.campaignType, c.videoUrl)
+        });
       }
       for (const c of firestoreCamps) {
+        if (!c || !c.id || deletedSet.has(c.id) || (c as any).status === 'deleted') continue;
         if (!campMap.has(c.id)) {
-          campMap.set(c.id, c);
+          campMap.set(c.id, {
+            ...c,
+            campaignType: resolveCampaignType(c.campaignType, c.videoUrl)
+          });
         } else {
           const prev = campMap.get(c.id)!;
+          const resolvedType = resolveCampaignType(
+            prev.campaignType === 'video' || c.campaignType === 'video' ? 'video' : (c.campaignType || prev.campaignType),
+            c.videoUrl || prev.videoUrl
+          );
           campMap.set(c.id, {
             ...prev,
             ...c,
+            campaignType: resolvedType,
+            followLogs: prev.followLogs && prev.followLogs.length > 0 ? prev.followLogs : c.followLogs,
             channelFollowers: Math.max(prev.channelFollowers ?? 0, c.channelFollowers ?? 0),
             viewsCompleted: Math.max(prev.viewsCompleted ?? 0, c.viewsCompleted ?? 0),
             completedViews: Math.max(prev.completedViews ?? 0, c.completedViews ?? 0)
@@ -171,57 +172,17 @@ export const Campaigns: React.FC<CampaignsProps> = ({
 
       const mergedList = Array.from(campMap.values()).map(c => ({
         ...c,
+        campaignType: resolveCampaignType(c.campaignType, c.videoUrl),
         videoUrl: cleanVideoUrl(c.videoUrl || '')
       }));
       mergedList.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
-      // Fetch follow logs for each campaign so followers (avatar, email, name) and live counts are immediately synced
-      const campaignsWithLogs = await Promise.all(
-        mergedList.map(async (camp) => {
-          let logs = camp.followLogs || [];
-          if (logs.length === 0) {
-            try {
-              const fLogs = await getFollowLogsFromFirestore(camp.id);
-              if (fLogs && fLogs.length > 0) {
-                logs = fLogs;
-              }
-            } catch (fErr) {
-              console.warn('Error loading follow logs for camp:', camp.id, fErr);
-            }
-          }
-          const isFollowerCamp = camp.campaignType === 'follower' || String(camp.title || '').toLowerCase().includes('follow') || String(camp.videoUrl || '').toLowerCase().includes('/channels/') || String(camp.videoUrl || '').toLowerCase().includes('/channel/');
-          const verifiedCount = Math.max(logs.length, Array.isArray(camp.followedUserIds) ? camp.followedUserIds.length : 0);
-          let syncedChannelFollowers = typeof camp.channelFollowers === 'number' ? camp.channelFollowers : (typeof camp.initialFollowers === 'number' ? camp.initialFollowers : 0);
-
-          try {
-            const liveRes = await fetchLiveAtoPlayFollowerCount({
-              videoUrl: camp.videoUrl,
-              channelId: camp.channelId,
-              channelName: camp.channelName || camp.userName
-            });
-            if (liveRes.isRealAtoPlay && typeof liveRes.count === 'number') {
-              syncedChannelFollowers = liveRes.count;
-            }
-          } catch {}
-
-          const syncedViewsCompleted = isFollowerCamp
-            ? Math.max(camp.viewsCompleted ?? 0, camp.completedViews ?? 0, verifiedCount)
-            : Math.max(camp.viewsCompleted ?? 0, camp.completedViews ?? 0);
-
-          return {
-            ...camp,
-            channelFollowers: syncedChannelFollowers,
-            viewsCompleted: syncedViewsCompleted,
-            completedViews: syncedViewsCompleted,
-            followLogs: logs
-          };
-        })
-      );
-
-      setCampaigns(campaignsWithLogs);
+      // Render campaigns immediately so UI never lags
+      setCampaigns(mergedList);
+      setLoading(false);
 
       // Check if any campaign newly reached its view goal
-      const newlyCompleted = campaignsWithLogs.find(c => {
+      const newlyCompleted = mergedList.find(c => {
         const req = c.viewsRequired ?? c.targetViews ?? 10;
         const comp = c.viewsCompleted ?? c.completedViews ?? 0;
         const isDone = comp >= req || c.status === 'completed';
@@ -239,9 +200,70 @@ export const Campaigns: React.FC<CampaignsProps> = ({
         } catch {}
         triggerCampaignGoalCelebration();
       }
+
+      // 4. Enrich follower campaigns with follow logs and live follower counts asynchronously in the background
+      const followerCamps = mergedList.filter(c => resolveCampaignType(c.campaignType, c.videoUrl) === 'follower');
+      if (followerCamps.length > 0) {
+        Promise.all(
+          followerCamps.map(async (camp) => {
+            let logs = camp.followLogs || [];
+            if (logs.length === 0) {
+              try {
+                const fLogs = await getFollowLogsFromFirestore(camp.id);
+                if (fLogs && fLogs.length > 0) {
+                  logs = fLogs;
+                }
+              } catch {}
+            }
+            const verifiedCount = Math.max(logs.length, Array.isArray(camp.followedUserIds) ? camp.followedUserIds.length : 0);
+            let syncedChannelFollowers = typeof camp.channelFollowers === 'number' ? camp.channelFollowers : (typeof camp.initialFollowers === 'number' ? camp.initialFollowers : 0);
+
+            try {
+              const liveRes = await fetchLiveAtoPlayFollowerCount({
+                videoUrl: camp.videoUrl,
+                channelId: camp.channelId,
+                channelName: camp.channelName || camp.userName
+              });
+              if (liveRes.isRealAtoPlay && typeof liveRes.count === 'number') {
+                syncedChannelFollowers = liveRes.count;
+              }
+            } catch {}
+
+            const syncedViewsCompleted = Math.max(camp.viewsCompleted ?? 0, camp.completedViews ?? 0, verifiedCount);
+            return {
+              id: camp.id,
+              channelFollowers: syncedChannelFollowers,
+              viewsCompleted: syncedViewsCompleted,
+              completedViews: syncedViewsCompleted,
+              followLogs: logs
+            };
+          })
+        ).then((enrichedItems) => {
+          const currentDeleted = getDeletedCampaignIds();
+          const enrichMap = new Map(enrichedItems.map(item => [item.id, item]));
+          setCampaigns(prev =>
+            prev
+              .filter(c => !currentDeleted.has(c.id))
+              .map(c => {
+                const update = enrichMap.get(c.id);
+                return update ? { ...c, ...update } : c;
+              })
+          );
+        }).catch(() => {});
+      }
+
+      // 5. Background Follower Growth Check & Auto-Reward (non-blocking)
+      apiFetch('/api/campaigns/check-followers', {
+        headers: { 'x-user-id': user.id }
+      }).then((checkRes) => {
+        if (checkRes?.success && checkRes.totalBonusCoinsAwarded > 0 && checkRes.user) {
+          if (onCampaignCreated) {
+            onCampaignCreated(checkRes.user);
+          }
+        }
+      }).catch(() => {});
     } catch (err) {
       console.error('Failed to load campaigns', err);
-    } finally {
       setLoading(false);
     }
   };
@@ -479,9 +501,13 @@ export const Campaigns: React.FC<CampaignsProps> = ({
         // Trigger celebratory confetti on successful campaign launch
         triggerWatchCompleteCelebration();
 
-        // Sync campaign to Firestore
+        // Sync campaign to Firestore with explicit 'video' type
         if (data.campaign) {
-          saveCampaignToFirestore(data.campaign).catch(e => console.warn('Firestore campaign save error:', e));
+          const videoCampaign: Campaign = {
+            ...data.campaign,
+            campaignType: 'video'
+          };
+          saveCampaignToFirestore(videoCampaign).catch(e => console.warn('Firestore campaign save error:', e));
         }
 
         // Deduct totalCost and sync coins
@@ -492,9 +518,6 @@ export const Campaigns: React.FC<CampaignsProps> = ({
 
         fetchMyCampaigns();
       } else {
-        if (data?.message?.includes('Insufficient coins')) {
-          alert('Insufficient coins! Watch more videos to earn.');
-        }
         setErrorMsg(data?.message || 'Failed to create campaign');
       }
     } catch (err: any) {
@@ -505,44 +528,44 @@ export const Campaigns: React.FC<CampaignsProps> = ({
   };
 
   const handleDeleteCampaign = async (id: string) => {
-    if (!window.confirm('Are you sure you want to delete this campaign? Coins for any remaining views will be refunded at 80 coins/view.')) return;
+    const targetCamp = campaigns.find(c => c.id === id);
+
+    // 1. Record tombstone immediately and remove from UI so it never reappears
+    addDeletedCampaignId(id);
+    setCampaigns(prev => prev.filter(c => c.id !== id));
+    setSuccessMsg('Campaign deleted successfully! Coins for remaining views refunded.');
 
     try {
-      const targetCamp = campaigns.find(c => c.id === id);
-      const data = await apiFetch(`/api/campaigns/${id}`, { 
-        method: 'DELETE',
-        headers: { 'x-user-id': user.id }
-      });
-      
-      deleteCampaignInFirestore(id).catch(e => console.warn('Firestore campaign delete error:', e));
+      // 2. Delete from both Backend and Firestore in parallel, and notify sync endpoint
+      const [deleteRes] = await Promise.all([
+        apiFetch(`/api/campaigns/${id}`, { 
+          method: 'DELETE',
+          headers: { 'x-user-id': user.id }
+        }).catch(() => null),
+        deleteCampaignInFirestore(id).catch(() => {}),
+        apiFetch('/api/campaigns/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ deletedIds: [id], campaigns: [] })
+        }).catch(() => {})
+      ]);
 
-      if (data?.success) {
-        if (data.user) {
-          saveUserCoinsToFirestore(data.user.id, data.user.coins).catch(e => console.warn('Firestore user coins error:', e));
-          onCampaignCreated(data.user);
-        } else if (targetCamp && targetCamp.status === 'active') {
-          const reqViews = targetCamp.viewsRequired ?? targetCamp.targetViews ?? 10;
-          const compViews = targetCamp.viewsCompleted ?? targetCamp.completedViews ?? 0;
-          const remainingViews = Math.max(0, reqViews - compViews);
-          const refundAmount = remainingViews * 80;
-          if (refundAmount > 0 && !user.isAdmin) {
-            const updatedUser = { ...user, coins: user.coins + refundAmount };
-            onCampaignCreated(updatedUser);
-            saveUserCoinsToFirestore(updatedUser.id, updatedUser.coins).catch(e => console.warn(e));
-          }
+      if (deleteRes?.success && deleteRes.user) {
+        saveUserCoinsToFirestore(deleteRes.user.id, deleteRes.user.coins).catch(() => {});
+        onCampaignCreated(deleteRes.user);
+      } else if (targetCamp && targetCamp.status === 'active') {
+        const reqViews = targetCamp.viewsRequired ?? targetCamp.targetViews ?? 10;
+        const compViews = targetCamp.viewsCompleted ?? targetCamp.completedViews ?? 0;
+        const remainingViews = Math.max(0, reqViews - compViews);
+        const refundAmount = remainingViews * 80;
+        if (refundAmount > 0 && !user.isAdmin) {
+          const updatedUser = { ...user, coins: user.coins + refundAmount };
+          onCampaignCreated(updatedUser);
+          saveUserCoinsToFirestore(updatedUser.id, updatedUser.coins).catch(() => {});
         }
-        setCampaigns(prev => prev.filter(c => c.id !== id));
-        setSuccessMsg('Campaign deleted successfully! Coins for remaining views refunded.');
-      } else {
-        // Optimistic UI removal
-        setCampaigns(prev => prev.filter(c => c.id !== id));
-        setSuccessMsg('Campaign removed.');
       }
     } catch (err: any) {
       console.error('Failed to delete campaign', err);
-      setCampaigns(prev => prev.filter(c => c.id !== id));
-      deleteCampaignInFirestore(id).catch(() => {});
-      setSuccessMsg('Campaign removed.');
     }
   };
 
@@ -619,7 +642,7 @@ export const Campaigns: React.FC<CampaignsProps> = ({
       ) : (
         <div className="bg-white rounded-2xl border border-zinc-200/80 divide-y divide-zinc-100 shadow-2xs overflow-hidden">
           {campaigns.map(camp => {
-            const isFollowerCamp = camp.campaignType === 'follower' || String(camp.title || '').toLowerCase().includes('follow') || String(camp.videoUrl || '').toLowerCase().includes('/channels/') || String(camp.videoUrl || '').toLowerCase().includes('/channel/');
+            const isFollowerCamp = resolveCampaignType(camp.campaignType, camp.videoUrl) === 'follower';
             const reqViews = camp.viewsRequired ?? camp.targetViews ?? 10;
             const compViews = camp.viewsCompleted ?? camp.completedViews ?? 0;
             const progress = Math.min(100, Math.round((compViews / reqViews) * 100));

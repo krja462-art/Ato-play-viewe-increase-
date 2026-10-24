@@ -10,11 +10,53 @@ export const extractVideoMetadataClient = extractVideoMetadata;
 const STORAGE_KEYS = {
   USER: 'atoviewer_user',
   CAMPAIGNS: 'atoviewer_campaigns',
+  DELETED_CAMPAIGNS: 'atoviewer_deleted_campaigns',
   TRANSACTIONS: 'atoviewer_transactions',
   WATCHED: 'atoviewer_watched_campaigns',
   FOLLOWED: 'atoviewer_followed_campaigns',
   CHECKIN_PREFIX: 'atoviewer_checkin_'
 };
+
+/**
+ * Canonical helper to determine whether a campaign is a video campaign or a channel follower campaign.
+ * Never misclassifies a video campaign as a follower campaign just because the video title contains "follow".
+ */
+export function resolveCampaignType(campaignType?: string, videoUrl?: string): 'video' | 'follower' {
+  if (campaignType === 'video') return 'video';
+  if (campaignType === 'follower') return 'follower';
+  const url = String(videoUrl || '').toLowerCase();
+  const isExplicitChannelUrl =
+    (url.includes('/channels/') || url.includes('/channel/') || url.includes('/c/') || url.includes('/@')) &&
+    !url.includes('/video/');
+  return isExplicitChannelUrl ? 'follower' : 'video';
+}
+
+export function getDeletedCampaignIds(): Set<string> {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.DELETED_CAMPAIGNS);
+    return raw ? new Set(JSON.parse(raw)) : new Set();
+  } catch {
+    return new Set();
+  }
+}
+
+export function addDeletedCampaignId(campaignId: string): void {
+  if (!campaignId) return;
+  try {
+    const set = getDeletedCampaignIds();
+    set.add(campaignId);
+    localStorage.setItem(STORAGE_KEYS.DELETED_CAMPAIGNS, JSON.stringify(Array.from(set)));
+    // Also purge from stored local campaigns immediately
+    const raw = localStorage.getItem(STORAGE_KEYS.CAMPAIGNS);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        const filtered = parsed.filter(c => c && c.id !== campaignId);
+        localStorage.setItem(STORAGE_KEYS.CAMPAIGNS, JSON.stringify(filtered));
+      }
+    }
+  } catch {}
+}
 
 // Empty initial list: Only real user-promoted videos will be displayed
 const SEED_CAMPAIGNS: Campaign[] = [];
@@ -38,13 +80,17 @@ function getStoredCampaigns(): Campaign[] {
     if (!raw) {
       return [];
     }
+    const deletedSet = getDeletedCampaignIds();
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed)) {
-      // Filter out any leftover sample dummy campaigns and clean video URLs
-      const realOnly = parsed.filter(c => c && !String(c.id).startsWith('camp_init_')).map(c => ({
-        ...c,
-        videoUrl: cleanVideoUrl(c.videoUrl || '')
-      }));
+      // Filter out any deleted or leftover sample dummy campaigns and clean video URLs
+      const realOnly = parsed
+        .filter(c => c && !String(c.id).startsWith('camp_init_') && !deletedSet.has(c.id) && (c as any).status !== 'deleted')
+        .map(c => ({
+          ...c,
+          campaignType: resolveCampaignType(c.campaignType, c.videoUrl),
+          videoUrl: cleanVideoUrl(c.videoUrl || '')
+        }));
       return realOnly;
     }
     return [];
@@ -368,22 +414,26 @@ async function handleClientFallback<T>(endpoint: string, options?: RequestInit, 
       createdAt: new Date().toISOString()
     });
 
+    const resolvedType = resolveCampaignType(parsedBody.campaignType, videoUrl);
+    const rewardPerUnit = resolvedType === 'follower' ? 30 : 60;
+
     const newCampaign: Campaign = {
       id: `camp_${Date.now()}`,
       displayId: finalDisplayId || String(Math.floor(1000 + Math.random() * 9000)),
       userId: activeUser.id,
       userName: activeUser.name,
       videoUrl: cleanVideoUrl(videoUrl.trim()),
-      title: finalTitle || 'AtoPlay Video Promotion',
+      title: finalTitle || (resolvedType === 'follower' ? 'Follow AtoPlay Channel' : 'AtoPlay Video Promotion'),
       thumbnailUrl: finalThumbnail || 'https://cdn.atoplay.in/atoplay-thumbnails/58d4d4aa-c235-48a1-8423-57fbeefa914e/thumbnails/61f8d5c2-3b2b-4789-8581-c6727ce0388a.webp',
       viewsRequired: views,
       viewsCompleted: 0,
-      rewardPerView: 60,
+      rewardPerView: rewardPerUnit,
       targetViews: views,
       completedViews: 0,
       durationSeconds: 60,
       totalCoinsCost: totalCost,
       status: 'active',
+      campaignType: resolvedType,
       createdAt: new Date().toISOString()
     };
 
@@ -403,6 +453,9 @@ async function handleClientFallback<T>(endpoint: string, options?: RequestInit, 
   // 5b. Delete Campaign Fallback (DELETE /api/campaigns/:id)
   if (endpoint.startsWith('/api/campaigns/') && method === 'DELETE') {
     const campaignId = endpoint.split('/api/campaigns/')[1]?.split('?')[0];
+    if (campaignId) {
+      addDeletedCampaignId(campaignId);
+    }
     const currentCampaigns = getStoredCampaigns();
     const isUserAdmin = Boolean(activeUser?.isAdmin || activeUser?.email?.toLowerCase().trim() === 'krja462@gmail.com' || activeUser?.id?.includes('krja462'));
     
@@ -410,7 +463,7 @@ async function handleClientFallback<T>(endpoint: string, options?: RequestInit, 
     const targetIndex = campIndex !== -1 ? campIndex : currentCampaigns.findIndex(c => c.id === campaignId);
 
     if (targetIndex === -1) {
-      return { success: false, message: 'Campaign not found' } as any;
+      return { success: true, user: activeUser, message: 'Campaign deleted successfully' } as any;
     }
 
     const campaign = currentCampaigns[targetIndex];

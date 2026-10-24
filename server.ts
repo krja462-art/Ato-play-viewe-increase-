@@ -901,6 +901,18 @@ app.post("/api/auth/reset-accounts", (req, res) => {
   res.json({ success: true, message: "All logged in Google accounts refreshed successfully" });
 });
 
+const deletedCampaignIds = new Set<string>();
+
+function resolveServerCampaignType(campaignType?: string, videoUrl?: string): 'video' | 'follower' {
+  if (campaignType === 'video') return 'video';
+  if (campaignType === 'follower') return 'follower';
+  const url = String(videoUrl || '').toLowerCase();
+  const isExplicitChannelUrl =
+    (url.includes('/channels/') || url.includes('/channel/') || url.includes('/c/') || url.includes('/@')) &&
+    !url.includes('/video/');
+  return isExplicitChannelUrl ? 'follower' : 'video';
+}
+
 app.get("/api/campaigns", (req, res) => {
   const filter = req.query.filter; // 'my' or 'all'
   const activeUser = getActiveUser(req);
@@ -909,12 +921,20 @@ app.get("/api/campaigns", (req, res) => {
     rawWatched ? rawWatched.split(',').map(s => s.trim()).filter(Boolean) : []
   );
 
+  // Purge any deleted campaigns that may still be in array
+  if (deletedCampaignIds.size > 0) {
+    campaigns = campaigns.filter(c => c && !deletedCampaignIds.has(c.id) && (c as any).status !== 'deleted');
+  }
+
   if (filter === 'my') {
-    const myCampaigns = activeUser ? campaigns.filter(c => c.userId === activeUser.id).map(c => ({
-      ...c,
-      videoUrl: cleanVideoUrl(c.videoUrl),
-      followLogs: followLogs.filter(l => l.campaignId === c.id)
-    })) : [];
+    const myCampaigns = activeUser ? campaigns
+      .filter(c => c.userId === activeUser.id && !deletedCampaignIds.has(c.id) && (c as any).status !== 'deleted')
+      .map(c => ({
+        ...c,
+        campaignType: resolveServerCampaignType(c.campaignType, c.videoUrl),
+        videoUrl: cleanVideoUrl(c.videoUrl),
+        followLogs: followLogs.filter(l => l.campaignId === c.id)
+      })) : [];
     return res.json({ success: true, campaigns: myCampaigns });
   }
 
@@ -924,6 +944,7 @@ app.get("/api/campaigns", (req, res) => {
   // 3. Filter out videos that this specific user has already watched and earned coins from
   // 4. For all other users, campaign remains visible until its required views are reached
   const queueCampaigns = campaigns.filter(c => {
+    if (!c || deletedCampaignIds.has(c.id) || (c as any).status === 'deleted') return false;
     const reqViews = c.viewsRequired ?? c.targetViews ?? 10;
     const compViews = c.viewsCompleted ?? c.completedViews ?? 0;
     if (c.status !== 'active' || compViews >= reqViews) return false;
@@ -946,6 +967,7 @@ app.get("/api/campaigns", (req, res) => {
 
   const cleanedQueue = queueCampaigns.map(c => ({
     ...c,
+    campaignType: resolveServerCampaignType(c.campaignType, c.videoUrl),
     videoUrl: cleanVideoUrl(c.videoUrl)
   }));
 
@@ -954,18 +976,39 @@ app.get("/api/campaigns", (req, res) => {
 
 // Sync campaigns from Cloud Firestore or clients to server in-memory store
 app.post("/api/campaigns/sync", (req, res) => {
+  const incomingDeleted = req.body?.deletedIds;
+  if (Array.isArray(incomingDeleted)) {
+    for (const delId of incomingDeleted) {
+      if (typeof delId === 'string' && delId) {
+        deletedCampaignIds.add(delId);
+      }
+    }
+    campaigns = campaigns.filter(c => c && !deletedCampaignIds.has(c.id));
+  }
+
   const incoming = req.body?.campaigns;
   if (Array.isArray(incoming)) {
     for (const inc of incoming) {
       if (!inc || !inc.id) continue;
-      if (inc.id === 'camp_starter_1' || inc.id === 'camp_starter_2' || String(inc.userId || '').startsWith('creator_starter')) {
+      if (
+        inc.id === 'camp_starter_1' ||
+        inc.id === 'camp_starter_2' ||
+        String(inc.userId || '').startsWith('creator_starter') ||
+        deletedCampaignIds.has(inc.id) ||
+        inc.status === 'deleted'
+      ) {
         continue;
       }
+      const existingIdx = campaigns.findIndex(c => c.id === inc.id);
+      const resolvedType = resolveServerCampaignType(
+        existingIdx !== -1 ? (campaigns[existingIdx].campaignType || inc.campaignType) : inc.campaignType,
+        inc.videoUrl || (existingIdx !== -1 ? campaigns[existingIdx].videoUrl : '')
+      );
       const safeInc = {
         ...inc,
+        campaignType: resolvedType,
         videoUrl: cleanVideoUrl(inc.videoUrl || '')
       };
-      const existingIdx = campaigns.findIndex(c => c.id === inc.id);
       if (existingIdx !== -1) {
         const existing = campaigns[existingIdx];
         const mergedCompletedUserIds = Array.from(new Set([
@@ -975,6 +1018,7 @@ app.post("/api/campaigns/sync", (req, res) => {
         campaigns[existingIdx] = {
           ...existing,
           ...safeInc,
+          campaignType: resolvedType,
           videoUrl: cleanVideoUrl(safeInc.videoUrl || existing.videoUrl),
           viewsCompleted: Math.max(existing.viewsCompleted ?? 0, inc.viewsCompleted ?? 0),
           completedViews: Math.max(existing.completedViews ?? 0, inc.completedViews ?? 0),
@@ -1623,6 +1667,8 @@ app.post("/api/campaigns", async (req, res) => {
 
   const finalChannelName = req.body.channelName || metadata.channelName || activeUser.name;
 
+  const resolvedCampaignType = resolveServerCampaignType(campaignType || req.body.campaignType, videoUrl);
+
   const newCampaign: Campaign = {
     id: `camp_${Date.now()}`,
     userId: activeUser.id,
@@ -1632,7 +1678,7 @@ app.post("/api/campaigns", async (req, res) => {
     thumbnailUrl: finalThumbnail,
     viewsRequired: views,
     viewsCompleted: 0,
-    rewardPerView: (campaignType === 'follower' || req.body.campaignType === 'follower' || String(finalTitle || '').toLowerCase().includes('follow') || String(videoUrl || '').toLowerCase().includes('/channels/') || String(videoUrl || '').toLowerCase().includes('/channel/')) ? 30 : 60,
+    rewardPerView: resolvedCampaignType === 'follower' ? 30 : 60,
     targetViews: views,
     completedViews: 0,
     durationSeconds: 60,
@@ -1647,7 +1693,7 @@ app.post("/api/campaigns", async (req, res) => {
     initialFollowers: finalChannelFollowers,
     lastCheckedFollowers: finalChannelFollowers,
     durationText: metadata.durationText || "1:00",
-    campaignType: (campaignType === 'follower' || req.body.campaignType === 'follower' || String(finalTitle || '').toLowerCase().includes('follow') || String(videoUrl || '').toLowerCase().includes('/channels/') || String(videoUrl || '').toLowerCase().includes('/channel/')) ? 'follower' : 'video'
+    campaignType: resolvedCampaignType
   };
 
   campaigns.unshift(newCampaign);
@@ -1691,7 +1737,7 @@ app.get("/api/campaigns/check-followers", async (req, res) => {
     return res.status(401).json({ success: false, message: "Unauthorized" });
   }
 
-  const userCampaigns = campaigns.filter(c => c.userId === activeUser.id && c.status === 'active');
+  const userCampaigns = campaigns.filter(c => c.userId === activeUser.id && c.status === 'active' && !deletedCampaignIds.has(c.id));
   let totalBonusCoinsAwarded = 0;
   const updates: Array<{ campaignId: string; newFollowers: number; bonusEarned: number }> = [];
 
@@ -1744,15 +1790,20 @@ app.delete("/api/campaigns/:id", (req, res) => {
   }
 
   const { id } = req.params;
+  if (id) {
+    deletedCampaignIds.add(id);
+  }
   const isUserAdmin = Boolean(activeUser.isAdmin || activeUser.email?.toLowerCase().trim() === ADMIN_EMAIL || activeUser.id.includes('krja462'));
   const campaignIndex = campaigns.findIndex(c => c.id === id && (c.userId === activeUser.id || isUserAdmin));
+  const anyIndex = campaignIndex !== -1 ? campaignIndex : campaigns.findIndex(c => c.id === id);
 
-  if (campaignIndex === -1) {
-    return res.status(404).json({ success: false, message: "Campaign not found or unauthorized" });
+  if (anyIndex === -1) {
+    persistSitemapToDisk();
+    return res.json({ success: true, user: activeUser, message: "Campaign deleted" });
   }
 
-  const campaign = campaigns[campaignIndex];
-  if (campaign.status === 'active') {
+  const campaign = campaigns[anyIndex];
+  if (campaign.status === 'active' && (campaign.userId === activeUser.id || isUserAdmin)) {
     const reqViews = campaign.viewsRequired ?? campaign.targetViews ?? 10;
     const compViews = campaign.viewsCompleted ?? campaign.completedViews ?? 0;
     const remainingViews = Math.max(0, reqViews - compViews);
@@ -1773,7 +1824,7 @@ app.delete("/api/campaigns/:id", (req, res) => {
     }
   }
 
-  campaigns.splice(campaignIndex, 1);
+  campaigns.splice(anyIndex, 1);
   persistSitemapToDisk();
   res.json({ success: true, user: activeUser, message: "Campaign deleted and refund processed" });
 });
@@ -1883,14 +1934,19 @@ app.post("/api/follow/start", async (req, res) => {
     return res.status(400).json({ success: false, message: "Campaign ID required" });
   }
 
+  if (deletedCampaignIds.has(campaignId)) {
+    return res.status(404).json({ success: false, message: "Campaign was deleted" });
+  }
+
   let campaign = campaigns.find(c => c.id === campaignId || c.displayId === campaignId);
   if (!campaign && reqVideoUrl) {
+    const fallbackType = resolveServerCampaignType(req.body.campaignType, reqVideoUrl);
     campaign = {
       id: campaignId,
       displayId: req.body.displayId || '----',
       userId: req.body.creatorId || 'creator',
       userName: reqChannelName || 'Creator Channel',
-      title: req.body.title || 'Follow AtoPlay Channel',
+      title: req.body.title || (fallbackType === 'follower' ? 'Follow AtoPlay Channel' : 'AtoPlay Video Promotion'),
       videoUrl: reqVideoUrl,
       thumbnailUrl: req.body.thumbnailUrl || '',
       channelName: reqChannelName,
@@ -1901,11 +1957,11 @@ app.post("/api/follow/start", async (req, res) => {
       viewsCompleted: req.body.viewsCompleted || 0,
       targetViews: req.body.viewsRequired || 10,
       completedViews: req.body.viewsCompleted || 0,
-      rewardPerView: 30,
+      rewardPerView: fallbackType === 'follower' ? 30 : 60,
       durationSeconds: 60,
       totalCoinsCost: 0,
       status: 'active',
-      campaignType: 'follower',
+      campaignType: fallbackType,
       createdAt: new Date().toISOString()
     };
     campaigns.unshift(campaign);
@@ -2037,15 +2093,20 @@ app.post("/api/follow/verify", async (req, res) => {
       activeUser.atoPlayUsername = clientUsername.trim().replace(/^@+/, '');
     }
 
+    if (deletedCampaignIds.has(campaignId)) {
+      return res.status(404).json({ success: false, message: "Campaign was deleted" });
+    }
+
     let campaign = campaigns.find(c => c.id === campaignId || c.displayId === campaignId);
     if (!campaign && req.body.videoUrl) {
       const initF = typeof clientCountBefore === 'number' && clientCountBefore >= 0 ? clientCountBefore : 0;
+      const fallbackType = resolveServerCampaignType(req.body.campaignType, req.body.videoUrl);
       campaign = {
         id: campaignId,
         displayId: req.body.displayId || '----',
         userId: req.body.creatorId || 'creator',
         userName: req.body.channelName || 'Creator Channel',
-        title: req.body.title || 'Follow AtoPlay Channel',
+        title: req.body.title || (fallbackType === 'follower' ? 'Follow AtoPlay Channel' : 'AtoPlay Video Promotion'),
         videoUrl: req.body.videoUrl,
         thumbnailUrl: req.body.thumbnailUrl || '',
         channelName: req.body.channelName,
@@ -2056,11 +2117,11 @@ app.post("/api/follow/verify", async (req, res) => {
         viewsCompleted: req.body.viewsCompleted || 0,
         targetViews: req.body.viewsRequired || 10,
         completedViews: req.body.viewsCompleted || 0,
-        rewardPerView: 30,
+        rewardPerView: fallbackType === 'follower' ? 30 : 60,
         durationSeconds: 60,
         totalCoinsCost: 0,
         status: 'active',
-        campaignType: 'follower',
+        campaignType: fallbackType,
         createdAt: new Date().toISOString()
       };
       campaigns.unshift(campaign);

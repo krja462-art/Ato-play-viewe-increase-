@@ -109,8 +109,66 @@ export default function App() {
     const ADMIN_EMAIL = 'krja462@gmail.com';
     const ADMIN_UNLIMITED_COINS = 999999999;
 
+    // 1. Immediately restore local saved session so UI renders with zero lag
+    let restoredLocalSession = false;
+    const savedUserStr = localStorage.getItem('atoviewer_user');
+    if (savedUserStr) {
+      try {
+        const parsed: User = JSON.parse(savedUserStr);
+        if (parsed && parsed.id) {
+          const isAdmin = parsed.email?.toLowerCase().trim() === ADMIN_EMAIL || parsed.id.includes('krja462') || parsed.isAdmin;
+          if (isAdmin) {
+            parsed.coins = ADMIN_UNLIMITED_COINS;
+            parsed.isAdmin = true;
+          }
+          setUser(parsed);
+          setLoading(false);
+          restoredLocalSession = true;
+
+          // Fetch true persistent coin balance directly from Cloud Firestore in background
+          if (!isAdmin && !parsed.id.startsWith('guest_')) {
+            getUserCoinsFromFirestore(parsed.id).then((fsCoins) => {
+              if (typeof fsCoins === 'number') {
+                const finalCoins = Math.max(parsed.coins || 100, fsCoins);
+                if (finalCoins !== parsed.coins) {
+                  parsed.coins = finalCoins;
+                  setUser({ ...parsed, coins: finalCoins });
+                  localStorage.setItem('atoviewer_user', JSON.stringify({ ...parsed, coins: finalCoins }));
+                }
+              }
+            }).catch(() => {});
+          }
+
+          // Verify & sync latest stats with server cache in background (without overwriting higher coins)
+          apiFetch('/api/user', {
+            headers: { 
+              'x-user-id': parsed.id,
+              'x-user-coins': String(parsed.coins || 100)
+            }
+          })
+            .then((data) => {
+              if (data?.success && data?.user) {
+                const updatedUser = data.user;
+                if (updatedUser.email?.toLowerCase().trim() === ADMIN_EMAIL || updatedUser.isAdmin) {
+                  updatedUser.coins = ADMIN_UNLIMITED_COINS;
+                  updatedUser.isAdmin = true;
+                } else {
+                  updatedUser.coins = Math.max(parsed.coins || 100, updatedUser.coins || 100);
+                }
+                setUser(updatedUser);
+                localStorage.setItem('atoviewer_user', JSON.stringify(updatedUser));
+                saveUserCoinsToFirestore(updatedUser.id, updatedUser.coins, updatedUser.email);
+              }
+            })
+            .catch(() => {});
+        }
+      } catch (err) {
+        console.warn('Failed to parse saved user:', err);
+      }
+    }
+
     const initAuth = async () => {
-      // 1. Check if user just returned from Firebase Google Redirect
+      // 2. Check if user just returned from Firebase Google Redirect
       try {
         const redirectUser = await checkRedirectResult();
         if (redirectUser) {
@@ -128,67 +186,10 @@ export default function App() {
         console.warn('Redirect check:', err);
       }
 
-      // 2. Check local saved session
-      const savedUserStr = localStorage.getItem('atoviewer_user');
-      if (savedUserStr) {
-        try {
-          const parsed: User = JSON.parse(savedUserStr);
-          if (parsed && parsed.id) {
-            const isAdmin = parsed.email?.toLowerCase().trim() === ADMIN_EMAIL || parsed.id.includes('krja462') || parsed.isAdmin;
-            if (isAdmin) {
-              parsed.coins = ADMIN_UNLIMITED_COINS;
-              parsed.isAdmin = true;
-            }
-            setUser(parsed);
-
-            // Fetch true persistent coin balance directly from Cloud Firestore
-            if (!isAdmin && !parsed.id.startsWith('guest_')) {
-              getUserCoinsFromFirestore(parsed.id).then((fsCoins) => {
-                if (typeof fsCoins === 'number') {
-                  const finalCoins = Math.max(parsed.coins || 100, fsCoins);
-                  if (finalCoins !== parsed.coins) {
-                    parsed.coins = finalCoins;
-                    setUser({ ...parsed, coins: finalCoins });
-                    localStorage.setItem('atoviewer_user', JSON.stringify({ ...parsed, coins: finalCoins }));
-                  }
-                }
-              }).catch(() => {});
-            }
-
-            // Verify & sync latest stats with server cache (without overwriting higher coins)
-            apiFetch('/api/user', {
-              headers: { 
-                'x-user-id': parsed.id,
-                'x-user-coins': String(parsed.coins || 100)
-              }
-            })
-              .then((data) => {
-                if (data?.success && data?.user) {
-                  const updatedUser = data.user;
-                  if (updatedUser.email?.toLowerCase().trim() === ADMIN_EMAIL || updatedUser.isAdmin) {
-                    updatedUser.coins = ADMIN_UNLIMITED_COINS;
-                    updatedUser.isAdmin = true;
-                  } else {
-                    // CRITICAL: Preserve client's earned coins across server refresh
-                    updatedUser.coins = Math.max(parsed.coins || 100, updatedUser.coins || 100);
-                  }
-                  setUser(updatedUser);
-                  localStorage.setItem('atoviewer_user', JSON.stringify(updatedUser));
-                  saveUserCoinsToFirestore(updatedUser.id, updatedUser.coins, updatedUser.email);
-                }
-              })
-              .catch(() => {});
-            setLoading(false);
-            return;
-          }
-        } catch (err) {
-          console.warn('Failed to parse saved user:', err);
-        }
+      if (!restoredLocalSession) {
+        setUser(null);
+        setLoading(false);
       }
-
-      // 3. No active saved session -> present clean Google Login screen
-      setUser(null);
-      setLoading(false);
     };
 
     initAuth();
@@ -249,7 +250,7 @@ export default function App() {
     if (!user || !user.id) return;
     let isMounted = true;
 
-    const checkNotifications = async () => {
+    const checkServerNotifications = async (includeFirestore = false) => {
       try {
         const res = await apiFetch('/api/user/notifications', {
           headers: { 'x-user-id': user.id }
@@ -259,22 +260,24 @@ export default function App() {
           return;
         }
 
-        const fNotifs = await fetchUserNotificationsFromFirestore(user.id, user.email);
-        if (fNotifs && fNotifs.length > 0 && isMounted) {
-          setActiveWarningNotif(fNotifs[0]);
+        if (includeFirestore) {
+          const fNotifs = await fetchUserNotificationsFromFirestore(user.id, user.email);
+          if (fNotifs && fNotifs.length > 0 && isMounted) {
+            setActiveWarningNotif(fNotifs[0]);
+          }
         }
       } catch (err) {
         console.warn('Error checking warning notifications:', err);
       }
     };
 
-    checkNotifications();
+    checkServerNotifications(true);
     const unsubRealtime = subscribeToUserNotificationsInFirestore(user.id, (incomingNotif) => {
       if (isMounted && incomingNotif && incomingNotif.read === false) {
         setActiveWarningNotif(incomingNotif);
       }
     });
-    const interval = setInterval(checkNotifications, 6000);
+    const interval = setInterval(() => checkServerNotifications(false), 20000);
 
     return () => {
       isMounted = false;

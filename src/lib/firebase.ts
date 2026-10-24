@@ -30,6 +30,7 @@ import {
 import firebaseConfig from '../../firebase-applet-config.json';
 import { User, Campaign, FollowLog } from '../types';
 import { cleanVideoUrl } from './videoExtractor';
+import { resolveCampaignType, getDeletedCampaignIds, addDeletedCampaignId } from './api';
 
 // Initialize Firebase App
 export const app = initializeApp(firebaseConfig);
@@ -312,14 +313,17 @@ export const subscribeToUserCoins = (userId: string, onUpdate: (coins: number) =
  */
 export const saveCampaignToFirestore = async (campaign: Campaign): Promise<void> => {
   if (!campaign || !campaign.id) return;
+  if (getDeletedCampaignIds().has(campaign.id) || (campaign as any).status === 'deleted') return;
   try {
+    const resolvedType = resolveCampaignType(campaign.campaignType, campaign.videoUrl);
     const campRef = doc(db, 'campaigns', campaign.id);
     await setDoc(campRef, {
       ...campaign,
+      campaignType: resolvedType,
       videoUrl: cleanVideoUrl(campaign.videoUrl || ''),
       viewsRequired: campaign.viewsRequired ?? campaign.targetViews ?? 10,
       viewsCompleted: campaign.viewsCompleted ?? campaign.completedViews ?? 0,
-      rewardPerView: campaign.rewardPerView ?? 60
+      rewardPerView: campaign.rewardPerView ?? (resolvedType === 'follower' ? 30 : 60)
     });
   } catch (err) {
     console.warn('Error saving campaign to Firestore:', err);
@@ -335,7 +339,7 @@ export const updateCampaignViewsInFirestore = async (
   newViewsCompleted?: number, 
   isCompleted?: boolean
 ): Promise<void> => {
-  if (!campaignId) return;
+  if (!campaignId || getDeletedCampaignIds().has(campaignId)) return;
   try {
     const campRef = doc(db, 'campaigns', campaignId);
     const updates: Record<string, any> = {};
@@ -364,6 +368,7 @@ export const updateCampaignViewsInFirestore = async (
  */
 export const deleteCampaignInFirestore = async (campaignId: string): Promise<void> => {
   if (!campaignId) return;
+  addDeletedCampaignId(campaignId);
   try {
     const campRef = doc(db, 'campaigns', campaignId);
     await deleteDoc(campRef);
@@ -381,6 +386,7 @@ export const deleteCampaignInFirestore = async (campaignId: string): Promise<voi
  */
 export const getPublicCampaignsFromFirestore = async (currentUserId?: string): Promise<Campaign[]> => {
   try {
+    const deletedSet = getDeletedCampaignIds();
     const colRef = collection(db, 'campaigns');
     const q = query(colRef, limit(100));
     const snapshot = await getDocs(q);
@@ -391,11 +397,13 @@ export const getPublicCampaignsFromFirestore = async (currentUserId?: string): P
       const data = docSnap.data() as any;
       if (!data) return;
 
-      // Clean/purge any legacy starter demo campaigns from Firestore
+      // Clean/purge any legacy starter demo campaigns or deleted campaigns from Firestore
       if (
         docSnap.id === 'camp_starter_1' || 
         docSnap.id === 'camp_starter_2' || 
-        String(data.userId || '').startsWith('creator_starter')
+        String(data.userId || '').startsWith('creator_starter') ||
+        deletedSet.has(docSnap.id) ||
+        data.status === 'deleted'
       ) {
         deleteDoc(doc(db, 'campaigns', docSnap.id)).catch(() => {});
         return;
@@ -423,16 +431,18 @@ export const getPublicCampaignsFromFirestore = async (currentUserId?: string): P
         }
       }
 
+      const resolvedType = resolveCampaignType(data.campaignType, data.videoUrl);
+
       const camp: Campaign = {
         id: docSnap.id,
         userId: data.userId || 'creator',
         userName: data.userName || 'AtoPlay Creator',
         videoUrl: cleanVideoUrl(data.videoUrl || ''),
-        title: data.title || 'AtoPlay Video Promotion',
+        title: data.title || (resolvedType === 'follower' ? 'Follow AtoPlay Channel' : 'AtoPlay Video Promotion'),
         thumbnailUrl: data.thumbnailUrl || 'https://cdn.atoplay.in/atoplay-thumbnails/58d4d4aa-c235-48a1-8423-57fbeefa914e/thumbnails/61f8d5c2-3b2b-4789-8581-c6727ce0388a.webp',
         viewsRequired: reqViews,
         viewsCompleted: compViews,
-        rewardPerView: Number(data.rewardPerView || 60),
+        rewardPerView: Number(data.rewardPerView || (resolvedType === 'follower' ? 30 : 60)),
         targetViews: reqViews,
         completedViews: compViews,
         durationSeconds: Number(data.durationSeconds || 60),
@@ -450,7 +460,7 @@ export const getPublicCampaignsFromFirestore = async (currentUserId?: string): P
         ),
         initialFollowers: typeof data.initialFollowers === 'number' ? data.initialFollowers : (typeof data.channelFollowers === 'number' ? data.channelFollowers : undefined),
         lastCheckedFollowers: data.lastCheckedFollowers,
-        campaignType: data.campaignType || ((String(data.videoUrl || '').includes('/channels/') || String(data.title || '').toLowerCase().includes('follow')) ? 'follower' : 'video'),
+        campaignType: resolvedType,
         followedUserIds: Array.isArray(data.followedUserIds) ? data.followedUserIds : [],
         durationText: data.durationText || '1:00',
         completedUserIds
@@ -475,23 +485,33 @@ export const getPublicCampaignsFromFirestore = async (currentUserId?: string): P
 export const getMyCampaignsFromFirestore = async (userId: string): Promise<Campaign[]> => {
   if (!userId) return [];
   try {
+    const deletedSet = getDeletedCampaignIds();
     const colRef = collection(db, 'campaigns');
-    const snapshot = await getDocs(colRef);
+    const q = query(colRef, where('userId', '==', userId));
+    const snapshot = await getDocs(q);
     const myCampaigns: Campaign[] = [];
 
     snapshot.forEach(docSnap => {
       const data = docSnap.data() as any;
-      if (data && data.userId === userId) {
+      if (!data) return;
+
+      if (deletedSet.has(docSnap.id) || data.status === 'deleted') {
+        deleteDoc(doc(db, 'campaigns', docSnap.id)).catch(() => {});
+        return;
+      }
+
+      if (data.userId === userId) {
+        const resolvedType = resolveCampaignType(data.campaignType, data.videoUrl);
         myCampaigns.push({
           id: docSnap.id,
           userId: data.userId,
           userName: data.userName || 'My Campaign',
           videoUrl: cleanVideoUrl(data.videoUrl || ''),
-          title: data.title || 'AtoPlay Video Promotion',
+          title: data.title || (resolvedType === 'follower' ? 'Follow AtoPlay Channel' : 'AtoPlay Video Promotion'),
           thumbnailUrl: data.thumbnailUrl,
           viewsRequired: Number(data.viewsRequired ?? data.targetViews ?? 10),
           viewsCompleted: Number(data.viewsCompleted ?? data.completedViews ?? 0),
-          rewardPerView: Number(data.rewardPerView || 60),
+          rewardPerView: Number(data.rewardPerView || (resolvedType === 'follower' ? 30 : 60)),
           targetViews: Number(data.targetViews ?? data.viewsRequired ?? 10),
           completedViews: Number(data.completedViews ?? data.viewsCompleted ?? 0),
           durationSeconds: Number(data.durationSeconds || 60),
@@ -509,7 +529,7 @@ export const getMyCampaignsFromFirestore = async (userId: string): Promise<Campa
           ),
           initialFollowers: typeof data.initialFollowers === 'number' ? data.initialFollowers : (typeof data.channelFollowers === 'number' ? data.channelFollowers : undefined),
           lastCheckedFollowers: data.lastCheckedFollowers,
-          campaignType: data.campaignType || ((String(data.videoUrl || '').includes('/channels/') || String(data.title || '').toLowerCase().includes('follow')) ? 'follower' : 'video'),
+          campaignType: resolvedType,
           followedUserIds: Array.isArray(data.followedUserIds) ? data.followedUserIds : [],
           durationText: data.durationText || '1:00',
           completedUserIds: Array.isArray(data.completedUserIds) ? data.completedUserIds : []
@@ -533,10 +553,14 @@ export const updateCampaignFollowersInFirestore = async (
   userId?: string,
   newFollowersCount?: number
 ): Promise<void> => {
-  if (!campaignId) return;
+  if (!campaignId || getDeletedCampaignIds().has(campaignId)) return;
   try {
     const campRef = doc(db, 'campaigns', campaignId);
     const snap = await getDoc(campRef).catch(() => null);
+    if (!snap || !snap.exists()) return;
+    const data = snap.data() as any;
+    if (data?.status === 'deleted') return;
+
     const updates: Record<string, any> = {
       viewsCompleted: increment(1),
       completedViews: increment(1)
@@ -549,22 +573,18 @@ export const updateCampaignFollowersInFirestore = async (
       updates.channelFollowers = newFollowersCount;
       updates.lastCheckedFollowers = newFollowersCount;
     }
-    if (snap && snap.exists()) {
-      const data = snap.data() as any;
-      const reqViews = Number(data?.viewsRequired ?? data?.targetViews ?? 10);
-      const nextCompViews = Number(data?.viewsCompleted ?? data?.completedViews ?? 0) + 1;
-      if (nextCompViews >= reqViews) {
-        updates.status = 'completed';
-      }
-      if (typeof newFollowersCount !== 'number') {
-        const currentLive = Number(data?.channelFollowers ?? data?.initialFollowers ?? 0);
-        updates.channelFollowers = currentLive + 1;
-        updates.lastCheckedFollowers = currentLive + 1;
-      }
-      await updateDoc(campRef, updates);
-    } else {
-      await setDoc(campRef, updates, { merge: true });
+
+    const reqViews = Number(data?.viewsRequired ?? data?.targetViews ?? 10);
+    const nextCompViews = Number(data?.viewsCompleted ?? data?.completedViews ?? 0) + 1;
+    if (nextCompViews >= reqViews) {
+      updates.status = 'completed';
     }
+    if (typeof newFollowersCount !== 'number') {
+      const currentLive = Number(data?.channelFollowers ?? data?.initialFollowers ?? 0);
+      updates.channelFollowers = currentLive + 1;
+      updates.lastCheckedFollowers = currentLive + 1;
+    }
+    await updateDoc(campRef, updates);
   } catch (err) {
     console.warn('Error updating campaign followers in Firestore:', err);
   }
@@ -585,18 +605,18 @@ export const clearAllCampaignsFromFirestore = async (): Promise<void> => {
   }
 };
 
+let starterPurgedThisSession = false;
+
 /**
- * Clean and remove all demo/starter campaigns from Firestore
+ * Clean and remove all demo/starter campaigns from Firestore (once per session)
  */
 export const purgeStarterCampaignsFromFirestore = async (): Promise<void> => {
+  if (starterPurgedThisSession) return;
+  starterPurgedThisSession = true;
   try {
     const starterIds = ["camp_starter_1", "camp_starter_2"];
     for (const id of starterIds) {
-      const campRef = doc(db, 'campaigns', id);
-      const snap = await getDoc(campRef);
-      if (snap.exists()) {
-        await deleteDoc(campRef);
-      }
+      deleteDoc(doc(db, 'campaigns', id)).catch(() => {});
     }
   } catch (err) {
     console.warn('Could not clean starter campaigns from Firestore:', err);
