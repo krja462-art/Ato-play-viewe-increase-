@@ -80,7 +80,13 @@ export const FollowChannelModal: React.FC<FollowChannelModalProps> = ({
     apiFetch('/api/follow/start', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ campaignId: campaign.id })
+      body: JSON.stringify({
+        campaignId: campaign.id,
+        videoUrl: campaign.videoUrl,
+        channelId: campaign.channelId,
+        channelName: campaign.channelName || campaign.userName,
+        countBefore: initialFallbackCount
+      })
     })
       .then((data: any) => {
         if (!isMounted) return;
@@ -107,7 +113,6 @@ export const FollowChannelModal: React.FC<FollowChannelModalProps> = ({
       .catch((err) => {
         if (!isMounted) return;
         console.warn('Follow start connection note:', err);
-        // Resilient fallback: allow user to follow without blocking
         setCountBefore(initialFallbackCount);
         setChannelUrl(campaign.videoUrl);
         setChannelName(campaign.userName || 'AtoPlay Creator');
@@ -170,7 +175,7 @@ export const FollowChannelModal: React.FC<FollowChannelModalProps> = ({
         setStatusMessage('⚠️ You did not follow the channel or returned too early (< 4 seconds)! Please stay on the AtoPlay channel for at least 4 seconds and click Follow.');
         setStatusType('warning');
       } else {
-        handleVerifyFollow(true, elapsed);
+        handleVerifyFollow(false, elapsed);
       }
     };
 
@@ -185,7 +190,7 @@ export const FollowChannelModal: React.FC<FollowChannelModalProps> = ({
   }, [isWaitingFollow, countBefore]);
 
   // Step 2: Verify Follow with AtoPlay API ("ager user ek bhi follow badhe to coin mile")
-  const handleVerifyFollow = async (simulateBump: boolean = false, overrideElapsedMs?: number) => {
+  const handleVerifyFollow = async (_unusedFlag: boolean = false, overrideElapsedMs?: number) => {
     if (!campaign) return;
 
     if (user?.isFollowRestricted) {
@@ -195,15 +200,15 @@ export const FollowChannelModal: React.FC<FollowChannelModalProps> = ({
     }
 
     const elapsedSinceOpen = overrideElapsedMs ?? (followStartTimeRef.current ? (Date.now() - followStartTimeRef.current) : 0);
-    const completed4Sec = Boolean(simulateBump || (hasOpenedLink && elapsedSinceOpen >= 4000));
+    const completed4Sec = Boolean(hasOpenedLink && elapsedSinceOpen >= 4000);
 
-    if (!hasOpenedLink && !simulateBump) {
+    if (!hasOpenedLink && !overrideElapsedMs) {
       setStatusMessage('⚠️ Please tap "1. Open Channel on AtoPlay & Follow" first and stay for at least 4 seconds.');
       setStatusType('warning');
       return;
     }
 
-    if (hasOpenedLink && elapsedSinceOpen < 4000 && !simulateBump) {
+    if (hasOpenedLink && elapsedSinceOpen < 4000 && !overrideElapsedMs) {
       setStatusMessage('⚠️ Please stay on the AtoPlay channel for at least 4 seconds to follow before verifying.');
       setStatusType('warning');
       return;
@@ -230,8 +235,7 @@ export const FollowChannelModal: React.FC<FollowChannelModalProps> = ({
           viewsCompleted: campaign.viewsCompleted,
           followerUsername: user.atoPlayUsername,
           visited4Sec: completed4Sec,
-          elapsedMs: elapsedSinceOpen,
-          simulateBump: completed4Sec
+          elapsedMs: elapsedSinceOpen
         })
       });
 

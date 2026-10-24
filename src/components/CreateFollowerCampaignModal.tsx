@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { X, Users, Sparkles, Coins, CheckCircle2, AlertCircle, ExternalLink, Link as LinkIcon, Search, Loader2, Clipboard } from 'lucide-react';
 import { User, Campaign } from '../types';
-import { apiFetch, cleanVideoUrl, openAtoPlayUrl, extractVideoMetadata } from '../lib/api';
+import { apiFetch, cleanVideoUrl, openAtoPlayUrl, extractVideoMetadata, fetchLiveAtoPlayFollowerCount } from '../lib/api';
 import { saveCampaignToFirestore, saveUserCoinsToFirestore } from '../lib/firebase';
 import confetti from 'canvas-confetti';
 
@@ -132,42 +132,22 @@ export const CreateFollowerCampaignModal: React.FC<CreateFollowerCampaignModalPr
         }
       }
 
-      // 3. Direct AtoPlay API probe as ultimate guarantee
-      if (!fetchedName || !fetchedBanner) {
-        const parts = cleanedUrl.split('/').filter(Boolean);
-        const slug = parts[parts.length - 1] || 'Channel';
-        const endpoints = [
-          `https://api.atoplay.com/api/channels/${slug}`,
-          `https://api.atoplay.com/api/channels/id/${slug}`,
-          `https://api.atoplay.com/api/channels/public/${slug}`,
-          `https://api.atoplay.com/api/creators/${slug}`
-        ];
-
-        for (const ep of endpoints) {
-          try {
-            const res = await fetch(ep, { headers: { 'Accept': 'application/json' } });
-            if (res.ok) {
-              const json = await res.json();
-              const obj = json?.channel || json?.data || (Array.isArray(json) ? json[0] : json);
-              if (obj?.name || obj?.username || obj?.title || obj?.channelName) {
-                fetchedName = obj.name || obj.username || obj.title || obj.channelName;
-              }
-              const f = Number(obj?.followersCount ?? obj?.followers ?? obj?.subscribersCount ?? obj?.subscribers);
-              if (!isNaN(f) && f >= 0) {
-                fetchedFollowers = f;
-              }
-              const b = obj?.channelBanner || obj?.channelImage || obj?.bannerUrl || obj?.banner || obj?.avatarUrl || obj?.avatar || obj?.image || obj?.thumbnailUrl || obj?.logo || (Array.isArray(obj?.videos) && obj?.videos[0]?.thumbnailUrl);
-              if (b) {
-                fetchedBanner = b.startsWith('http') ? b : (b.startsWith('/') ? `https://cdn.atoplay.in${b}` : `https://cdn.atoplay.in/${b}`);
-              }
-              if (obj?.channelImage) {
-                fetchedAvatar = obj.channelImage.startsWith('http') ? obj.channelImage : `https://cdn.atoplay.in/${obj.channelImage.replace(/^\//, '')}`;
-              }
-              if (fetchedName && fetchedBanner) break;
-            }
-          } catch {}
+      // 3. Direct AtoPlay Live Follower Count API probe (/api/channel/:id/count + /api/channels/:id)
+      try {
+        const liveRes = await fetchLiveAtoPlayFollowerCount({ videoUrl: cleanedUrl });
+        if (liveRes.isRealAtoPlay && typeof liveRes.count === 'number') {
+          fetchedFollowers = liveRes.count;
         }
-      }
+        if (!fetchedName && liveRes.channelName) {
+          fetchedName = liveRes.channelName;
+        }
+        if (!fetchedBanner && liveRes.channelBanner) {
+          fetchedBanner = liveRes.channelBanner;
+        }
+        if (!fetchedAvatar && liveRes.channelImage) {
+          fetchedAvatar = liveRes.channelImage;
+        }
+      } catch {}
 
       let finalName = fetchedName;
       if (!finalName || finalName === 'AtoPlay Creator' || finalName.startsWith('AtoPlay Channel #')) {

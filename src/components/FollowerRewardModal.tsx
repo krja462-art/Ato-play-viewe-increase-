@@ -36,21 +36,27 @@ export const FollowerRewardModal: React.FC<FollowerRewardModalProps> = ({
   const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
   const [feedbackType, setFeedbackType] = useState<'success' | 'error' | null>(null);
   
-  const savedInitial = campaign?.channelFollowers ?? campaign?.initialFollowers ?? countBefore ?? 0;
+  const savedInitial = countBefore ?? campaign?.channelFollowers ?? campaign?.initialFollowers ?? 0;
   const [followersBefore, setFollowersBefore] = useState<number>(savedInitial);
   const [followersAfter, setFollowersAfter] = useState<number | undefined>(countAfter);
 
   useEffect(() => {
+    if (typeof countBefore === 'number' && countBefore >= 0 && !isClaimed) {
+      setFollowersBefore(countBefore);
+    }
+  }, [countBefore, isClaimed]);
+
+  useEffect(() => {
     if (isOpen && campaign) {
       setIsClaimed(false);
-      const initCount = campaign.channelFollowers ?? campaign.initialFollowers ?? countBefore ?? 0;
+      const initCount = countBefore ?? campaign.channelFollowers ?? campaign.initialFollowers ?? 0;
       setFollowersBefore(initCount);
       setFollowersAfter(countAfter);
       setFeedbackMessage(null);
       setFeedbackType(null);
 
-      // Auto-trigger verification with AtoPlay API + 4s visit confirmation when modal opens
-      handleVerifyFollow(true, initCount);
+      // Trigger real AtoPlay API verification when modal opens
+      handleVerifyFollow(initCount);
     }
   }, [isOpen, campaign?.id]);
 
@@ -59,13 +65,13 @@ export const FollowerRewardModal: React.FC<FollowerRewardModalProps> = ({
   const shortId = format4CharId(campaign.displayId, campaign.id);
   const channelUrl = campaign.videoUrl || 'https://atoplay.com';
 
-  const handleVerifyFollow = async (simulateBump = true, overrideInitial?: number) => {
+  const handleVerifyFollow = async (overrideInitial?: number) => {
     if (verifying || isClaimed) return;
     setVerifying(true);
     setFeedbackMessage(null);
     setFeedbackType(null);
 
-    const baseline = overrideInitial ?? followersBefore;
+    const baseline = typeof overrideInitial === 'number' ? overrideInitial : followersBefore;
 
     try {
       const res = await apiFetch('/api/follow/verify', {
@@ -87,19 +93,21 @@ export const FollowerRewardModal: React.FC<FollowerRewardModalProps> = ({
           viewsCompleted: campaign.viewsCompleted,
           followerUsername: user.atoPlayUsername,
           visited4Sec,
-          elapsedMs,
-          simulateBump
+          elapsedMs
         })
       });
 
-      if (res?.verified === true && typeof res?.countAfter === 'number' && res.countAfter > baseline) {
+      const effectiveBefore = typeof res?.countBefore === 'number' ? res.countBefore : baseline;
+      setFollowersBefore(effectiveBefore);
+
+      if (res?.verified === true && typeof res?.countAfter === 'number' && res.countAfter > effectiveBefore) {
         const bonus = res.earnedCoins || 30;
         const newCoins = (user.coins || 0) + bonus;
         setIsClaimed(true);
         const resolvedAfter = res.countAfter;
         setFollowersAfter(resolvedAfter);
         setFeedbackType('success');
-        setFeedbackMessage(res.message || `Follow verified! Creator followers increased from ${baseline} to ${resolvedAfter} (+1 Follower). +30 Coins have been credited to your wallet!`);
+        setFeedbackMessage(res.message || `Follow verified! Creator followers increased from ${effectiveBefore} to ${resolvedAfter} (+${resolvedAfter - effectiveBefore} Follower). +30 Coins have been credited to your wallet!`);
 
         try {
           playCoinCelebrationSound();
@@ -126,7 +134,7 @@ export const FollowerRewardModal: React.FC<FollowerRewardModalProps> = ({
         };
         saveFollowLogToFirestore(logToSave).catch(() => {});
 
-        // Update campaign in Firestore: add user to followed list & completed list and update live follower count (+1)
+        // Update campaign in Firestore: add user to followed list & completed list and update live follower count
         updateCampaignFollowersInFirestore(campaign.id, user.id, resolvedAfter).catch(() => {});
 
         // Callback to parent to update campaign state & remove completed campaign from feed
@@ -135,11 +143,11 @@ export const FollowerRewardModal: React.FC<FollowerRewardModalProps> = ({
         }
       } else {
         setFeedbackType('error');
-        const afterCount = typeof res?.countAfter === 'number' ? res.countAfter : baseline;
+        const afterCount = typeof res?.countAfter === 'number' ? res.countAfter : effectiveBefore;
         setFollowersAfter(afterCount);
         setFeedbackMessage(
           res?.message || 
-          `AtoPlay check: Follower count did not increase (Previous: ${baseline}, Current: ${afterCount}). Please follow the creator channel on AtoPlay and tap 'Verify Follow'.`
+          `AtoPlay live check: Follower count did not increase (Previous: ${effectiveBefore}, Current: ${afterCount}). Please click 'Follow' on the AtoPlay channel first, then tap 'Verify Follow'.`
         );
       }
     } catch (err: any) {
@@ -244,7 +252,7 @@ export const FollowerRewardModal: React.FC<FollowerRewardModalProps> = ({
             <div className="space-y-2 pt-1">
               <button
                 type="button"
-                onClick={() => handleVerifyFollow(true)}
+                onClick={() => handleVerifyFollow()}
                 disabled={verifying}
                 className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-extrabold text-xs sm:text-sm shadow-md flex items-center justify-center space-x-2 cursor-pointer disabled:opacity-60 transition-transform active:scale-98"
               >

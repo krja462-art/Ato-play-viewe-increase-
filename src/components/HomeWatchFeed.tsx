@@ -9,7 +9,7 @@ import { Warning4SecModal } from './Warning4SecModal';
 import { AtoPlayBadge } from './AtoPlayBadge';
 import { playCoinCelebrationSound } from '../utils/audio';
 import { triggerWatchCompleteCelebration } from '../utils/confetti';
-import { apiFetch, getWatchedIds, addWatchedId, cleanVideoUrl, openAtoPlayUrl } from '../lib/api';
+import { apiFetch, getWatchedIds, addWatchedId, cleanVideoUrl, openAtoPlayUrl, fetchLiveAtoPlayFollowerCount } from '../lib/api';
 import { 
   updateCampaignViewsInFirestore, 
   updateCampaignFollowersInFirestore,
@@ -88,6 +88,7 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
   const [showWarning4SecModal, setShowWarning4SecModal] = useState(false);
   const [warningElapsed, setWarningElapsed] = useState(2);
   const [followElapsedMs, setFollowElapsedMs] = useState<number>(4500);
+  const [followBaselineCount, setFollowBaselineCount] = useState<number | undefined>(undefined);
   const followLeftTimeRef = useRef<number | null>(null);
   const activeFollowTargetRef = useRef<Campaign | null>(null);
 
@@ -124,7 +125,10 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
   const handleStartFollowTask = (camp: Campaign) => {
     activeFollowTargetRef.current = camp;
     followLeftTimeRef.current = Date.now();
-    // Register baseline session on server in background
+    const initialF = camp.channelFollowers ?? camp.initialFollowers ?? 0;
+    setFollowBaselineCount(initialF);
+
+    // Register baseline session & fetch live AtoPlay follower count right when user opens channel
     apiFetch('/api/follow/start', {
       method: 'POST',
       headers: {
@@ -133,9 +137,27 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
       },
       body: JSON.stringify({
         campaignId: camp.id,
+        videoUrl: camp.videoUrl,
+        channelId: camp.channelId,
+        channelName: camp.channelName || camp.userName,
+        countBefore: initialF,
         followerUsername: user.atoPlayUsername || user.name
       })
+    }).then((data: any) => {
+      if (data?.success && typeof data.countBefore === 'number') {
+        setFollowBaselineCount(data.countBefore);
+        if (activeFollowTargetRef.current && activeFollowTargetRef.current.id === camp.id) {
+          activeFollowTargetRef.current = {
+            ...activeFollowTargetRef.current,
+            channelFollowers: data.countBefore,
+            channelId: data.channelId || activeFollowTargetRef.current.channelId
+          };
+        }
+        setSelectedFollowCampaign(prev => prev && prev.id === camp.id ? { ...prev, channelFollowers: data.countBefore } : prev);
+        setCampaigns(prev => prev.map(c => c.id === camp.id ? { ...c, channelFollowers: data.countBefore } : c));
+      }
     }).catch(() => {});
+
     openAtoPlayUrl(camp.videoUrl || 'https://atoplay.com', true);
   };
 
@@ -259,6 +281,30 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
       });
 
       setCampaigns(cleanedPublic);
+
+      // Refresh live follower counts directly from AtoPlay API for follower campaigns
+      cleanedPublic.forEach(camp => {
+        if (camp.campaignType === 'follower' || camp.videoUrl?.includes('atoplay.com')) {
+          fetchLiveAtoPlayFollowerCount({
+            videoUrl: camp.videoUrl,
+            channelId: camp.channelId,
+            channelName: camp.channelName || camp.userName
+          }).then(liveRes => {
+            if (liveRes.isRealAtoPlay && typeof liveRes.count === 'number') {
+              setCampaigns(prev => prev.map(item =>
+                item.id === camp.id
+                  ? {
+                      ...item,
+                      channelFollowers: liveRes.count!,
+                      channelId: liveRes.channelId || item.channelId,
+                      channelName: liveRes.channelName || item.channelName
+                    }
+                  : item
+              ));
+            }
+          }).catch(() => {});
+        }
+      });
 
       // Background sync all active firestore campaigns to server in-memory store
       if (firestoreCampaigns.length > 0) {
@@ -442,8 +488,7 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
           viewsRequired: camp.viewsRequired,
           viewsCompleted: camp.viewsCompleted,
           followerUsername: user.atoPlayUsername,
-          visited4Sec: true,
-          simulateBump: true
+          visited4Sec: true
         })
       });
 
@@ -1288,7 +1333,7 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
           }}
           campaign={selectedFollowCampaign}
           user={user}
-          countBefore={selectedFollowCampaign.channelFollowers ?? selectedFollowCampaign.initialFollowers ?? 0}
+          countBefore={followBaselineCount ?? selectedFollowCampaign.channelFollowers ?? selectedFollowCampaign.initialFollowers ?? 0}
           visited4Sec={true}
           elapsedMs={followElapsedMs}
           onCoinEarned={onCoinEarned}

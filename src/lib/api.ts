@@ -1,7 +1,7 @@
 import { User, Campaign, Transaction } from '../types';
-import { extractVideoMetadata, VideoMetadata, cleanVideoUrl } from './videoExtractor';
+import { extractVideoMetadata, VideoMetadata, cleanVideoUrl, fetchLiveAtoPlayFollowerCount } from './videoExtractor';
 
-export { extractVideoMetadata, cleanVideoUrl };
+export { extractVideoMetadata, cleanVideoUrl, fetchLiveAtoPlayFollowerCount };
 export type { VideoMetadata };
 
 // Re-export for backward compatibility
@@ -598,82 +598,141 @@ async function handleClientFallback<T>(endpoint: string, options?: RequestInit, 
     return { success: true, transactions: list } as any;
   }
 
-  // 13. Follow Channel Start (Fallback)
+  // 13. Follow Channel Start (Real AtoPlay API Check)
   if (endpoint.startsWith('/api/follow/start')) {
     const campaignId = parsedBody?.campaignId;
     const campaigns = getStoredCampaigns();
     const camp = campaigns.find(c => c.id === campaignId);
-    const initialFollowers = camp?.channelFollowers || 140;
-    const channelName = camp?.channelName || camp?.userName || 'AtoPlay Creator';
-    const channelUrl = camp?.videoUrl || 'https://atoplay.com';
+    const videoUrl = parsedBody?.videoUrl || camp?.videoUrl || '';
+    const channelId = parsedBody?.channelId || camp?.channelId || '';
+    const channelName = parsedBody?.channelName || camp?.channelName || camp?.userName || 'AtoPlay Creator';
+
+    const liveRes = await fetchLiveAtoPlayFollowerCount({ videoUrl, channelId, channelName });
+    const savedFollowers = typeof camp?.channelFollowers === 'number' && camp.channelFollowers >= 0
+      ? camp.channelFollowers
+      : (typeof parsedBody?.countBefore === 'number' && parsedBody.countBefore >= 0 ? parsedBody.countBefore : 0);
+
+    const baselineCount = liveRes.isRealAtoPlay && typeof liveRes.count === 'number'
+      ? liveRes.count
+      : savedFollowers;
+
+    if (campaignId) {
+      try {
+        sessionStorage.setItem(`atoplay_follow_baseline_${campaignId}`, String(baselineCount));
+      } catch {}
+    }
+
+    const resolvedChannelId = liveRes.channelId || channelId;
+    const resolvedChannelName = liveRes.channelName || channelName;
+    const channelUrl = resolvedChannelId
+      ? `https://atoplay.com/channels/${resolvedChannelId}`
+      : (videoUrl || 'https://atoplay.com');
 
     return {
       success: true,
       campaignId,
-      countBefore: initialFollowers,
-      channelKey: channelName,
-      channelId: '',
-      channelName,
+      countBefore: baselineCount,
+      channelKey: resolvedChannelName,
+      channelId: resolvedChannelId,
+      channelName: resolvedChannelName,
       channelUrl,
-      isRealAtoPlay: true,
+      isRealAtoPlay: liveRes.isRealAtoPlay,
       rewardCoins: 30,
       alreadyFollowed: false,
-      message: `AtoPlay API: Previous followers = ${initialFollowers}. Follow the channel on AtoPlay, then tap 'Verify Follow'.`
+      message: `AtoPlay API captured initial follower count (${baselineCount}). Please follow the channel on AtoPlay and tap 'Verify Follow'.`
     } as any;
   }
 
-  // 14. Follow Channel Verify (Fallback)
+  // 14. Follow Channel Verify (Strict Real AtoPlay API Check - NO fake +1 bump)
   if (endpoint.startsWith('/api/follow/verify')) {
-    const { campaignId, countBefore, simulateBump, visited4Sec, elapsedMs } = parsedBody;
-    const initial = typeof countBefore === 'number' ? countBefore : 140;
-    const is4SecVerified = Boolean(
-      visited4Sec === true ||
-      simulateBump === true ||
-      (typeof elapsedMs === 'number' && elapsedMs >= 4000)
-    );
+    const { campaignId, countBefore: reqCountBefore, videoUrl: reqVideoUrl, channelId: reqChannelId, channelName: reqChannelName } = parsedBody;
+    const campaigns = getStoredCampaigns();
+    const targetCamp = campaigns.find(c => c.id === campaignId);
 
-    if (is4SecVerified) {
-      const countAfter = initial + 1;
-      if (activeUser) {
-        activeUser.coins = (activeUser.coins || 0) + 30;
-        setStoredUser(activeUser);
-        if (activeUser.id && campaignId) {
-          addFollowedId(activeUser.id, campaignId);
-          addWatchedId(activeUser.id, campaignId);
+    let storedBaseline: number | undefined = undefined;
+    if (campaignId) {
+      try {
+        const rawStored = sessionStorage.getItem(`atoplay_follow_baseline_${campaignId}`);
+        if (rawStored !== null && !isNaN(Number(rawStored))) {
+          storedBaseline = Number(rawStored);
         }
-      }
-      if (campaignId) {
-        const currentCampaigns = getStoredCampaigns();
-        const targetCamp = currentCampaigns.find(c => c.id === campaignId);
-        if (targetCamp) {
-          targetCamp.channelFollowers = countAfter;
-          targetCamp.lastCheckedFollowers = countAfter;
-          targetCamp.viewsCompleted = (targetCamp.viewsCompleted || 0) + 1;
-          targetCamp.completedViews = (targetCamp.completedViews || 0) + 1;
-          if (targetCamp.completedViews >= (targetCamp.viewsRequired || targetCamp.targetViews || 10)) {
-            targetCamp.status = 'completed';
-          }
-          setStoredCampaigns(currentCampaigns);
-        }
-      }
+      } catch {}
+    }
+
+    const baseline = storedBaseline !== undefined
+      ? storedBaseline
+      : (typeof reqCountBefore === 'number' && reqCountBefore >= 0
+        ? reqCountBefore
+        : (typeof targetCamp?.channelFollowers === 'number' ? targetCamp.channelFollowers : 0));
+
+    const videoUrl = reqVideoUrl || targetCamp?.videoUrl || '';
+    const channelId = reqChannelId || targetCamp?.channelId || '';
+    const channelName = reqChannelName || targetCamp?.channelName || targetCamp?.userName || 'AtoPlay Creator';
+
+    let liveRes = await fetchLiveAtoPlayFollowerCount({ videoUrl, channelId, channelName });
+    // If AtoPlay DB took a moment to commit the new follow, retry once after 1.2s
+    if ((!liveRes.isRealAtoPlay || (typeof liveRes.count === 'number' && liveRes.count <= baseline)) && (videoUrl || channelId)) {
+      await new Promise(r => setTimeout(r, 1200));
+      liveRes = await fetchLiveAtoPlayFollowerCount({ videoUrl, channelId: liveRes.channelId || channelId, channelName });
+    }
+
+    if (!liveRes.isRealAtoPlay || typeof liveRes.count !== 'number') {
       return {
-        success: true,
-        verified: true,
-        earnedCoins: 30,
-        newBalance: activeUser?.coins || 30,
-        countBefore: initial,
-        countAfter,
-        user: activeUser,
-        message: `AtoPlay Live Verified! Followers increased from ${initial} to ${countAfter} (+1 Follower). +30 Coins added to your wallet!`
+        success: false,
+        verified: false,
+        countBefore: baseline,
+        countAfter: baseline,
+        message: `Could not verify live follower count from AtoPlay right now. Please make sure the channel link is a valid AtoPlay channel and try again.`
       } as any;
     }
 
+    const countAfter = liveRes.count;
+    const followerIncreased = countAfter > baseline;
+
+    if (!followerIncreased) {
+      return {
+        success: false,
+        verified: false,
+        countBefore: baseline,
+        countAfter,
+        message: `AtoPlay live check: Follower count did not increase (Previous: ${baseline}, Current: ${countAfter}). Please click 'Follow' on the AtoPlay channel first, then tap 'Verify Follow'.`
+      } as any;
+    }
+
+    if (activeUser) {
+      activeUser.coins = (activeUser.coins || 0) + 30;
+      setStoredUser(activeUser);
+      if (activeUser.id && campaignId) {
+        addFollowedId(activeUser.id, campaignId);
+        addWatchedId(activeUser.id, campaignId);
+      }
+    }
+    if (campaignId && targetCamp) {
+      targetCamp.channelFollowers = countAfter;
+      targetCamp.lastCheckedFollowers = countAfter;
+      targetCamp.viewsCompleted = (targetCamp.viewsCompleted || 0) + 1;
+      targetCamp.completedViews = (targetCamp.completedViews || 0) + 1;
+      if (targetCamp.completedViews >= (targetCamp.viewsRequired || targetCamp.targetViews || 10)) {
+        targetCamp.status = 'completed';
+      }
+      setStoredCampaigns(campaigns);
+    }
+    if (campaignId) {
+      try {
+        sessionStorage.removeItem(`atoplay_follow_baseline_${campaignId}`);
+      } catch {}
+    }
+
     return {
-      success: false,
-      verified: false,
-      countBefore: initial,
-      countAfter: initial,
-      message: `AtoPlay live check: Follower count did not increase (Previous: ${initial}, Current: ${initial}). Please open the channel on AtoPlay for at least 4 seconds, follow the creator, and tap 'Verify Follow'.`
+      success: true,
+      verified: true,
+      earnedCoins: 30,
+      newBalance: activeUser?.coins || 30,
+      countBefore: baseline,
+      countAfter,
+      channelName: liveRes.channelName || channelName,
+      user: activeUser,
+      message: `AtoPlay Live Verified! Creator followers increased from ${baseline} to ${countAfter} (+${countAfter - baseline} Follower). +30 Coins added to your wallet!`
     } as any;
   }
 

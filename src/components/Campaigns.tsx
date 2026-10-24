@@ -3,7 +3,7 @@ import { Campaign, User, format4CharId } from '../types';
 import { Plus, MoreVertical, Clock, Trash2, Coins, AlertCircle, Sparkles, X, Video, ExternalLink, Check, Search, ShieldCheck, Clipboard, Image as ImageIcon, CheckCircle2, Users, Mail, UserCheck } from 'lucide-react';
 import { AtoPlayBadge } from './AtoPlayBadge';
 import { CreateFollowerCampaignModal } from './CreateFollowerCampaignModal';
-import { apiFetch, extractVideoMetadataClient, cleanVideoUrl } from '../lib/api';
+import { apiFetch, extractVideoMetadataClient, cleanVideoUrl, fetchLiveAtoPlayFollowerCount } from '../lib/api';
 import { saveCampaignToFirestore, deleteCampaignInFirestore, saveUserCoinsToFirestore, getMyCampaignsFromFirestore, getFollowLogsFromFirestore, reportFakeFollowInFirestore } from '../lib/firebase';
 import { triggerCampaignGoalCelebration, triggerWatchCompleteCelebration } from '../utils/confetti';
 
@@ -189,11 +189,19 @@ export const Campaigns: React.FC<CampaignsProps> = ({
           }
           const isFollowerCamp = camp.campaignType === 'follower' || String(camp.title || '').toLowerCase().includes('follow') || String(camp.videoUrl || '').toLowerCase().includes('/channels/') || String(camp.videoUrl || '').toLowerCase().includes('/channel/');
           const verifiedCount = Math.max(logs.length, Array.isArray(camp.followedUserIds) ? camp.followedUserIds.length : 0);
-          const initF = typeof camp.initialFollowers === 'number' ? camp.initialFollowers : (typeof camp.channelFollowers === 'number' ? camp.channelFollowers : 0);
-          const syncedChannelFollowers = Math.max(
-            typeof camp.channelFollowers === 'number' ? camp.channelFollowers : 0,
-            initF + verifiedCount
-          );
+          let syncedChannelFollowers = typeof camp.channelFollowers === 'number' ? camp.channelFollowers : (typeof camp.initialFollowers === 'number' ? camp.initialFollowers : 0);
+
+          try {
+            const liveRes = await fetchLiveAtoPlayFollowerCount({
+              videoUrl: camp.videoUrl,
+              channelId: camp.channelId,
+              channelName: camp.channelName || camp.userName
+            });
+            if (liveRes.isRealAtoPlay && typeof liveRes.count === 'number') {
+              syncedChannelFollowers = liveRes.count;
+            }
+          } catch {}
+
           const syncedViewsCompleted = isFollowerCamp
             ? Math.max(camp.viewsCompleted ?? 0, camp.completedViews ?? 0, verifiedCount)
             : Math.max(camp.viewsCompleted ?? 0, camp.completedViews ?? 0);
