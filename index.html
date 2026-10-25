@@ -255,13 +255,25 @@
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
 
-    <!-- PWA Service Worker Safe Registration -->
+    <!-- PWA Service Worker Safe Registration & Stale Cache Cleanup -->
     <script>
+      if ('caches' in window) {
+        caches.keys().then(function(names) {
+          names.forEach(function(name) {
+            if (name !== 'atoviewer-cache-v7' && name !== 'atoviewer-runtime-v7') {
+              caches.delete(name);
+            }
+          });
+        }).catch(function() {});
+      }
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', function() {
           navigator.serviceWorker.register('/sw.js', { scope: '/' })
             .then(function(registration) {
-              console.log('[PWA] Service Worker active with scope:', registration.scope);
+              registration.update();
+              if (registration.waiting) {
+                registration.waiting.postMessage({ type: 'SKIP_WAITING' });
+              }
             })
             .catch(function(error) {
               console.warn('[PWA] Service Worker registration failed:', error);

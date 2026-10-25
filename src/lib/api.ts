@@ -86,11 +86,15 @@ function getStoredCampaigns(): Campaign[] {
       // Filter out any deleted or leftover sample dummy campaigns and clean video URLs
       const realOnly = parsed
         .filter(c => c && !String(c.id).startsWith('camp_init_') && !deletedSet.has(c.id) && (c as any).status !== 'deleted')
-        .map(c => ({
-          ...c,
-          campaignType: resolveCampaignType(c.campaignType, c.videoUrl),
-          videoUrl: cleanVideoUrl(c.videoUrl || '')
-        }));
+        .map(c => {
+          const type = resolveCampaignType(c.campaignType, c.videoUrl);
+          return {
+            ...c,
+            userName: type === 'video' ? '' : (c.channelName || ''),
+            campaignType: type,
+            videoUrl: cleanVideoUrl(c.videoUrl || '')
+          };
+        });
       return realOnly;
     }
     return [];
@@ -345,13 +349,13 @@ async function handleClientFallback<T>(endpoint: string, options?: RequestInit, 
       return { success: true, campaigns: myCampaigns } as any;
     }
 
-    // Home feed filter: active, remaining views (viewsCompleted < viewsRequired), not created by user, not already watched by user
+    // Home feed filter: active, remaining views (viewsCompleted < viewsRequired)
     const watched = activeUser ? getWatchedIds(activeUser.id) : new Set();
     const queue = allCampaigns.filter(c => {
       const reqViews = c.viewsRequired ?? c.targetViews ?? 10;
       const compViews = c.viewsCompleted ?? c.completedViews ?? 0;
       if (c.status !== 'active' || compViews >= reqViews) return false;
-      if (activeUser && c.userId === activeUser.id) return false;
+      if (activeUser && c.userId === activeUser.id) return true;
       if (activeUser && watched.has(c.id)) return false;
       return true;
     });
@@ -421,7 +425,7 @@ async function handleClientFallback<T>(endpoint: string, options?: RequestInit, 
       id: `camp_${Date.now()}`,
       displayId: finalDisplayId || String(Math.floor(1000 + Math.random() * 9000)),
       userId: activeUser.id,
-      userName: activeUser.name,
+      userName: '',
       videoUrl: cleanVideoUrl(videoUrl.trim()),
       title: finalTitle || (resolvedType === 'follower' ? 'Follow AtoPlay Channel' : 'AtoPlay Video Promotion'),
       thumbnailUrl: finalThumbnail || 'https://cdn.atoplay.in/atoplay-thumbnails/58d4d4aa-c235-48a1-8423-57fbeefa914e/thumbnails/61f8d5c2-3b2b-4789-8581-c6727ce0388a.webp',

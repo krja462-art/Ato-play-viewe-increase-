@@ -1,6 +1,6 @@
 // AtoViewer PWA Service Worker (PWABuilder & Google Play Store Ready)
-const CACHE_NAME = 'atoviewer-cache-v3';
-const RUNTIME_CACHE = 'atoviewer-runtime-v3';
+const CACHE_NAME = 'atoviewer-cache-v7';
+const RUNTIME_CACHE = 'atoviewer-runtime-v7';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -48,7 +48,7 @@ self.addEventListener('message', (event) => {
   }
 });
 
-// 4. Fetch event: Network-first for dynamic & API, Stale-while-revalidate for static assets
+// 4. Fetch event: Network-first for HTML, scripts, styles, and API
 self.addEventListener('fetch', (event) => {
   const { request } = event;
 
@@ -96,12 +96,18 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Navigation requests (HTML) -> Network first with cache fallback
-  if (request.mode === 'navigate') {
+  // Navigation requests (HTML) & JS/CSS bundles -> Network first with cache fallback so updates apply immediately
+  if (
+    request.mode === 'navigate' ||
+    request.destination === 'script' ||
+    request.destination === 'style' ||
+    url.pathname.endsWith('.js') ||
+    url.pathname.endsWith('.css')
+  ) {
     event.respondWith(
       fetch(request)
         .then((response) => {
-          if (response && response.status === 200) {
+          if (response && response.status === 200 && response.type === 'basic') {
             const copy = response.clone();
             caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
           }
@@ -110,24 +116,19 @@ self.addEventListener('fetch', (event) => {
         .catch(async () => {
           const cached = await caches.match(request);
           if (cached) return cached;
-          return caches.match('/index.html') || caches.match('/');
+          if (request.mode === 'navigate') {
+            return caches.match('/index.html') || caches.match('/');
+          }
+          return Response.error();
         })
     );
     return;
   }
 
-  // Static assets (images, fonts, scripts, styles) -> Cache first, fallback to network
+  // Static media assets (images, fonts, icons) -> Cache first, fallback to network
   event.respondWith(
     caches.match(request).then((cachedResponse) => {
       if (cachedResponse) {
-        // Stale-while-revalidate: return cached response and refresh cache in background
-        fetch(request)
-          .then((networkResponse) => {
-            if (networkResponse && networkResponse.status === 200) {
-              caches.open(CACHE_NAME).then((cache) => cache.put(request, networkResponse));
-            }
-          })
-          .catch(() => {});
         return cachedResponse;
       }
 

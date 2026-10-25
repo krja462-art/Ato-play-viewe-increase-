@@ -953,23 +953,27 @@ app.get("/api/campaigns", (req, res) => {
     if (extraWatchedSet.has(c.id)) return false;
 
     if (activeUser) {
-      // Don't show creator's own campaign in their home feed
-      if (c.userId === activeUser.id) return false;
-      // Don't show video if user has already watched it
-      if (userWatchedCampaigns[activeUser.id]?.has(c.id)) return false;
-      if (c.completedUserIds && Array.isArray(c.completedUserIds) && c.completedUserIds.includes(activeUser.id)) return false;
-      // Don't show follower campaign if user has already followed it
-      if (userFollowedCampaigns[activeUser.id]?.has(c.id)) return false;
-      if (c.followedUserIds && Array.isArray(c.followedUserIds) && c.followedUserIds.includes(activeUser.id)) return false;
+      if (c.userId !== activeUser.id) {
+        // Don't show video if other user has already watched it
+        if (userWatchedCampaigns[activeUser.id]?.has(c.id)) return false;
+        if (c.completedUserIds && Array.isArray(c.completedUserIds) && c.completedUserIds.includes(activeUser.id)) return false;
+        // Don't show follower campaign if other user has already followed it
+        if (userFollowedCampaigns[activeUser.id]?.has(c.id)) return false;
+        if (c.followedUserIds && Array.isArray(c.followedUserIds) && c.followedUserIds.includes(activeUser.id)) return false;
+      }
     }
     return true;
   });
 
-  const cleanedQueue = queueCampaigns.map(c => ({
-    ...c,
-    campaignType: resolveServerCampaignType(c.campaignType, c.videoUrl),
-    videoUrl: cleanVideoUrl(c.videoUrl)
-  }));
+  const cleanedQueue = queueCampaigns.map(c => {
+    const type = resolveServerCampaignType(c.campaignType, c.videoUrl);
+    return {
+      ...c,
+      userName: type === 'video' ? '' : (c.channelName || ''),
+      campaignType: type,
+      videoUrl: cleanVideoUrl(c.videoUrl)
+    };
+  });
 
   res.json({ success: true, campaigns: cleanedQueue });
 });

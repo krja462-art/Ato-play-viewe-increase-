@@ -319,6 +319,7 @@ export const saveCampaignToFirestore = async (campaign: Campaign): Promise<void>
     const campRef = doc(db, 'campaigns', campaign.id);
     await setDoc(campRef, {
       ...campaign,
+      userName: resolvedType === 'video' ? '' : (campaign.channelName || ''),
       campaignType: resolvedType,
       videoUrl: cleanVideoUrl(campaign.videoUrl || ''),
       viewsRequired: campaign.viewsRequired ?? campaign.targetViews ?? 10,
@@ -421,22 +422,24 @@ export const getPublicCampaignsFromFirestore = async (currentUserId?: string): P
 
       // If user is authenticated:
       if (currentUserId) {
-        // Creator's own campaign is managed in "Campaigns" tab, not in earn feed
-        if (data.userId === currentUserId) {
-          return;
-        }
-        // If this user already completed 60s watch or followed the channel, hide from this user's page
-        if (completedUserIds.includes(currentUserId) || (data.followedUserIds && Array.isArray(data.followedUserIds) && data.followedUserIds.includes(currentUserId))) {
-          return;
+        // Only hide if it's another user's campaign that this user has already watched or followed
+        if (data.userId !== currentUserId) {
+          if (completedUserIds.includes(currentUserId) || (data.followedUserIds && Array.isArray(data.followedUserIds) && data.followedUserIds.includes(currentUserId))) {
+            return;
+          }
         }
       }
 
       const resolvedType = resolveCampaignType(data.campaignType, data.videoUrl);
 
+      if (resolvedType === 'video' && data.userName) {
+        updateDoc(doc(db, 'campaigns', docSnap.id), { userName: '' }).catch(() => {});
+      }
+
       const camp: Campaign = {
         id: docSnap.id,
         userId: data.userId || 'creator',
-        userName: data.userName || 'AtoPlay Creator',
+        userName: resolvedType === 'video' ? '' : (data.channelName || ''),
         videoUrl: cleanVideoUrl(data.videoUrl || ''),
         title: data.title || (resolvedType === 'follower' ? 'Follow AtoPlay Channel' : 'AtoPlay Video Promotion'),
         thumbnailUrl: data.thumbnailUrl || 'https://cdn.atoplay.in/atoplay-thumbnails/58d4d4aa-c235-48a1-8423-57fbeefa914e/thumbnails/61f8d5c2-3b2b-4789-8581-c6727ce0388a.webp',

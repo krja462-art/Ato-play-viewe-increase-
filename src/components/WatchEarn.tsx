@@ -263,12 +263,7 @@ export const WatchEarn: React.FC<WatchEarnProps> = ({ user, onCoinEarned }) => {
 
           </div>
 
-          {/* Top Video Badge */}
-          <div className="absolute top-4 left-4 z-20 flex items-center space-x-2">
-            <span className="px-3 py-1 rounded-lg bg-black/60 backdrop-blur-md text-white text-xs font-semibold border border-white/10">
-              AtoPlay Creator: {currentCampaign.userName}
-            </span>
-          </div>
+          {/* Top Video Badge Removed as per user request */}
 
           <div className="absolute top-4 right-4 z-20">
             <a 

@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { User, Campaign, FollowLog, format4CharId, ActiveWatchState } from '../types';
-import { Play, CheckCircle2, Clock, ArrowLeft, Video, ExternalLink, RefreshCw, Award, Coins, AlertCircle, ShieldCheck, Key, UserPlus, Sparkles, Users, Loader2 } from 'lucide-react';
+import { Play, CheckCircle2, Clock, ArrowLeft, Video, ExternalLink, RefreshCw, Award, Coins, AlertCircle, ShieldCheck, Key, UserPlus, Sparkles, Users, Loader2, Trash2 } from 'lucide-react';
 import { SessionExpiredModal } from './SessionExpiredModal';
 import { Warning4SecModal } from './Warning4SecModal';
 import { AtoPlayBadge } from './AtoPlayBadge';
 import { playCoinCelebrationSound } from '../utils/audio';
 import { triggerWatchCompleteCelebration } from '../utils/confetti';
-import { apiFetch, getWatchedIds, addWatchedId, addFollowedId, cleanVideoUrl, openAtoPlayUrl, fetchLiveAtoPlayFollowerCount, resolveCampaignType, getDeletedCampaignIds } from '../lib/api';
+import { apiFetch, getWatchedIds, addWatchedId, addFollowedId, cleanVideoUrl, openAtoPlayUrl, fetchLiveAtoPlayFollowerCount, resolveCampaignType, getDeletedCampaignIds, addDeletedCampaignId } from '../lib/api';
 import { 
   updateCampaignViewsInFirestore, 
   updateCampaignFollowersInFirestore,
@@ -14,7 +14,7 @@ import {
   saveUserCoinsToFirestore,
   getPublicCampaignsFromFirestore,
   purgeStarterCampaignsFromFirestore,
-  clearAllCampaignsFromFirestore
+  deleteCampaignInFirestore
 } from '../lib/firebase';
 
 interface HomeWatchFeedProps {
@@ -316,15 +316,6 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
       const watchedArray = Array.from(watchedLocal);
       const deletedSet = getDeletedCampaignIds();
 
-      // User requested: "Home page per jitne campaign dikha rha usn sabko htao firebase se bhi htao"
-      const wipedKey = 'atoplay_home_campaigns_wiped_v3';
-      if (!localStorage.getItem(wipedKey)) {
-        await clearAllCampaignsFromFirestore().catch(() => {});
-        await apiFetch('/api/campaigns/clear-all', { method: 'POST' }).catch(() => {});
-        localStorage.removeItem('atoviewer_campaigns');
-        localStorage.setItem(wipedKey, 'true');
-      }
-
       // Ensure dummy/starter campaigns are purged once per session
       purgeStarterCampaignsFromFirestore().catch(() => {});
 
@@ -387,13 +378,18 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
       }
 
       // 4. Strict Public Home Video Rules:
+      // Campaigns stay on Home until completed (compViews >= reqViews) or deleted with delete button
       const publicFiltered = Array.from(map.values()).filter(c => {
         if (deletedSet.has(c.id) || (c as any).status === 'deleted') return false;
         if (c.id === 'camp_starter_1' || c.id === 'camp_starter_2' || String(c.userId || '').startsWith('creator_starter')) return false;
         const reqViews = Number(c.viewsRequired ?? c.targetViews ?? 10);
         const compViews = Number(c.viewsCompleted ?? c.completedViews ?? 0);
+        // Do not remove campaigns from Home until views completed or deleted
         if (c.status !== 'active' || compViews >= reqViews) return false;
-        if (c.userId === user.id) return false; // creator's own campaign
+
+        // User's own campaigns stay visible on Home until completed or deleted
+        if (c.userId === user.id) return true;
+
         if (watchedLocal.has(c.id)) return false; // watched locally by this user
         if (c.completedUserIds && Array.isArray(c.completedUserIds) && c.completedUserIds.includes(user.id)) return false; // watched on server/Firestore
         if (c.followedUserIds && Array.isArray(c.followedUserIds) && c.followedUserIds.includes(user.id)) return false; // followed on server/Firestore
@@ -404,11 +400,15 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
       // Sort newest first
       publicFiltered.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
-      const cleanedPublic = publicFiltered.map(c => ({
-        ...c,
-        campaignType: resolveCampaignType(c.campaignType, c.videoUrl),
-        videoUrl: cleanVideoUrl(c.videoUrl || '')
-      }));
+      const cleanedPublic = publicFiltered.map(c => {
+        const type = resolveCampaignType(c.campaignType, c.videoUrl);
+        return {
+          ...c,
+          campaignType: type,
+          userName: type === 'video' ? '' : c.userName,
+          videoUrl: cleanVideoUrl(c.videoUrl || '')
+        };
+      });
 
       setCampaigns(cleanedPublic);
       setLoading(false);
@@ -524,6 +524,40 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
     saveUserCoinsToFirestore(user.id, updatedUser.coins, user.email).catch(() => {});
     // Permanently remove from home feed view immediately
     setCampaigns(prev => prev.filter(c => c.id !== campaignId));
+  };
+
+  const handleDeleteCampaignFromHome = async (campaignId: string) => {
+    if (!confirm('Are you sure you want to delete this campaign? Coins for uncompleted views will be refunded.')) {
+      return;
+    }
+    // 1. Immediately remove from local state and add tombstone
+    addDeletedCampaignId(campaignId);
+    setCampaigns(prev => prev.filter(c => c.id !== campaignId));
+
+    // 2. Delete from Firestore and backend in parallel
+    try {
+      const [res] = await Promise.all([
+        apiFetch(`/api/campaigns/${campaignId}`, {
+          method: 'DELETE',
+          headers: { 'x-user-id': user.id }
+        }).catch(() => null),
+        deleteCampaignInFirestore(campaignId).catch(() => {}),
+        apiFetch('/api/campaigns/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ deletedIds: [campaignId], campaigns: [] })
+        }).catch(() => {})
+      ]);
+
+      if (res?.user) {
+        saveUserCoinsToFirestore(res.user.id, res.user.coins, res.user.email).catch(() => {});
+        onCoinEarned(res.user);
+      }
+      setFollowNoticeToast({ message: 'Campaign deleted successfully from Home!', key: Date.now() });
+      setTimeout(() => setFollowNoticeToast(null), 3000);
+    } catch (err) {
+      console.warn('Error deleting campaign from home:', err);
+    }
   };
 
   // Invalidate and expire session both locally and on backend when returned < 60s
@@ -1320,7 +1354,7 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
                       />
                       <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent flex items-end p-2.5">
                         <div className="text-white text-xs font-semibold truncate">
-                          {camp.channelName || camp.userName || 'AtoPlay Creator'}
+                          {camp.channelName || 'AtoPlay Channel'}
                         </div>
                       </div>
                     </div>
@@ -1334,13 +1368,20 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
                         </div>
                       )}
                       <div>
-                        <h3 className="font-semibold text-sm text-zinc-900">{camp.channelName || camp.userName || 'AtoPlay Creator'}</h3>
+                        <h3 className="font-semibold text-sm text-zinc-900">{camp.channelName || 'AtoPlay Channel'}</h3>
                         <p className="text-xs text-zinc-500">{camp.title || 'Grow Channel Followers'}</p>
                       </div>
                     </div>
-                    <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-md border border-emerald-100 tabular-nums">
-                      +30 Coins
-                    </span>
+                    <div className="flex items-center space-x-2">
+                      {camp.userId === user.id && (
+                        <span className="text-[10px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-200">
+                          My Campaign
+                        </span>
+                      )}
+                      <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-md border border-emerald-100 tabular-nums">
+                        +30 Coins
+                      </span>
+                    </div>
                   </div>
 
                   <div className="flex items-center justify-between text-xs text-zinc-500">
@@ -1351,29 +1392,54 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
                       </span>
                     ) : (
                       <span className="text-[11px] font-medium text-emerald-700">
-                        Subscribe on AtoPlay to claim reward
+                        {camp.userId === user.id ? 'Your active follower promotion' : 'Subscribe on AtoPlay to claim reward'}
                       </span>
                     )}
                     <span className="font-mono text-xs text-zinc-400">#{shortId}</span>
                   </div>
 
-                  <button
-                    disabled={verifyingFollowId === camp.id}
-                    onClick={() => handleStartFollowTask(camp)}
-                    className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 disabled:cursor-not-allowed active:scale-95 text-white font-semibold text-xs shadow-xs flex items-center justify-center space-x-2 cursor-pointer transition-transform"
-                  >
-                    {verifyingFollowId === camp.id ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        <span>Verifying...</span>
-                      </>
-                    ) : (
-                      <>
-                        <ExternalLink className="w-4 h-4" />
-                        <span>Follow Channel (+30 Coins)</span>
-                      </>
-                    )}
-                  </button>
+                  {camp.userId === user.id ? (
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteCampaignFromHome(camp.id);
+                        }}
+                        className="py-2.5 px-4 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 font-bold text-xs border border-red-200 flex items-center justify-center space-x-1.5 cursor-pointer transition-colors"
+                      >
+                        <Trash2 className="w-3.5 h-3.5 text-red-600" />
+                        <span>Delete</span>
+                      </button>
+                      <button
+                        onClick={() => {
+                          const safeUrl = camp.channelId ? `https://atoplay.com/channels/${camp.channelId}` : cleanVideoUrl(camp.videoUrl);
+                          window.open(safeUrl, '_blank', 'noopener,noreferrer');
+                        }}
+                        className="flex-1 py-2.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-semibold text-xs flex items-center justify-center space-x-1.5 cursor-pointer transition-colors"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                        <span>Open Channel</span>
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      disabled={verifyingFollowId === camp.id}
+                      onClick={() => handleStartFollowTask(camp)}
+                      className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 disabled:cursor-not-allowed active:scale-95 text-white font-semibold text-xs shadow-xs flex items-center justify-center space-x-2 cursor-pointer transition-transform"
+                    >
+                      {verifyingFollowId === camp.id ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <span>Verifying...</span>
+                        </>
+                      ) : (
+                        <>
+                          <ExternalLink className="w-4 h-4" />
+                          <span>Follow Channel (+30 Coins)</span>
+                        </>
+                      )}
+                    </button>
+                  )}
                 </div>
               );
             })
@@ -1439,7 +1505,7 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
                     </div>
                   </div>
 
-                  {/* Title & Creator & ID */}
+                  {/* Title & ID Only (No User Name) */}
                   <div className="flex-1 min-w-0 space-y-1">
                     <h3 className="font-semibold text-xs sm:text-sm text-zinc-900 group-hover:text-blue-600 line-clamp-2 leading-snug transition-colors">
                       {camp.title}
@@ -1449,23 +1515,11 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
                       <span className="font-mono text-zinc-400 text-[11px]">
                         #{shortId}
                       </span>
-                      <span className="text-zinc-300" aria-hidden="true">·</span>
-                      <span className="text-[11px] text-zinc-600 truncate max-w-[130px]">
-                        {camp.userName || 'Creator'}
-                      </span>
-                      {typeof camp.channelFollowers === 'number' && (
-                        <>
-                          <span className="text-zinc-300" aria-hidden="true">·</span>
-                          <span className="text-[10px] text-zinc-400">
-                            {camp.channelFollowers} Followers
-                          </span>
-                        </>
-                      )}
                     </div>
                   </div>
                 </div>
 
-                {/* Bottom Row: Verified Badge & Watch Button */}
+                {/* Bottom Row: Verified Badge & Action Button */}
                 <div className="flex items-center justify-between gap-2 pt-2.5 mt-2.5 border-t border-zinc-100">
                   <div className="flex items-center space-x-2 text-xs text-zinc-500">
                     <span className="inline-flex items-center text-[11px] text-blue-600 font-medium">
@@ -1478,18 +1532,43 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
                     </span>
                   </div>
 
-                  {/* Watch Video Button */}
-                  <button 
-                    disabled={startingSession}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleStartWatch(camp);
-                    }}
-                    className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-black text-xs sm:text-sm shadow-md shadow-blue-500/20 transition-all hover:scale-102 active:scale-95 cursor-pointer flex items-center space-x-1.5 shrink-0"
-                  >
-                    <Play className="w-3.5 h-3.5 fill-current shrink-0" />
-                    <span>Watch (60s)</span>
-                  </button>
+                  {camp.userId === user.id ? (
+                    <div className="flex items-center gap-1.5">
+                      <button 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteCampaignFromHome(camp.id);
+                        }}
+                        className="px-3 py-1.5 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 font-bold text-xs border border-red-200 cursor-pointer flex items-center space-x-1 transition-all"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Delete</span>
+                      </button>
+                      <button 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const safeUrl = cleanVideoUrl(camp.videoUrl);
+                          window.open(safeUrl, '_blank', 'noopener,noreferrer');
+                        }}
+                        className="px-3 py-1.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-semibold text-xs cursor-pointer flex items-center space-x-1 transition-all"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                        <span>View</span>
+                      </button>
+                    </div>
+                  ) : (
+                    <button 
+                      disabled={startingSession}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleStartWatch(camp);
+                      }}
+                      className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-black text-xs sm:text-sm shadow-md shadow-blue-500/20 transition-all hover:scale-102 active:scale-95 cursor-pointer flex items-center space-x-1.5 shrink-0"
+                    >
+                      <Play className="w-3.5 h-3.5 fill-current shrink-0" />
+                      <span>Watch (60s)</span>
+                    </button>
+                  )}
                 </div>
               </div>
             );
