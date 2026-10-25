@@ -870,7 +870,7 @@ async function handleClientFallback<T>(endpoint: string, options?: RequestInit, 
           target: {
             namespace: "android_app",
             package_name: parsedBody?.packageName || "app.vercel.ato_play_viewe_increase.twa",
-            sha256_cert_fingerprints: [parsedBody?.sha256Fingerprint || "14:6D:E9:75:51:7A:B4:7A:C7:E3:A4:D7:9C:43:BF:84:89:12:F1:C0:8C:38:D7:35:E1:92:2C:9A:8A:2C:4D:23"]
+            sha256_cert_fingerprints: [parsedBody?.sha256Fingerprint || "41:BD:E7:95:33:64:35:0C:C3:F9:49:83:87:80:D1:B0:CB:5A:93:59:B0:97:AE:A4:F7:AB:1A:34:26:A2:71:D0"]
           }
         }
       ]
@@ -883,25 +883,11 @@ async function handleClientFallback<T>(endpoint: string, options?: RequestInit, 
 
 /**
  * Smart App / Browser Opener:
- * Tries to open the AtoPlay app directly (if installed on Android or Desktop PWA).
- * If the app is not installed, falls back to opening in Chrome / external browser.
+ * Opens the target AtoPlay URL cleanly in a new tab/window.
  */
 export function openAtoPlayUrl(url: string, _preferBrowser = false) {
   if (!url) return;
   const cleaned = cleanVideoUrl(url) || url;
-
-  const newWin = window.open(cleaned, '_blank', 'noopener,noreferrer');
-  if (!newWin) {
-    // Fallback anchor click if window.open was restricted
-    const a = document.createElement('a');
-    a.href = cleaned;
-    a.target = '_blank';
-    a.rel = 'noopener noreferrer';
-    document.body.appendChild(a);
-    a.click();
-    try {
-      document.body.removeChild(a);
-    } catch {}
-  }
+  window.open(cleaned, '_blank', 'noopener,noreferrer');
 }
 

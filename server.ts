@@ -282,6 +282,12 @@ const PORT = Number(process.env.PORT) || 3000;
 
 app.use(express.json());
 
+app.use((_req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  next();
+});
+
 // Cloud Run & Load Balancer Health Probes (MUST BE FIRST)
 app.get(["/api/health", "/healthz", "/_ah/health"], (_req, res) => {
   res.status(200).json({ status: "ok", uptime: process.uptime() });
