@@ -699,11 +699,6 @@ export const Campaigns: React.FC<CampaignsProps> = ({
                     <div className="flex flex-wrap items-center gap-1.5 text-xs text-zinc-500">
                       <span className="font-mono text-zinc-400 font-semibold text-[11px]">#{format4CharId(camp.displayId, camp.id)}</span>
                       <span className="text-zinc-300">·</span>
-                      <span className="inline-flex items-center space-x-1 font-bold text-amber-900 text-[11px] tabular-nums">
-                        <RealCoin size="xs" />
-                        <span>{isFollowerCamp ? '30 Coins / follower' : '60 Coins / view'}</span>
-                      </span>
-                      <span className="text-zinc-300">·</span>
                       <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-md ${
                         isCompleted 
                           ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' 
