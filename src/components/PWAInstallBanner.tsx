@@ -7,6 +7,13 @@ export const PWAInstallBanner: React.FC = () => {
   const [showIOSModal, setShowIOSModal] = useState(false);
   const [isInstalling, setIsInstalling] = useState(false);
 
+  // Never show web install banners inside an Android WebView APK or standalone app
+  if (typeof navigator !== 'undefined') {
+    const ua = navigator.userAgent || '';
+    const isAndroidWebView = /; wv\)/i.test(ua) || (/Android/i.test(ua) && /Version\/[\d.]+/i.test(ua));
+    if (isAndroidWebView) return null;
+  }
+
   // If already installed or running standalone, hide completely
   if (isInstalled) {
     return null;

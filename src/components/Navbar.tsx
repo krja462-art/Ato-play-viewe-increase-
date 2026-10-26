@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Home, ShieldCheck, Plus, MoreVertical, RefreshCw } from 'lucide-react';
+import { Home, ShieldCheck, Plus, MoreVertical, RefreshCw, Wand2 } from 'lucide-react';
 import { User } from '../types';
 import { SlideDrawer } from './SlideDrawer';
 import { RealCoin } from './RealCoin';
@@ -69,25 +69,25 @@ export const Navbar: React.FC<NavbarProps> = ({
   return (
     <>
       {/* Top Header - Authentic Real App Native Navigation Bar */}
-      <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-zinc-200/80 shadow-[0_1px_3px_rgba(0,0,0,0.03)] transition-colors duration-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-zinc-200/80 shadow-[0_1px_3px_rgba(0,0,0,0.03)] transition-colors duration-200 select-none">
+        <div className="max-w-7xl mx-auto px-3.5 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-2">
           
           {/* Brand Identity - Clean Product Lockup */}
-          <div className="flex items-center space-x-2.5 cursor-pointer select-none" onClick={() => setActiveTab('home')}>
+          <div className="flex items-center space-x-2 cursor-pointer select-none min-w-0" onClick={() => setActiveTab('home')}>
             <img
               src="/icon.png"
               alt="AtoPlay Booster Logo"
-              className="w-9 h-9 rounded-xl object-contain shadow-xs border border-zinc-200/80"
+              className="w-9 h-9 rounded-xl object-contain shadow-xs border border-zinc-200/80 shrink-0"
               onError={(e) => {
                 (e.currentTarget as HTMLImageElement).src = '/favicon.png';
               }}
             />
-            <div className="flex flex-col -space-y-0.5">
+            <div className="flex flex-col -space-y-0.5 min-w-0">
               <div className="flex items-center space-x-1.5">
-                <span className="font-extrabold text-lg text-zinc-900 tracking-tight">AtoPlay</span>
-                <span className="text-xs font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded-md border border-blue-200/50">Booster</span>
+                <span className="font-extrabold text-base sm:text-lg text-zinc-900 tracking-tight truncate">AtoPlay</span>
+                <span className="hidden sm:inline-block text-xs font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded-md border border-blue-200/50">Booster</span>
               </div>
-              <span className="text-[10px] font-medium text-zinc-600 tracking-tight">View Exchange</span>
+              <span className="text-[10px] font-medium text-zinc-600 tracking-tight truncate">Creator Studio</span>
             </div>
           </div>
 
@@ -126,6 +126,18 @@ export const Navbar: React.FC<NavbarProps> = ({
               <span>My Campaigns</span>
             </button>
 
+            <button
+              onClick={() => setActiveTab('tools')}
+              className={`flex items-center space-x-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all cursor-pointer ${
+                activeTab === 'tools'
+                  ? 'bg-blue-600 text-white shadow-sm shadow-blue-600/20'
+                  : 'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100/80'
+              }`}
+            >
+              <Wand2 className="w-4 h-4" />
+              <span>Creator Tools</span>
+            </button>
+
             {Boolean(user?.isAdmin || user?.email?.toLowerCase().trim() === 'krja462@gmail.com') && (
               <button
                 onClick={() => setActiveTab('users')}
@@ -142,18 +154,18 @@ export const Navbar: React.FC<NavbarProps> = ({
           </nav>
 
           {/* Right Header Actions: 3D Metallic Gold Coin Balance & Menu */}
-          <div className="flex items-center space-x-2 sm:space-x-2.5">
+          <div className="flex items-center space-x-1.5 sm:space-x-2 shrink-0">
             {Boolean(user?.isAdmin || user?.email?.toLowerCase().trim() === 'krja462@gmail.com') ? (
-              <div className="flex items-center space-x-1.5 px-3 py-1.5 rounded-full bg-gradient-to-b from-amber-50 to-amber-100/90 border border-amber-300/80 text-amber-950 text-xs sm:text-sm font-bold shadow-xs">
+              <div className="flex items-center space-x-1.5 px-2.5 sm:px-3 py-1.5 rounded-full bg-gradient-to-b from-amber-50 to-amber-100/90 border border-amber-300/80 text-amber-950 text-xs sm:text-sm font-bold shadow-xs">
                 <RealCoin size="sm" />
                 <span className="tabular-nums font-extrabold">∞</span>
                 <span className="text-[10px] font-bold text-amber-900 bg-amber-200/80 px-1.5 py-0.5 rounded">Admin</span>
               </div>
             ) : (
-              <div className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-full bg-gradient-to-b from-amber-50 to-amber-100/90 border border-amber-300/80 text-amber-950 text-xs sm:text-sm font-bold shadow-xs transition-transform duration-300 ${isCoinPumping ? 'scale-105 ring-2 ring-amber-400/60 bg-amber-100' : ''}`}>
+              <div className={`flex items-center space-x-1.5 px-2.5 sm:px-3 py-1.5 rounded-full bg-gradient-to-b from-amber-50 to-amber-100/90 border border-amber-300/80 text-amber-950 text-xs sm:text-sm font-bold shadow-xs transition-transform duration-300 ${isCoinPumping ? 'scale-105 ring-2 ring-amber-400/60 bg-amber-100' : ''}`}>
                 <RealCoin size="sm" animate={isCoinPumping} />
                 <span className="tabular-nums font-extrabold tracking-tight">{displayCoins.toLocaleString()}</span>
-                <span className="text-[11px] font-bold text-amber-800 hidden xs:inline">Coins</span>
+                <span className="text-[11px] font-bold text-amber-800 hidden sm:inline">Coins</span>
               </div>
             )}
 
@@ -195,12 +207,12 @@ export const Navbar: React.FC<NavbarProps> = ({
 
       {/* Professional Fixed Bottom Navigation Bar (Hidden when Slide Drawer is open) */}
       {!isDrawerOpen && (
-        <nav className="fixed bottom-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-md border-t border-zinc-200/80 px-4 pt-1.5 pb-safe shadow-[0_-4px_20px_rgba(0,0,0,0.04)] flex items-center justify-around max-w-lg mx-auto sm:rounded-t-2xl sm:border-x">
+        <nav className="fixed bottom-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-md border-t border-zinc-200/80 px-2 pt-1.5 pb-safe shadow-[0_-4px_20px_rgba(0,0,0,0.04)] flex items-center justify-around max-w-lg mx-auto sm:rounded-t-2xl sm:border-x select-none">
           
-          {/* Home Tab Button (Left) */}
+          {/* Home Tab Button */}
           <button
             onClick={() => setActiveTab('home')}
-            className={`flex flex-col items-center justify-center py-1 px-3 rounded-xl transition-all cursor-pointer active:scale-95 ${
+            className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition-all cursor-pointer active:scale-95 ${
               activeTab === 'home' 
                 ? 'text-blue-600' 
                 : 'text-zinc-500 hover:text-zinc-800'
@@ -215,17 +227,17 @@ export const Navbar: React.FC<NavbarProps> = ({
           {/* Center Create Button - Sleek Native App Action */}
           <button
             onClick={onOpenCreate}
-            className="flex items-center space-x-1.5 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-95 text-white font-semibold text-xs shadow-sm shadow-blue-600/30 transition-all cursor-pointer"
+            className="flex items-center space-x-1 px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-95 text-white font-semibold text-xs shadow-sm shadow-blue-600/30 transition-all cursor-pointer"
             title="Create Campaign"
           >
             <Plus className="w-4 h-4 stroke-[2.5]" />
             <span>Create</span>
           </button>
 
-          {/* Campaign Tab Button (Right) */}
+          {/* Campaign Tab Button */}
           <button
             onClick={() => setActiveTab('campaigns')}
-            className={`flex flex-col items-center justify-center py-1 px-3 rounded-xl transition-all cursor-pointer active:scale-95 ${
+            className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition-all cursor-pointer active:scale-95 ${
               activeTab === 'campaigns' 
                 ? 'text-blue-600' 
                 : 'text-zinc-500 hover:text-zinc-800'
@@ -234,6 +246,21 @@ export const Navbar: React.FC<NavbarProps> = ({
             <ShieldCheck className="w-5 h-5 stroke-[2.2]" />
             <span className={`text-[11px] pt-0.5 tracking-tight ${activeTab === 'campaigns' ? 'font-bold' : 'font-medium'}`}>
               Campaigns
+            </span>
+          </button>
+
+          {/* Native Creator Tools Tab Button */}
+          <button
+            onClick={() => setActiveTab('tools')}
+            className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition-all cursor-pointer active:scale-95 ${
+              activeTab === 'tools' 
+                ? 'text-blue-600' 
+                : 'text-zinc-500 hover:text-zinc-800'
+            }`}
+          >
+            <Wand2 className="w-5 h-5 stroke-[2.2]" />
+            <span className={`text-[11px] pt-0.5 tracking-tight ${activeTab === 'tools' ? 'font-bold' : 'font-medium'}`}>
+              Tools
             </span>
           </button>
         </nav>

@@ -3,6 +3,7 @@ import { User } from './types';
 import { Navbar } from './components/Navbar';
 import { HomeWatchFeed } from './components/HomeWatchFeed';
 import { Campaigns } from './components/Campaigns';
+import { CreatorTools } from './components/CreatorTools';
 import { AdminUsers } from './components/AdminUsers';
 import { SplashScreen } from './components/SplashScreen';
 import { PreLoginInstallScreen } from './components/PreLoginInstallScreen';
@@ -34,21 +35,7 @@ export default function App() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [activeWarningNotif, setActiveWarningNotif] = useState<UserWarningNotification | null>(null);
-  const [showInstallScreen, setShowInstallScreen] = useState(() => {
-    try {
-      if (typeof window !== 'undefined') {
-        const isStandalone = window.matchMedia('(display-mode: standalone)').matches ||
-          (window.navigator as any).standalone === true ||
-          document.referrer.includes('android-app://') ||
-          window.location.search.includes('source=apk') ||
-          window.location.search.includes('source=twa');
-        if (isStandalone) return false;
-      }
-      return localStorage.getItem('pwa_prelogin_installed') !== 'true';
-    } catch {
-      return false;
-    }
-  });
+  const [showInstallScreen, setShowInstallScreen] = useState(false);
 
   const { isOnline, isReconnected } = useOnlineStatus();
   useTheme(); // Initialize and apply documentElement dark class
@@ -531,6 +518,10 @@ export default function App() {
             onOpenCreateModal={handleOpenCreateModal}
             refreshTrigger={refreshTrigger}
           />
+        )}
+
+        {activeTab === 'tools' && (
+          <CreatorTools />
         )}
 
         {activeTab === 'users' && (
