@@ -959,14 +959,14 @@ app.get("/api/campaigns", (req, res) => {
     if (extraWatchedSet.has(c.id)) return false;
 
     if (activeUser) {
-      if (c.userId !== activeUser.id) {
-        // Don't show video if other user has already watched it
-        if (userWatchedCampaigns[activeUser.id]?.has(c.id)) return false;
-        if (c.completedUserIds && Array.isArray(c.completedUserIds) && c.completedUserIds.includes(activeUser.id)) return false;
-        // Don't show follower campaign if other user has already followed it
-        if (userFollowedCampaigns[activeUser.id]?.has(c.id)) return false;
-        if (c.followedUserIds && Array.isArray(c.followedUserIds) && c.followedUserIds.includes(activeUser.id)) return false;
-      }
+      // Hide creator's own campaigns from their own Home feed (shown in My Campaigns tab)
+      if (c.userId === activeUser.id) return false;
+      // Don't show video if other user has already watched it
+      if (userWatchedCampaigns[activeUser.id]?.has(c.id)) return false;
+      if (c.completedUserIds && Array.isArray(c.completedUserIds) && c.completedUserIds.includes(activeUser.id)) return false;
+      // Don't show follower campaign if other user has already followed it
+      if (userFollowedCampaigns[activeUser.id]?.has(c.id)) return false;
+      if (c.followedUserIds && Array.isArray(c.followedUserIds) && c.followedUserIds.includes(activeUser.id)) return false;
     }
     return true;
   });

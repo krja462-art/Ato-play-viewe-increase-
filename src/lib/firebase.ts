@@ -422,11 +422,13 @@ export const getPublicCampaignsFromFirestore = async (currentUserId?: string): P
 
       // If user is authenticated:
       if (currentUserId) {
-        // Only hide if it's another user's campaign that this user has already watched or followed
-        if (data.userId !== currentUserId) {
-          if (completedUserIds.includes(currentUserId) || (data.followedUserIds && Array.isArray(data.followedUserIds) && data.followedUserIds.includes(currentUserId))) {
-            return;
-          }
+        // Hide creator's own campaigns from their own Home feed (shown in My Campaigns tab)
+        if (data.userId === currentUserId) {
+          return;
+        }
+        // Hide if this user has already watched or followed this campaign
+        if (completedUserIds.includes(currentUserId) || (data.followedUserIds && Array.isArray(data.followedUserIds) && data.followedUserIds.includes(currentUserId))) {
+          return;
         }
       }
 

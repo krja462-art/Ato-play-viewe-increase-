@@ -38,6 +38,7 @@ import { saveSupportMessageToFirestore } from '../lib/firebase';
 import { AtoPlayBadge } from './AtoPlayBadge';
 import { SubmitFeedbackModal } from './SubmitFeedbackModal';
 import { LegalModal, LegalTabType } from './LegalModal';
+import { RealCoin } from './RealCoin';
 
 interface SlideDrawerProps {
   isOpen: boolean;
@@ -315,13 +316,16 @@ export const SlideDrawer: React.FC<SlideDrawerProps> = ({
                 {/* Coin Balance Badge */}
                 <div className="pt-2 border-t border-zinc-200 flex items-center justify-between">
                   <div className="flex items-center space-x-2">
-                    <Coins className="w-4 h-4 text-amber-600" />
+                    <RealCoin size="sm" />
                     <span className="text-xs font-bold text-zinc-700">Total Coins</span>
                   </div>
-                  <span className="text-sm font-black text-amber-700">
-                    {Boolean(user.isAdmin || user.email?.toLowerCase().trim() === 'krja462@gmail.com')
-                      ? '∞ Unlimited Coins'
-                      : `${user.coins.toLocaleString()} Coins`}
+                  <span className="text-sm font-black text-amber-800 inline-flex items-center space-x-1.5 tabular-nums">
+                    <RealCoin size="xs" />
+                    <span>
+                      {Boolean(user.isAdmin || user.email?.toLowerCase().trim() === 'krja462@gmail.com')
+                        ? '∞ Unlimited Coins'
+                        : `${user.coins.toLocaleString()} Coins`}
+                    </span>
                   </span>
                 </div>
 

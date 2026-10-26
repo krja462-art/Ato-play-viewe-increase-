@@ -349,13 +349,13 @@ async function handleClientFallback<T>(endpoint: string, options?: RequestInit, 
       return { success: true, campaigns: myCampaigns } as any;
     }
 
-    // Home feed filter: active, remaining views (viewsCompleted < viewsRequired)
+    // Home feed filter: active, remaining views (viewsCompleted < viewsRequired), not creator's own campaign
     const watched = activeUser ? getWatchedIds(activeUser.id) : new Set();
     const queue = allCampaigns.filter(c => {
       const reqViews = c.viewsRequired ?? c.targetViews ?? 10;
       const compViews = c.viewsCompleted ?? c.completedViews ?? 0;
       if (c.status !== 'active' || compViews >= reqViews) return false;
-      if (activeUser && c.userId === activeUser.id) return true;
+      if (activeUser && c.userId === activeUser.id) return false;
       if (activeUser && watched.has(c.id)) return false;
       return true;
     });

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Campaign, User, format4CharId } from '../types';
 import { Plus, MoreVertical, Clock, Trash2, Coins, AlertCircle, Sparkles, X, Video, ExternalLink, Check, Search, ShieldCheck, Clipboard, Image as ImageIcon, CheckCircle2, Users, Mail, UserCheck } from 'lucide-react';
 import { AtoPlayBadge } from './AtoPlayBadge';
+import { RealCoin } from './RealCoin';
 import { CreateFollowerCampaignModal } from './CreateFollowerCampaignModal';
 import { apiFetch, extractVideoMetadataClient, cleanVideoUrl, fetchLiveAtoPlayFollowerCount, resolveCampaignType, getDeletedCampaignIds, addDeletedCampaignId } from '../lib/api';
 import { saveCampaignToFirestore, deleteCampaignInFirestore, saveUserCoinsToFirestore, getMyCampaignsFromFirestore, getFollowLogsFromFirestore, reportFakeFollowInFirestore } from '../lib/firebase';
@@ -698,8 +699,9 @@ export const Campaigns: React.FC<CampaignsProps> = ({
                     <div className="flex flex-wrap items-center gap-1.5 text-xs text-zinc-500">
                       <span className="font-mono text-zinc-400 font-semibold text-[11px]">#{format4CharId(camp.displayId, camp.id)}</span>
                       <span className="text-zinc-300">·</span>
-                      <span className="font-semibold text-zinc-700 text-[11px] tabular-nums">
-                        {isFollowerCamp ? '30 Coins / follower' : '60 Coins / view'}
+                      <span className="inline-flex items-center space-x-1 font-bold text-amber-900 text-[11px] tabular-nums">
+                        <RealCoin size="xs" />
+                        <span>{isFollowerCamp ? '30 Coins / follower' : '60 Coins / view'}</span>
                       </span>
                       <span className="text-zinc-300">·</span>
                       <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-md ${
@@ -1250,12 +1252,16 @@ export const Campaigns: React.FC<CampaignsProps> = ({
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-[11px] text-blue-700 font-bold uppercase tracking-wider">Total Campaign Cost</p>
-                    <p className="text-base font-extrabold text-zinc-900">{totalCost.toLocaleString()} Coins</p>
+                    <p className="text-base font-extrabold text-zinc-900 inline-flex items-center space-x-1.5 tabular-nums">
+                      <RealCoin size="sm" />
+                      <span>{totalCost.toLocaleString()} Coins</span>
+                    </p>
                   </div>
                   <div className="text-right">
                     <p className="text-[11px] text-zinc-500 font-bold uppercase">Your Balance</p>
-                    <p className={`text-base font-extrabold ${isUserAdmin ? 'text-amber-600' : (user.coins >= totalCost ? 'text-emerald-600' : 'text-red-600')}`}>
-                      {isUserAdmin ? '∞ Unlimited Coins (Admin)' : `${user.coins.toLocaleString()} Coins`}
+                    <p className={`text-base font-extrabold inline-flex items-center space-x-1.5 tabular-nums ${isUserAdmin ? 'text-amber-700' : (user.coins >= totalCost ? 'text-emerald-600' : 'text-red-600')}`}>
+                      <RealCoin size="sm" />
+                      <span>{isUserAdmin ? '∞ Unlimited Coins (Admin)' : `${user.coins.toLocaleString()} Coins`}</span>
                     </p>
                   </div>
                 </div>

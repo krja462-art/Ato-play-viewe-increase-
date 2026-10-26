@@ -1,6 +1,6 @@
 {
-  "summary":  "Implementation plan to fix the Cloud Run deployment failure caused by top-level GoogleGenAI initialization without an API key fallback, hardcoded PORT instead of process.env.PORT || 3000, and production static asset detection in server.ts.",
-  "updatedAt":  "2026-10-24T11:37:09.338231607Z",
+  "summary":  "Implementation plan for removing Creator Controls and hiding creator's own campaigns from the Home feed (showing them exclusively in My Campaigns while keeping them visible to all other users), and introducing a realistic 3D Metallic Gold Coin design with specular shine across Header, Home Cards, Campaign Modals, and Reward Toasts.",
+  "updatedAt":  "2026-10-26T07:23:03.837872810Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

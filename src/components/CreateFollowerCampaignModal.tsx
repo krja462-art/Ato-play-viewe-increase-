@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { X, Users, Sparkles, Coins, CheckCircle2, AlertCircle, ExternalLink, Link as LinkIcon, Search, Loader2, Clipboard } from 'lucide-react';
 import { User, Campaign } from '../types';
+import { RealCoin } from './RealCoin';
 import { apiFetch, cleanVideoUrl, openAtoPlayUrl, extractVideoMetadata, fetchLiveAtoPlayFollowerCount } from '../lib/api';
 import { saveCampaignToFirestore, saveUserCoinsToFirestore } from '../lib/firebase';
 import confetti from 'canvas-confetti';
@@ -484,8 +485,8 @@ export const CreateFollowerCampaignModal: React.FC<CreateFollowerCampaignModalPr
             </div>
             <div className="pt-2 border-t border-emerald-200/60 flex items-center justify-between">
               <span className="text-xs font-extrabold text-zinc-900 uppercase">Total Campaign Cost</span>
-              <div className="flex items-center space-x-1.5 text-emerald-800 font-black text-base">
-                <Coins className="w-4 h-4 text-amber-500 fill-amber-500" />
+              <div className="flex items-center space-x-1.5 text-emerald-800 font-black text-base tabular-nums">
+                <RealCoin size="sm" />
                 <span>{isUserAdmin ? '0 (Admin Free)' : `${totalCost} Coins`}</span>
               </div>
             </div>

@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Coins, Home, ShieldCheck, Plus, MoreVertical, RefreshCw } from 'lucide-react';
+import { Home, ShieldCheck, Plus, MoreVertical, RefreshCw } from 'lucide-react';
 import { User } from '../types';
 import { SlideDrawer } from './SlideDrawer';
+import { RealCoin } from './RealCoin';
 
 interface NavbarProps {
   activeTab: string;
@@ -140,19 +141,19 @@ export const Navbar: React.FC<NavbarProps> = ({
             )}
           </nav>
 
-          {/* Right Header Actions: Coin Balance & Menu */}
+          {/* Right Header Actions: 3D Metallic Gold Coin Balance & Menu */}
           <div className="flex items-center space-x-2 sm:space-x-2.5">
             {Boolean(user?.isAdmin || user?.email?.toLowerCase().trim() === 'krja462@gmail.com') ? (
-              <div className="flex items-center space-x-1.5 px-3 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-900 text-xs sm:text-sm font-semibold shadow-2xs">
-                <Coins className="w-4 h-4 text-amber-600" />
-                <span className="tabular-nums font-bold">∞</span>
-                <span className="text-[10px] font-semibold text-amber-800 bg-amber-200/70 px-1.5 py-0.5 rounded">Admin</span>
+              <div className="flex items-center space-x-1.5 px-3 py-1.5 rounded-full bg-gradient-to-b from-amber-50 to-amber-100/90 border border-amber-300/80 text-amber-950 text-xs sm:text-sm font-bold shadow-xs">
+                <RealCoin size="sm" />
+                <span className="tabular-nums font-extrabold">∞</span>
+                <span className="text-[10px] font-bold text-amber-900 bg-amber-200/80 px-1.5 py-0.5 rounded">Admin</span>
               </div>
             ) : (
-              <div className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-900 text-xs sm:text-sm font-semibold shadow-2xs transition-transform duration-300 ${isCoinPumping ? 'scale-105 ring-2 ring-amber-400/50 bg-amber-100/80' : ''}`}>
-                <Coins className={`w-4 h-4 text-amber-600 ${isCoinPumping ? 'animate-spin' : ''}`} />
-                <span className="tabular-nums font-bold tracking-tight">{displayCoins.toLocaleString()}</span>
-                <span className="text-[11px] font-medium text-amber-700/90 hidden xs:inline">Coins</span>
+              <div className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-full bg-gradient-to-b from-amber-50 to-amber-100/90 border border-amber-300/80 text-amber-950 text-xs sm:text-sm font-bold shadow-xs transition-transform duration-300 ${isCoinPumping ? 'scale-105 ring-2 ring-amber-400/60 bg-amber-100' : ''}`}>
+                <RealCoin size="sm" animate={isCoinPumping} />
+                <span className="tabular-nums font-extrabold tracking-tight">{displayCoins.toLocaleString()}</span>
+                <span className="text-[11px] font-bold text-amber-800 hidden xs:inline">Coins</span>
               </div>
             )}
 
