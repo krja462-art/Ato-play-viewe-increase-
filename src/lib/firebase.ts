@@ -61,6 +61,12 @@ googleProvider.setCustomParameters({ prompt: 'select_account' });
 export const signInWithGoogle = async (): Promise<FirebaseUser> => {
   googleProvider.setCustomParameters({ prompt: 'select_account' });
   const result = await signInWithPopup(auth, googleProvider);
+  try {
+    const credential = GoogleAuthProvider.credentialFromResult(result);
+    if (credential?.idToken) {
+      sessionStorage.setItem('atoplay_google_id_token', credential.idToken);
+    }
+  } catch {}
   return result.user;
 };
 
@@ -78,6 +84,14 @@ export const signInWithGoogleRedirect = async (): Promise<void> => {
 export const checkRedirectResult = async (): Promise<FirebaseUser | null> => {
   try {
     const result = await getRedirectResult(auth);
+    if (result) {
+      try {
+        const credential = GoogleAuthProvider.credentialFromResult(result);
+        if (credential?.idToken) {
+          sessionStorage.setItem('atoplay_google_id_token', credential.idToken);
+        }
+      } catch {}
+    }
     return result?.user || null;
   } catch (err) {
     console.warn('Firebase getRedirectResult:', err);
@@ -748,6 +762,69 @@ export const saveUserAtoPlayUsernameToFirestore = async (userId: string, atoPlay
 };
 
 /**
+ * Save synced AtoPlay profile (username, channelName, channelImage, channelBanner) to Firestore
+ * and propagate to any existing follow_logs for this user so other users' follower logs stay synced.
+ */
+export const saveUserAtoPlayProfileToFirestore = async (
+  userId: string,
+  profile: {
+    atoPlayUsername?: string;
+    channelName?: string;
+    channelImage?: string;
+    channelBanner?: string;
+    name?: string;
+    avatar?: string;
+    email?: string;
+  }
+): Promise<void> => {
+  if (!userId || userId.startsWith('guest_')) return;
+  try {
+    const cleanUsername = (profile.atoPlayUsername || profile.channelName || '').trim().replace(/^@+/, '');
+    const cleanChannelName = (profile.channelName || profile.atoPlayUsername || '').trim();
+    const cleanImage = (profile.channelImage || profile.avatar || '').trim();
+    const userRef = doc(db, 'users', userId);
+
+    const updates: Record<string, any> = {
+      updatedAt: new Date().toISOString()
+    };
+    if (cleanUsername) updates.atoPlayUsername = cleanUsername;
+    if (cleanChannelName) {
+      updates.channelName = cleanChannelName;
+      updates.name = cleanChannelName;
+    }
+    if (cleanImage) {
+      updates.channelImage = cleanImage;
+      updates.avatar = cleanImage;
+    }
+    if (profile.channelBanner) updates.channelBanner = profile.channelBanner;
+    if (profile.email) updates.email = profile.email.toLowerCase().trim();
+
+    await setDoc(userRef, updates, { merge: true });
+
+    // Also update any follow_logs where this user is the follower so other creators see the synced AtoPlay username & avatar
+    if (cleanUsername || cleanImage) {
+      try {
+        const logsQ = query(collection(db, 'follow_logs'), where('followerUserId', '==', userId));
+        const logsSnap = await getDocs(logsQ);
+        const logUpdates: Promise<any>[] = [];
+        logsSnap.forEach(logDoc => {
+          const logPatch: Record<string, any> = {};
+          if (cleanUsername) logPatch.followerUsername = cleanUsername;
+          if (cleanChannelName) logPatch.followerName = cleanChannelName;
+          if (cleanImage) logPatch.followerAvatar = cleanImage;
+          logUpdates.push(setDoc(doc(db, 'follow_logs', logDoc.id), logPatch, { merge: true }));
+        });
+        if (logUpdates.length > 0) {
+          await Promise.allSettled(logUpdates);
+        }
+      } catch {}
+    }
+  } catch (err) {
+    console.warn('Error saving AtoPlay profile to Firestore:', err);
+  }
+};
+
+/**
  * Synchronize AtoPlay Channel / Username credentials with Cloud Firestore /users/{uid}
  */
 export const syncAtoPlayUserWithFirestore = async (
@@ -858,6 +935,7 @@ export const saveFollowLogToFirestore = async (log: FollowLog): Promise<void> =>
 
 /**
  * Fetch all Follow Logs for a specific Campaign from Firestore
+ * Enriches each follower log with the follower's latest synced AtoPlay username & profile picture if available.
  */
 export const getFollowLogsFromFirestore = async (campaignId: string): Promise<FollowLog[]> => {
   try {
@@ -872,7 +950,7 @@ export const getFollowLogsFromFirestore = async (campaignId: string): Promise<Fo
         campaignId: data.campaignId,
         creatorId: data.creatorId,
         followerUserId: data.followerUserId,
-        followerUsername: data.followerUsername || 'Unknown',
+        followerUsername: data.followerUsername || '',
         followerEmail: data.followerEmail || '',
         followerAvatar: data.followerAvatar || '',
         followerName: data.followerName || '',
@@ -882,6 +960,39 @@ export const getFollowLogsFromFirestore = async (campaignId: string): Promise<Fo
         reportedAt: data.reportedAt
       });
     });
+
+    // Enrich with follower's latest user document if they have a synced AtoPlay profile
+    const uniqueUserIds = Array.from(new Set(logs.map(l => l.followerUserId).filter(Boolean)));
+    if (uniqueUserIds.length > 0) {
+      const userMap = new Map<string, any>();
+      await Promise.allSettled(
+        uniqueUserIds.map(async (uid) => {
+          try {
+            const uSnap = await getDoc(doc(db, 'users', uid));
+            if (uSnap.exists()) {
+              userMap.set(uid, uSnap.data());
+            }
+          } catch {}
+        })
+      );
+      logs.forEach(log => {
+        const uData = userMap.get(log.followerUserId);
+        if (uData) {
+          const syncedHandle = (uData.atoPlayUsername || uData.channelName || '').trim().replace(/^@+/, '');
+          const syncedAvatar = (uData.channelImage || uData.avatar || '').trim();
+          const syncedName = (uData.channelName || uData.atoPlayUsername || uData.name || '').trim();
+          if (syncedHandle) {
+            log.followerUsername = syncedHandle;
+            log.followerName = syncedName || log.followerName;
+            if (syncedAvatar) log.followerAvatar = syncedAvatar;
+          } else {
+            if (!log.followerName && uData.name) log.followerName = uData.name;
+            if (!log.followerAvatar && uData.avatar) log.followerAvatar = uData.avatar;
+          }
+        }
+      });
+    }
+
     // Sort newest first
     return logs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
   } catch (err) {

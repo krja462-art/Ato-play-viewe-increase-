@@ -18,6 +18,7 @@ import {
   checkRedirectResult, 
   syncFirebaseUserWithFirestore, 
   saveUserCoinsToFirestore,
+  saveUserAtoPlayProfileToFirestore,
   getUserCoinsFromFirestore,
   subscribeToUserCoins,
   fetchUserNotificationsFromFirestore,
@@ -187,12 +188,14 @@ export default function App() {
     const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
       if (fbUser && fbUser.email) {
         try {
-          const syncedUser = await syncFirebaseUserWithFirestore(fbUser);
+          let syncedUser = await syncFirebaseUserWithFirestore(fbUser);
           setUser(syncedUser);
           localStorage.setItem('atoviewer_user', JSON.stringify(syncedUser));
 
-          // Also inform server API session
-          await apiFetch('/api/auth/firebase-login', {
+          const googleIdToken = typeof window !== 'undefined' ? (sessionStorage.getItem('atoplay_google_id_token') || undefined) : undefined;
+
+          // Also inform server API session (and auto-discover AtoPlay account for this Gmail)
+          const res = await apiFetch('/api/auth/firebase-login', {
             method: 'POST',
             headers: { 
               'Content-Type': 'application/json',
@@ -202,9 +205,44 @@ export default function App() {
               uid: fbUser.uid,
               email: fbUser.email,
               name: fbUser.displayName || syncedUser.name,
-              avatar: fbUser.photoURL || syncedUser.avatar
+              avatar: fbUser.photoURL || syncedUser.avatar,
+              googleIdToken
             })
           });
+
+          if (res?.success && res?.user) {
+            const srvUser = res.user;
+            const hasAtoPlay = Boolean(srvUser.atoPlayUsername || srvUser.channelName || syncedUser.atoPlayUsername || syncedUser.channelName);
+            const mergedAtoPlayUsername = srvUser.atoPlayUsername || syncedUser.atoPlayUsername || '';
+            const mergedChannelName = srvUser.channelName || syncedUser.channelName || '';
+            const mergedChannelImage = srvUser.channelImage || syncedUser.channelImage || '';
+            const mergedChannelBanner = srvUser.channelBanner || syncedUser.channelBanner || '';
+
+            syncedUser = {
+              ...syncedUser,
+              atoPlayUsername: mergedAtoPlayUsername,
+              channelName: mergedChannelName,
+              channelImage: mergedChannelImage,
+              channelBanner: mergedChannelBanner,
+              name: hasAtoPlay ? (mergedChannelName || mergedAtoPlayUsername || syncedUser.name) : syncedUser.name,
+              avatar: hasAtoPlay && mergedChannelImage ? mergedChannelImage : syncedUser.avatar
+            };
+
+            setUser(syncedUser);
+            localStorage.setItem('atoviewer_user', JSON.stringify(syncedUser));
+
+            if (mergedAtoPlayUsername || mergedChannelImage) {
+              saveUserAtoPlayProfileToFirestore(syncedUser.id, {
+                atoPlayUsername: mergedAtoPlayUsername,
+                channelName: mergedChannelName,
+                channelImage: mergedChannelImage,
+                channelBanner: mergedChannelBanner,
+                name: syncedUser.name,
+                avatar: syncedUser.avatar,
+                email: syncedUser.email
+              }).catch(() => {});
+            }
+          }
         } catch (err) {
           console.error('Failed to sync Firebase user session:', err);
         }

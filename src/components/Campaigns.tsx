@@ -816,8 +816,11 @@ export const Campaigns: React.FC<CampaignsProps> = ({
                     {camp.followLogs && camp.followLogs.length > 0 ? (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-1.5">
                         {camp.followLogs.map((log) => {
-                          const followerName = log.followerName || log.followerUsername || 'AtoPlay User';
-                          const followerGmail = log.followerEmail || (log.followerUserId?.includes('@') ? log.followerUserId : `${log.followerUsername || 'user'}@gmail.com`);
+                          const cleanHandle = (log.followerUsername || '').trim().replace(/^@+/, '');
+                          const hasAtoPlaySynced = Boolean(cleanHandle && cleanHandle.toLowerCase() !== 'unknown');
+                          const followerDisplayName = hasAtoPlaySynced
+                            ? (log.followerName || cleanHandle)
+                            : (log.followerName || 'Google User');
                           const followerAvatar = log.followerAvatar || `https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80`;
                           const isReported = log.status === 'reported';
 
@@ -831,31 +834,36 @@ export const Campaigns: React.FC<CampaignsProps> = ({
                               }`}
                             >
                               <div className="flex items-center space-x-2.5 min-w-0">
-                                {/* User Google Avatar */}
+                                {/* Follower Avatar (AtoPlay Profile Picture if synced, otherwise Google Avatar) */}
                                 <div className="relative shrink-0">
                                   <img
                                     src={followerAvatar}
-                                    alt={followerName}
+                                    alt={followerDisplayName}
                                     referrerPolicy="no-referrer"
                                     className="w-9 h-9 rounded-full object-cover border border-white shadow-xs bg-zinc-100"
                                     onError={(e) => {
                                       (e.currentTarget as HTMLImageElement).src = 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80';
                                     }}
                                   />
-                                  <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-emerald-500 border border-white flex items-center justify-center">
+                                  <div
+                                    className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border border-white flex items-center justify-center ${
+                                      hasAtoPlaySynced ? 'bg-blue-600' : 'bg-emerald-500'
+                                    }`}
+                                    title={hasAtoPlaySynced ? 'AtoPlay Synced Profile' : 'Google Account'}
+                                  >
                                     <Check className="w-2.5 h-2.5 text-white stroke-[3]" />
                                   </div>
                                 </div>
 
-                                {/* Follower Info: Name, Gmail, Handle */}
+                                {/* Follower Info: AtoPlay Username & Handle when synced, or Google Name */}
                                 <div className="min-w-0">
                                   <div className="flex items-center space-x-1.5">
                                     <span className="font-extrabold text-xs text-zinc-900 truncate">
-                                      {followerName}
+                                      {followerDisplayName}
                                     </span>
-                                    {log.followerUsername && (
-                                      <span className="text-[10px] text-zinc-400 font-mono truncate">
-                                        @{log.followerUsername}
+                                    {hasAtoPlaySynced && (
+                                      <span className="text-[10px] text-blue-600 font-bold font-mono truncate">
+                                        @{cleanHandle}
                                       </span>
                                     )}
                                   </div>

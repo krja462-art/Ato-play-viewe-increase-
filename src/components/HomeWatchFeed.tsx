@@ -124,6 +124,9 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
       : (camp.channelFollowers ?? camp.initialFollowers ?? 0);
 
     try {
+      const hasSyncedAtoPlay = Boolean(user.atoPlayUsername || user.channelName);
+      const syncedHandle = (user.atoPlayUsername || user.channelName || '').trim().replace(/^@+/, '');
+
       const requestBody = {
         campaignId: camp.id,
         countBefore: baseline,
@@ -135,7 +138,7 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
         thumbnailUrl: camp.thumbnailUrl,
         viewsRequired: camp.viewsRequired,
         viewsCompleted: camp.viewsCompleted,
-        followerUsername: user.atoPlayUsername,
+        followerUsername: hasSyncedAtoPlay ? syncedHandle : '',
         visited4Sec: true,
         elapsedMs
       };
@@ -183,10 +186,10 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
           campaignId: camp.id,
           creatorId: camp.userId,
           followerUserId: user.id,
-          followerUsername: user.atoPlayUsername || user.name,
+          followerUsername: hasSyncedAtoPlay ? syncedHandle : '',
           followerEmail: user.email,
-          followerAvatar: user.avatar,
-          followerName: user.name,
+          followerAvatar: hasSyncedAtoPlay ? (user.channelImage || user.avatar) : user.avatar,
+          followerName: hasSyncedAtoPlay ? (user.channelName || syncedHandle || user.name) : user.name,
           timestamp: new Date().toISOString(),
           status: 'active',
           campaignTitle: camp.title
@@ -277,7 +280,7 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
         channelId: camp.channelId,
         channelName: camp.channelName || camp.userName,
         countBefore: initialF,
-        followerUsername: user.atoPlayUsername || user.name
+        followerUsername: (user.atoPlayUsername || user.channelName || '').trim().replace(/^@+/, '')
       })
     }).then((data: any) => {
       if (data?.success && typeof data.countBefore === 'number') {
@@ -639,7 +642,7 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
           thumbnailUrl: camp.thumbnailUrl,
           viewsRequired: camp.viewsRequired,
           viewsCompleted: camp.viewsCompleted,
-          followerUsername: user.atoPlayUsername,
+          followerUsername: (user.atoPlayUsername || user.channelName || '').trim().replace(/^@+/, ''),
           visited4Sec: true
         })
       });

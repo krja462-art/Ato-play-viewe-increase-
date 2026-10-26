@@ -33,7 +33,7 @@ import {
 import { User } from '../types';
 import { usePWAInstall } from '../hooks/usePWAInstall';
 import { apiFetch } from '../lib/api';
-import { saveSupportMessageToFirestore } from '../lib/firebase';
+import { saveSupportMessageToFirestore, saveUserAtoPlayProfileToFirestore } from '../lib/firebase';
 
 import { AtoPlayBadge } from './AtoPlayBadge';
 import { SubmitFeedbackModal } from './SubmitFeedbackModal';
@@ -67,6 +67,13 @@ export const SlideDrawer: React.FC<SlideDrawerProps> = ({
   const [redeeming, setRedeeming] = useState(false);
   const [redeemMessage, setRedeemMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
+  // AtoPlay Profile Sync State
+  const [syncingAtoPlay, setSyncingAtoPlay] = useState(false);
+  const [showManualSyncInput, setShowManualSyncInput] = useState(false);
+  const [manualAtoPlayInput, setManualAtoPlayInput] = useState('');
+  const [syncStatusMsg, setSyncStatusMsg] = useState<string | null>(null);
+  const triedAutoSyncRef = React.useRef<string | null>(null);
+
   // Contact Form State
   const [contactSubject, setContactSubject] = useState('');
   const [contactMessage, setContactMessage] = useState('');
@@ -79,6 +86,73 @@ export const SlideDrawer: React.FC<SlideDrawerProps> = ({
     if (user?.name && !contactName) setContactName(user.name);
     if (user?.email && !contactEmail) setContactEmail(user.email);
   }, [user]);
+
+  const handleSyncAtoPlayProfile = React.useCallback(async (queryOverride?: string, silent = false) => {
+    if (!user || user.id.startsWith('guest_')) return;
+    try {
+      if (!silent) {
+        setSyncingAtoPlay(true);
+        setSyncStatusMsg(null);
+      }
+      const googleIdToken = typeof window !== 'undefined' ? (sessionStorage.getItem('atoplay_google_id_token') || undefined) : undefined;
+      const res = await apiFetch('/api/atoplay/sync-profile', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': user.id
+        },
+        body: JSON.stringify({
+          email: user.email,
+          channelQuery: queryOverride ? queryOverride.trim() : undefined,
+          googleIdToken
+        })
+      });
+
+      if (res?.success && res.synced && res.user) {
+        const updatedUser: User = {
+          ...user,
+          ...res.user,
+          coins: Math.max(user.coins || 0, res.user.coins || 0)
+        };
+        localStorage.setItem('atoviewer_user', JSON.stringify(updatedUser));
+        if (onUserUpdate) onUserUpdate(updatedUser);
+        saveUserAtoPlayProfileToFirestore(updatedUser.id, {
+          atoPlayUsername: updatedUser.atoPlayUsername,
+          channelName: updatedUser.channelName,
+          channelImage: updatedUser.channelImage,
+          channelBanner: updatedUser.channelBanner,
+          name: updatedUser.name,
+          avatar: updatedUser.avatar,
+          email: updatedUser.email
+        }).catch(() => {});
+        if (!silent) {
+          setShowManualSyncInput(false);
+          setManualAtoPlayInput('');
+          setSyncStatusMsg('AtoPlay profile synced!');
+          setTimeout(() => setSyncStatusMsg(null), 3000);
+        }
+      } else if (!silent) {
+        setSyncStatusMsg(res?.message || 'No AtoPlay channel found for this Gmail. Enter your AtoPlay username or channel link to sync.');
+        setShowManualSyncInput(true);
+      }
+    } catch {
+      if (!silent) {
+        setSyncStatusMsg('Could not reach AtoPlay right now.');
+      }
+    } finally {
+      if (!silent) setSyncingAtoPlay(false);
+    }
+  }, [user, onUserUpdate]);
+
+  // Automatically check AtoPlay sync by Gmail when drawer opens if not already synced
+  React.useEffect(() => {
+    if (isOpen && user && !user.id.startsWith('guest_') && !user.atoPlayUsername && !user.channelName) {
+      if (triedAutoSyncRef.current !== user.email) {
+        triedAutoSyncRef.current = user.email;
+        handleSyncAtoPlayProfile(undefined, true);
+      }
+    }
+  }, [isOpen, user, handleSyncAtoPlayProfile]);
 
   const referralCode = user?.referralCode || 'REF-A482';
   const referralLink = typeof window !== 'undefined' 
@@ -272,83 +346,156 @@ export const SlideDrawer: React.FC<SlideDrawerProps> = ({
             </div>
 
             {/* User Profile Card */}
-            {user && (
-              <div className="p-4 rounded-2xl bg-zinc-50 border border-zinc-200/90 shadow-xs space-y-3">
-                <div className="flex items-center space-x-3.5">
-                  <div className="relative">
-                    <img
-                      src={user.avatar}
-                      alt={user.name}
-                      referrerPolicy="no-referrer"
-                      className="w-13 h-13 rounded-full border-2 border-white object-cover shadow-sm bg-zinc-100"
-                      onError={(e) => {
-                        (e.currentTarget as HTMLImageElement).src = 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80';
-                      }}
-                    />
-                    <div className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full bg-emerald-500 border-2 border-white flex items-center justify-center shadow-xs" title="Verified Google Account">
-                      <CheckCircle2 className="w-3 h-3 text-white" />
+            {user && (() => {
+              const isAtoPlaySynced = Boolean(user.atoPlayUsername || user.channelName);
+              const displayUsername = (user.channelName || user.atoPlayUsername || user.name || 'Creator').trim();
+              const displayHandle = (user.atoPlayUsername || user.channelName || '').trim().replace(/^@+/, '');
+              const displayAvatar = isAtoPlaySynced
+                ? (user.channelImage || user.avatar)
+                : user.avatar;
+
+              return (
+                <div className="p-4 rounded-2xl bg-zinc-50 border border-zinc-200/90 shadow-xs space-y-3">
+                  <div className="flex items-center space-x-3.5">
+                    <div className="relative shrink-0">
+                      <img
+                        src={displayAvatar}
+                        alt={displayUsername}
+                        referrerPolicy="no-referrer"
+                        className="w-13 h-13 rounded-full border-2 border-white object-cover shadow-sm bg-zinc-100"
+                        onError={(e) => {
+                          (e.currentTarget as HTMLImageElement).src = 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80';
+                        }}
+                      />
+                      <div
+                        className={`absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full border-2 border-white flex items-center justify-center shadow-xs ${
+                          isAtoPlaySynced ? 'bg-blue-600' : 'bg-emerald-500'
+                        }`}
+                        title={isAtoPlaySynced ? 'AtoPlay Profile Synced' : 'Verified Google Account'}
+                      >
+                        <CheckCircle2 className="w-3 h-3 text-white" />
+                      </div>
                     </div>
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center space-x-1.5">
-                      <h3 className="font-extrabold text-base text-zinc-900 truncate">{user.name}</h3>
-                      {Boolean(user.isAdmin || user.email?.toLowerCase().trim() === 'krja462@gmail.com') && (
-                        <span className="px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-900 text-[10px] font-black uppercase tracking-wider border border-amber-300 shrink-0">
-                          👑 Admin
-                        </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center space-x-1.5">
+                        <h3 className="font-extrabold text-base text-zinc-900 truncate">
+                          {isAtoPlaySynced ? displayUsername : user.name}
+                        </h3>
+                        {Boolean(user.isAdmin || user.email?.toLowerCase().trim() === 'krja462@gmail.com') && (
+                          <span className="px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-900 text-[10px] font-black uppercase tracking-wider border border-amber-300 shrink-0">
+                            👑 Admin
+                          </span>
+                        )}
+                      </div>
+                      {isAtoPlaySynced && displayHandle && (
+                        <p className="text-xs text-blue-600 font-bold truncate">@{displayHandle}</p>
+                      )}
+                      <p className="text-xs text-zinc-500 truncate font-medium">{user.email}</p>
+                      {user.id.startsWith('guest_') ? (
+                        <div className="mt-1 flex items-center space-x-1 text-[11px] font-bold text-amber-700 bg-amber-100/80 px-2 py-0.5 rounded-md border border-amber-300 w-fit">
+                          <Sparkles className="w-3 h-3 text-amber-600" />
+                          <span>Guest Mode (Demo Session)</span>
+                        </div>
+                      ) : isAtoPlaySynced ? (
+                        <div className="mt-1 flex items-center justify-between">
+                          <div className="inline-flex items-center space-x-1 text-[11px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-200">
+                            <CheckCircle2 className="w-3 h-3 text-blue-600 shrink-0" />
+                            <span>AtoPlay Account Synced</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleSyncAtoPlayProfile(displayHandle, false)}
+                            disabled={syncingAtoPlay}
+                            className="text-[10px] font-bold text-zinc-400 hover:text-blue-600 inline-flex items-center space-x-0.5 cursor-pointer"
+                            title="Refresh AtoPlay Profile"
+                          >
+                            <RefreshCw className={`w-3 h-3 ${syncingAtoPlay ? 'animate-spin text-blue-600' : ''}`} />
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="mt-1 flex items-center justify-between">
+                          <div className="flex items-center space-x-1 text-[11px] font-semibold text-emerald-700">
+                            <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                            <span>Google Account Verified</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setShowManualSyncInput(prev => !prev)}
+                            className="text-[10px] font-bold text-blue-600 hover:underline cursor-pointer"
+                          >
+                            Sync AtoPlay
+                          </button>
+                        </div>
                       )}
                     </div>
-                    <p className="text-xs text-zinc-500 truncate font-medium">{user.email}</p>
-                    {user.id.startsWith('guest_') ? (
-                      <div className="mt-1 flex items-center space-x-1 text-[11px] font-bold text-amber-700 bg-amber-100/80 px-2 py-0.5 rounded-md border border-amber-300 w-fit">
-                        <Sparkles className="w-3 h-3 text-amber-600" />
-                        <span>Guest Mode (Demo Session)</span>
-                      </div>
-                    ) : (
-                      <div className="mt-1 flex items-center space-x-1 text-[11px] font-semibold text-emerald-700">
-                        <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                        <span>Google Account Verified</span>
-                      </div>
-                    )}
                   </div>
-                </div>
 
-                {/* Coin Balance Badge */}
-                <div className="pt-2 border-t border-zinc-200 flex items-center justify-between">
-                  <div className="flex items-center space-x-2">
-                    <RealCoin size="sm" />
-                    <span className="text-xs font-bold text-zinc-700">Total Coins</span>
-                  </div>
-                  <span className="text-sm font-black text-amber-800 inline-flex items-center space-x-1.5 tabular-nums">
-                    <RealCoin size="xs" />
-                    <span>
-                      {Boolean(user.isAdmin || user.email?.toLowerCase().trim() === 'krja462@gmail.com')
-                        ? '∞ Unlimited Coins'
-                        : `${user.coins.toLocaleString()} Coins`}
+                  {syncStatusMsg && (
+                    <p className="text-[11px] font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded-xl px-2.5 py-1.5">
+                      {syncStatusMsg}
+                    </p>
+                  )}
+
+                  {showManualSyncInput && !user.id.startsWith('guest_') && (
+                    <div className="pt-2 border-t border-zinc-200 space-y-2">
+                      <label className="text-[11px] font-bold text-zinc-700 block">
+                        Sync Your AtoPlay Channel Username or Link
+                      </label>
+                      <div className="flex items-center space-x-1.5">
+                        <input
+                          type="text"
+                          value={manualAtoPlayInput}
+                          onChange={(e) => setManualAtoPlayInput(e.target.value)}
+                          placeholder="@username or channel link"
+                          className="flex-1 px-2.5 py-1.5 rounded-lg bg-white border border-zinc-300 text-xs font-semibold text-zinc-900 focus:outline-none focus:border-blue-500"
+                        />
+                        <button
+                          type="button"
+                          disabled={syncingAtoPlay || !manualAtoPlayInput.trim()}
+                          onClick={() => handleSyncAtoPlayProfile(manualAtoPlayInput, false)}
+                          className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:bg-zinc-300 text-white font-bold text-xs cursor-pointer"
+                        >
+                          {syncingAtoPlay ? 'Syncing...' : 'Sync'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Coin Balance Badge */}
+                  <div className="pt-2 border-t border-zinc-200 flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <RealCoin size="sm" />
+                      <span className="text-xs font-bold text-zinc-700">Total Coins</span>
+                    </div>
+                    <span className="text-sm font-black text-amber-800 inline-flex items-center space-x-1.5 tabular-nums">
+                      <RealCoin size="xs" />
+                      <span>
+                        {Boolean(user.isAdmin || user.email?.toLowerCase().trim() === 'krja462@gmail.com')
+                          ? '∞ Unlimited Coins'
+                          : `${user.coins.toLocaleString()} Coins`}
+                      </span>
                     </span>
-                  </span>
-                </div>
-
-                {/* Quick Google Login for Guest User */}
-                {user.id.startsWith('guest_') && (
-                  <div className="pt-2 border-t border-zinc-200">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onClose();
-                        if (onLogout) onLogout();
-                      }}
-                      className="w-full py-2.5 px-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs flex items-center justify-center space-x-1.5 shadow-sm transition-all cursor-pointer"
-                    >
-                      <LogIn className="w-3.5 h-3.5" />
-                      <span>Sign In with Google (Save Coins)</span>
-                    </button>
                   </div>
-                )}
 
-
-              </div>
-            )}
+                  {/* Quick Google Login for Guest User */}
+                  {user.id.startsWith('guest_') && (
+                    <div className="pt-2 border-t border-zinc-200">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onClose();
+                          if (onLogout) onLogout();
+                        }}
+                        className="w-full py-2.5 px-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs flex items-center justify-center space-x-1.5 shadow-sm transition-all cursor-pointer"
+                      >
+                        <LogIn className="w-3.5 h-3.5" />
+                        <span>Sign In with Google (Save Coins)</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* Refer Friends & Earn 250 Coins Featured Box */}
             <div className="p-4 rounded-2xl bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-200/90 shadow-xs space-y-3">

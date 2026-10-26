@@ -549,16 +549,337 @@ app.post("/api/user/sync-wallet", (req, res) => {
   res.json({ success: true, user });
 });
 
+function normalizeAtoPlayImageUrl(raw?: string | null): string | undefined {
+  if (!raw || typeof raw !== 'string' || !raw.trim()) return undefined;
+  const trimmed = raw.trim();
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) return trimmed;
+  return `https://cdn.atoplay.in/${trimmed.replace(/^\//, '')}`;
+}
+
+function syncUserFollowLogsWithProfile(user: User) {
+  const effectiveUsername = (user.atoPlayUsername || user.channelName || '').trim();
+  const effectiveName = (user.channelName || user.atoPlayUsername || user.name || 'AtoPlay User').trim();
+  const effectiveAvatar = (user.channelImage || user.avatar || '').trim();
+  const cleanEmail = (user.email || '').toLowerCase().trim();
+
+  for (const log of followLogs) {
+    const isSameUser =
+      log.followerUserId === user.id ||
+      (cleanEmail && log.followerEmail && log.followerEmail.toLowerCase().trim() === cleanEmail);
+    if (isSameUser) {
+      if (effectiveUsername) {
+        log.followerUsername = effectiveUsername.replace(/^@+/, '');
+        log.followerName = effectiveName;
+      } else if (user.name) {
+        log.followerName = user.name;
+      }
+      if (effectiveAvatar) {
+        log.followerAvatar = effectiveAvatar;
+      }
+    }
+  }
+}
+
+async function discoverAtoPlayProfileByGmail(params: {
+  email: string;
+  displayName?: string;
+  googleIdToken?: string;
+  userId?: string;
+  channelUrlOrHandle?: string;
+}): Promise<{
+  matched: boolean;
+  atoPlayUsername?: string;
+  channelName?: string;
+  channelImage?: string;
+  channelBanner?: string;
+  channelId?: string;
+}> {
+  const cleanEmail = (params.email || '').trim().toLowerCase();
+  const emailPrefix = cleanEmail.split('@')[0] || '';
+  const emailAlphaPrefix = emailPrefix.replace(/[0-9_.-]+$/g, '').trim();
+  const cleanDisplayName = (params.displayName || '').trim();
+  const reqHeaders = {
+    'Accept': 'application/json',
+    'Content-Type': 'application/json',
+    'Cache-Control': 'no-cache'
+  };
+
+  // 1. If Google ID token was provided from Firebase Google Sign-In, try AtoPlay's official /api/auth/google
+  if (params.googleIdToken) {
+    try {
+      const gRes = await fetch('https://api.atoplay.com/api/auth/google', {
+        method: 'POST',
+        headers: reqHeaders,
+        body: JSON.stringify({ idToken: params.googleIdToken })
+      });
+      if (gRes.ok) {
+        const gData = await gRes.json();
+        const atoUser = gData?.data?.user || gData?.user;
+        if (atoUser && (atoUser.id || atoUser.fname)) {
+          let chName = atoUser.fname || cleanDisplayName || emailPrefix;
+          let chImage = normalizeAtoPlayImageUrl(atoUser.profileImage);
+          let chBanner: string | undefined = undefined;
+          let chId: string | undefined = undefined;
+
+          if (atoUser.id) {
+            try {
+              const uChRes = await fetch(`https://api.atoplay.com/api/channels/user/${atoUser.id}`, {
+                headers: reqHeaders
+              });
+              if (uChRes.ok) {
+                const chList = await uChRes.json();
+                const firstCh = Array.isArray(chList) ? chList[0] : (chList?.channels?.[0] || chList?.data?.[0]);
+                if (firstCh) {
+                  if (firstCh.name) chName = String(firstCh.name).trim();
+                  if (firstCh.id) chId = firstCh.id;
+                  const normImg = normalizeAtoPlayImageUrl(firstCh.channelImage);
+                  if (normImg) chImage = normImg;
+                  const normBan = normalizeAtoPlayImageUrl(firstCh.channelBanner);
+                  if (normBan) chBanner = normBan;
+                }
+              }
+            } catch {}
+          }
+
+          return {
+            matched: true,
+            atoPlayUsername: chName.replace(/^@+/, '').trim(),
+            channelName: chName.trim(),
+            channelImage: chImage,
+            channelBanner: chBanner,
+            channelId: chId
+          };
+        }
+      }
+    } catch {}
+  }
+
+  // 2. If explicit channelUrlOrHandle was passed, or if this user has created a campaign on AtoPlay
+  const candidateChannelIds = new Set<string>();
+  if (params.channelUrlOrHandle && params.channelUrlOrHandle.trim()) {
+    const raw = params.channelUrlOrHandle.trim();
+    const { channelSlug, videoId } = parseAtoPlayUrlIdentifiers(raw, raw);
+    if (channelSlug) candidateChannelIds.add(channelSlug);
+    if (videoId) {
+      try {
+        const live = await fetchLiveAtoPlayFollowerCount({ videoUrl: raw });
+        if (live.channelId) candidateChannelIds.add(live.channelId);
+        if (live.isRealAtoPlay && live.channelName) {
+          return {
+            matched: true,
+            atoPlayUsername: live.channelName.trim(),
+            channelName: live.channelName.trim(),
+            channelImage: live.channelImage,
+            channelBanner: live.channelBanner,
+            channelId: live.channelId
+          };
+        }
+      } catch {}
+    }
+  }
+
+  if (params.userId) {
+    const userCamps = campaigns.filter(c => c.userId === params.userId && !deletedCampaignIds.has(c.id));
+    for (const c of userCamps) {
+      if (c.channelId) candidateChannelIds.add(c.channelId);
+    }
+  }
+
+  for (const chId of Array.from(candidateChannelIds)) {
+    try {
+      const chRes = await fetch(`https://api.atoplay.com/api/channels/${encodeURIComponent(chId)}`, {
+        headers: reqHeaders
+      });
+      if (chRes.ok) {
+        const chData = await chRes.json();
+        const chObj = chData?.channel || chData?.data?.channel || chData;
+        if (chObj && chObj.name) {
+          const cleanName = String(chObj.name).trim();
+          return {
+            matched: true,
+            atoPlayUsername: cleanName,
+            channelName: cleanName,
+            channelImage: normalizeAtoPlayImageUrl(chObj.channelImage),
+            channelBanner: normalizeAtoPlayImageUrl(chObj.channelBanner),
+            channelId: chObj.id || chId
+          };
+        }
+      }
+    } catch {}
+  }
+
+  // 3. Query AtoPlay Search API (/api/search/search) by user's Google DisplayName & Gmail Prefix
+  const genericNames = new Set(['atoplay creator', 'creator studio user', 'guest reviewer', 'atoplay user', 'admin (krja)', 'creator']);
+  const queriesToTry: string[] = [];
+  if (params.channelUrlOrHandle && !params.channelUrlOrHandle.includes('/')) {
+    queriesToTry.push(params.channelUrlOrHandle.replace(/^@+/, '').trim());
+  }
+  if (cleanDisplayName && cleanDisplayName.length >= 2 && !genericNames.has(cleanDisplayName.toLowerCase())) {
+    queriesToTry.push(cleanDisplayName);
+  }
+  if (emailPrefix && emailPrefix.length >= 3) {
+    queriesToTry.push(emailPrefix);
+  }
+  if (emailAlphaPrefix && emailAlphaPrefix.length >= 3 && emailAlphaPrefix !== emailPrefix) {
+    queriesToTry.push(emailAlphaPrefix);
+  }
+
+  const uniqueQueries = Array.from(new Set(queriesToTry));
+  const inspectedChannels = new Set<string>();
+  let nameMatchedChannel: {
+    atoPlayUsername: string;
+    channelName: string;
+    channelImage?: string;
+    channelBanner?: string;
+    channelId: string;
+  } | null = null;
+
+  const normalizeKey = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const targetKeys = new Set(
+    [cleanDisplayName, emailPrefix, emailAlphaPrefix, params.channelUrlOrHandle || '']
+      .map(normalizeKey)
+      .filter(k => k.length >= 3)
+  );
+
+  for (const q of uniqueQueries) {
+    try {
+      const sRes = await fetch(`https://api.atoplay.com/api/search/search?query=${encodeURIComponent(q)}`, {
+        headers: reqHeaders
+      });
+      if (!sRes.ok) continue;
+      const items = await sRes.json();
+      if (!Array.isArray(items)) continue;
+
+      // Prioritize channel items first, then video items
+      const sortedItems = [...items].sort((a, b) => (a.type === 'channel' ? -1 : 1) - (b.type === 'channel' ? -1 : 1));
+      for (const item of sortedItems.slice(0, 8)) {
+        const chId = item.channelId || (item.type === 'channel' ? item.id : null);
+        if (!chId || inspectedChannels.has(chId)) continue;
+        inspectedChannels.add(chId);
+
+        try {
+          const chRes = await fetch(`https://api.atoplay.com/api/channels/${encodeURIComponent(chId)}`, {
+            headers: reqHeaders
+          });
+          if (!chRes.ok) continue;
+          const chData = await chRes.json();
+          const chObj = chData?.channel || chData?.data?.channel;
+          if (!chObj || !chObj.name) continue;
+
+          const chName = String(chObj.name).trim();
+          const chEmail = String(chObj.contactEmail || '').trim().toLowerCase();
+          const chImage = normalizeAtoPlayImageUrl(chObj.channelImage);
+          const chBanner = normalizeAtoPlayImageUrl(chObj.channelBanner);
+
+          // Priority A: Exact Gmail match on AtoPlay channel's contactEmail!
+          if (cleanEmail && chEmail && chEmail === cleanEmail) {
+            return {
+              matched: true,
+              atoPlayUsername: chName,
+              channelName: chName,
+              channelImage: chImage,
+              channelBanner: chBanner,
+              channelId: chObj.id || chId
+            };
+          }
+
+          // Priority B: Exact Channel Name / Handle match with user's AtoPlay Gmail name/handle
+          const chNorm = normalizeKey(chName);
+          if (chNorm && targetKeys.has(chNorm) && !nameMatchedChannel) {
+            nameMatchedChannel = {
+              atoPlayUsername: chName,
+              channelName: chName,
+              channelImage: chImage,
+              channelBanner: chBanner,
+              channelId: chObj.id || chId
+            };
+          }
+        } catch {}
+      }
+    } catch {}
+  }
+
+  if (nameMatchedChannel) {
+    return {
+      matched: true,
+      ...nameMatchedChannel
+    };
+  }
+
+  return { matched: false };
+}
+
+app.post("/api/atoplay/sync-profile", async (req, res) => {
+  const activeUser = getActiveUser(req);
+  const { email, displayName, googleIdToken, channelUrlOrHandle } = req.body || {};
+  const targetEmail = (email || activeUser?.email || '').trim().toLowerCase();
+  const targetName = displayName || activeUser?.name || '';
+
+  if (!targetEmail && !channelUrlOrHandle) {
+    return res.status(400).json({ success: false, message: "Email or AtoPlay channel handle is required." });
+  }
+
+  const synced = await discoverAtoPlayProfileByGmail({
+    email: targetEmail,
+    displayName: targetName,
+    googleIdToken,
+    userId: activeUser?.id,
+    channelUrlOrHandle
+  });
+
+  if (synced.matched && synced.atoPlayUsername) {
+    if (activeUser) {
+      activeUser.atoPlayUsername = synced.atoPlayUsername;
+      activeUser.channelName = synced.channelName || synced.atoPlayUsername;
+      if (synced.channelImage) {
+        activeUser.channelImage = synced.channelImage;
+        activeUser.avatar = synced.channelImage;
+      }
+      if (synced.channelBanner) {
+        activeUser.channelBanner = synced.channelBanner;
+      }
+      activeUser.name = synced.channelName || synced.atoPlayUsername;
+      syncUserFollowLogsWithProfile(activeUser);
+    }
+    return res.json({
+      success: true,
+      matched: true,
+      atoPlayProfile: synced,
+      user: activeUser || null,
+      message: `Synced with AtoPlay channel @${synced.atoPlayUsername}`
+    });
+  }
+
+  return res.json({
+    success: true,
+    matched: false,
+    user: activeUser || null,
+    message: "No matching AtoPlay channel found for this Gmail account; using standard Google profile."
+  });
+});
+
 app.post(["/api/auth/firebase-login", "/api/auth/google"], async (req, res) => {
-  const { uid, email, name, avatar, displayName, photoURL, referralCode: inputReferralCode } = req.body;
+  const {
+    uid,
+    email,
+    name,
+    avatar,
+    displayName,
+    photoURL,
+    googleIdToken,
+    atoPlayUsername: clientAtoPlayUsername,
+    channelImage: clientChannelImage,
+    channelName: clientChannelName,
+    referralCode: inputReferralCode
+  } = req.body;
   if (!email) {
     return res.status(400).json({ success: false, message: "Missing email" });
   }
 
   const cleanEmail = String(email).trim().toLowerCase();
   const isAdmin = cleanEmail === ADMIN_EMAIL || String(uid || '').includes('krja462');
-  const finalName = name || displayName || (isAdmin ? "Admin (KRJA)" : cleanEmail.split('@')[0]);
-  const finalAvatar = avatar || photoURL || `https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80`;
+  const googleName = name || displayName || (isAdmin ? "Admin (KRJA)" : cleanEmail.split('@')[0]);
+  const googleAvatar = avatar || photoURL || `https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80`;
   
   // Find existing user by email to prevent duplicate accounts when logging out and logging back in
   let existingKey = Object.keys(users).find(key => {
@@ -574,10 +895,10 @@ app.post(["/api/auth/firebase-login", "/api/auth/google"], async (req, res) => {
     const effectiveUid = uid || `g_${cleanEmail.replace(/[^a-zA-Z0-9]/g, '_')}`;
     user = {
       id: effectiveUid,
-      name: finalName,
+      name: googleName,
       email: cleanEmail,
       coins: isAdmin ? ADMIN_UNLIMITED_COINS : 300, // Unlimited coins for admin, 300 Starter Welcome Bonus
-      avatar: finalAvatar,
+      avatar: googleAvatar,
       streak: 1,
       lastCheckIn: new Date().toISOString().split('T')[0],
       createdAt: new Date().toISOString(),
@@ -606,7 +927,6 @@ app.post(["/api/auth/firebase-login", "/api/auth/google"], async (req, res) => {
 
       if (referrer && referrer.id !== uid) {
         user.referredBy = referrer.id;
-        // Referrer earns 250 coins
         referrer.coins += 250;
         referrer.referralsCount = (referrer.referralsCount || 0) + 1;
         referrer.referralEarnings = (referrer.referralEarnings || 0) + 250;
@@ -620,7 +940,6 @@ app.post(["/api/auth/firebase-login", "/api/auth/google"], async (req, res) => {
           createdAt: new Date().toISOString(),
         });
 
-        // New user also gets 250 bonus coins
         user.coins += 250;
         transactions.unshift({
           id: `tx_${Date.now()}_ref_inv`,
@@ -637,19 +956,62 @@ app.post(["/api/auth/firebase-login", "/api/auth/google"], async (req, res) => {
       user.coins = ADMIN_UNLIMITED_COINS;
       user.isAdmin = true;
     }
-    if (name) user.name = name;
-    if (avatar && !user.avatar?.includes('googleusercontent') && avatar.includes('googleusercontent')) {
+    if (!user.atoPlayUsername && name) user.name = name;
+    if (!user.channelImage && avatar && !user.avatar?.includes('googleusercontent') && avatar.includes('googleusercontent')) {
       user.avatar = avatar;
     }
     if (!user.referralCode) user.referralCode = generateUserReferralCode(user);
     user.loginMethod = 'google';
   }
 
+  // If client already synced AtoPlay profile in Firestore, apply it
+  if (clientAtoPlayUsername) {
+    user.atoPlayUsername = String(clientAtoPlayUsername).trim();
+    user.channelName = String(clientChannelName || clientAtoPlayUsername).trim();
+    user.name = user.channelName;
+  }
+  if (clientChannelImage) {
+    user.channelImage = String(clientChannelImage).trim();
+    user.avatar = user.channelImage;
+  }
+
+  // Automatically check if this Gmail account has a matching AtoPlay profile/channel
+  try {
+    const atoSync = await discoverAtoPlayProfileByGmail({
+      email: cleanEmail,
+      displayName: googleName,
+      googleIdToken,
+      userId: user.id,
+      channelUrlOrHandle: user.atoPlayUsername
+    });
+
+    if (atoSync.matched && atoSync.atoPlayUsername) {
+      user.atoPlayUsername = atoSync.atoPlayUsername;
+      user.channelName = atoSync.channelName || atoSync.atoPlayUsername;
+      user.name = user.channelName;
+      if (atoSync.channelImage) {
+        user.channelImage = atoSync.channelImage;
+        user.avatar = atoSync.channelImage;
+      } else if (!user.avatar && googleAvatar) {
+        user.avatar = googleAvatar;
+      }
+      if (atoSync.channelBanner) {
+        user.channelBanner = atoSync.channelBanner;
+      }
+    }
+  } catch (syncErr) {
+    console.warn("AtoPlay Gmail auto-sync check skipped:", syncErr);
+  }
+
+  // Keep all follower logs in sync with user's AtoPlay username & avatar (or Google fallback)
+  syncUserFollowLogsWithProfile(user);
+
   currentSessionUser = user;
   res.json({ 
     success: true, 
     user, 
     isNewUser,
+    atoPlaySynced: Boolean(user.atoPlayUsername),
     message: isNewUser ? "Welcome! 100 bonus coins added." : "Authenticated successfully with Google" 
   });
 });
@@ -1993,13 +2355,9 @@ app.post("/api/follow/start", async (req, res) => {
     });
   }
 
-  // Require AtoPlay channel username linked
-  if (!activeUser.atoPlayUsername && !req.body.followerUsername) {
-    return res.status(400).json({
-      success: false,
-      needsUsername: true,
-      message: "Please link your AtoPlay username first to claim follow bonus coins."
-    });
+  // Use synced AtoPlay username if available, or fallback to provided username / Google name
+  if (!activeUser.atoPlayUsername && req.body.followerUsername) {
+    activeUser.atoPlayUsername = String(req.body.followerUsername).trim().replace(/^@+/, '');
   }
 
   // Check if already followed
@@ -2262,8 +2620,17 @@ app.post("/api/follow/verify", async (req, res) => {
     // Clean up session
     delete followSessions[sessionKey];
 
-    // Record Follow Log for Creator Transparency and Fake Follow Reporting
-    const resolvedFollowerUsername = activeUser.atoPlayUsername || activeUser.name || 'AtoPlay User';
+    // Record Follow Log: Use AtoPlay username & profile picture if synced, otherwise standard Google name & avatar
+    const hasSyncedAtoPlay = Boolean(activeUser.atoPlayUsername || activeUser.channelName);
+    const syncedHandle = (activeUser.atoPlayUsername || activeUser.channelName || '').trim().replace(/^@+/, '');
+    const resolvedFollowerUsername = hasSyncedAtoPlay ? syncedHandle : '';
+    const resolvedFollowerName = hasSyncedAtoPlay
+      ? (activeUser.channelName || activeUser.atoPlayUsername || activeUser.name || 'AtoPlay User')
+      : (activeUser.name || 'Google User');
+    const resolvedFollowerAvatar = hasSyncedAtoPlay
+      ? (activeUser.channelImage || activeUser.avatar)
+      : activeUser.avatar;
+
     const logId = `flog_${Date.now()}_${activeUser.id.slice(-4)}`;
     let followLogEntry = followLogs.find(l => l.campaignId === campaign.id && l.followerUserId === activeUser.id);
     if (!followLogEntry) {
@@ -2274,17 +2641,18 @@ app.post("/api/follow/verify", async (req, res) => {
         followerUserId: activeUser.id,
         followerUsername: resolvedFollowerUsername,
         followerEmail: activeUser.email,
-        followerAvatar: activeUser.avatar,
-        followerName: activeUser.name,
+        followerAvatar: resolvedFollowerAvatar,
+        followerName: resolvedFollowerName,
         timestamp: new Date().toISOString(),
         status: 'active',
         campaignTitle: campaign.title
       };
       followLogs.unshift(followLogEntry);
     } else {
+      if (resolvedFollowerUsername) followLogEntry.followerUsername = resolvedFollowerUsername;
+      if (resolvedFollowerAvatar) followLogEntry.followerAvatar = resolvedFollowerAvatar;
+      if (resolvedFollowerName) followLogEntry.followerName = resolvedFollowerName;
       if (!followLogEntry.followerEmail && activeUser.email) followLogEntry.followerEmail = activeUser.email;
-      if (!followLogEntry.followerAvatar && activeUser.avatar) followLogEntry.followerAvatar = activeUser.avatar;
-      if (!followLogEntry.followerName && activeUser.name) followLogEntry.followerName = activeUser.name;
     }
 
     // Log transaction
