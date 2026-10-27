@@ -2928,8 +2928,105 @@ app.get("/api/campaigns/:id/follow-logs", (req, res) => {
     return res.status(403).json({ success: false, message: "Only the campaign creator can view followers log." });
   }
 
-  const logs = followLogs.filter(l => l.campaignId === id);
+  const logs = followLogs.filter(l => l.campaignId === id).map(l => {
+    const fUser = users[l.followerUserId];
+    if (fUser) {
+      const hasSynced = Boolean(fUser.atoPlayUsername || fUser.channelName);
+      return {
+        ...l,
+        followerUsername: hasSynced
+          ? (fUser.atoPlayUsername || fUser.channelName || l.followerUsername || '').replace(/^@+/, '')
+          : (l.followerUsername || ''),
+        followerName: fUser.channelName || fUser.atoPlayUsername || fUser.name || l.followerName || 'AtoPlay User',
+        followerAvatar: fUser.channelImage || fUser.avatar || l.followerAvatar || '',
+        followerEmail: fUser.email || l.followerEmail || ''
+      };
+    }
+    return l;
+  });
   res.json({ success: true, logs });
+});
+
+// Dedicated Creator Followers Tracker endpoint: returns all followers who followed the creator's channel or a searched AtoPlay channel
+app.get("/api/my-followers", async (req, res) => {
+  const activeUser = getActiveUser(req);
+  const searchQuery = String(req.query.q || '').trim();
+  const requestedCreatorId = String(req.query.creatorId || activeUser?.id || '').trim();
+
+  // Helper to enrich follow log with latest follower user profile
+  const enrichLog = (l: FollowLog): FollowLog => {
+    const fUser = users[l.followerUserId];
+    const camp = campaigns.find(c => c.id === l.campaignId);
+    if (fUser) {
+      const hasSynced = Boolean(fUser.atoPlayUsername || fUser.channelName);
+      return {
+        ...l,
+        campaignTitle: l.campaignTitle || camp?.channelName || camp?.title || 'AtoPlay Channel',
+        followerUsername: hasSynced
+          ? (fUser.atoPlayUsername || fUser.channelName || l.followerUsername || '').replace(/^@+/, '')
+          : (l.followerUsername || ''),
+        followerName: fUser.channelName || fUser.atoPlayUsername || fUser.name || l.followerName || 'AtoPlay User',
+        followerAvatar: fUser.channelImage || fUser.avatar || l.followerAvatar || '',
+        followerEmail: fUser.email || l.followerEmail || ''
+      };
+    }
+    return {
+      ...l,
+      campaignTitle: l.campaignTitle || camp?.channelName || camp?.title || 'AtoPlay Channel'
+    };
+  };
+
+  // If user searched a specific channel URL, channel ID, or @username
+  if (searchQuery) {
+    const cleanQ = searchQuery.toLowerCase().replace(/^@+/, '').trim();
+    const matchingCampaigns = campaigns.filter(c => {
+      const cUrl = (c.videoUrl || '').toLowerCase();
+      const cName = (c.channelName || '').toLowerCase().replace(/^@+/, '');
+      const cUser = (c.userName || '').toLowerCase().replace(/^@+/, '');
+      const cTitle = (c.title || '').toLowerCase();
+      const cChanId = (c.channelId || '').toLowerCase();
+      return (
+        cUrl.includes(cleanQ) ||
+        cleanQ.includes(cChanId && cChanId.length > 4 ? cChanId : '__none__') ||
+        cName.includes(cleanQ) ||
+        cUser.includes(cleanQ) ||
+        cTitle.includes(cleanQ)
+      );
+    });
+
+    const matchedIds = new Set(matchingCampaigns.map(c => c.id));
+    const matchedCreatorIds = new Set(matchingCampaigns.map(c => c.userId));
+
+    const logs = followLogs
+      .filter(l => matchedIds.has(l.campaignId) || matchedCreatorIds.has(l.creatorId) || (l.campaignTitle || '').toLowerCase().includes(cleanQ))
+      .map(enrichLog)
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+    return res.json({
+      success: true,
+      logs,
+      campaigns: matchingCampaigns
+    });
+  }
+
+  // Default: Return all follow logs for the logged-in creator's campaigns
+  if (!requestedCreatorId) {
+    return res.json({ success: true, logs: [], campaigns: [] });
+  }
+
+  const creatorCampaigns = campaigns.filter(c => c.userId === requestedCreatorId);
+  const creatorCampaignIds = new Set(creatorCampaigns.map(c => c.id));
+
+  const logs = followLogs
+    .filter(l => l.creatorId === requestedCreatorId || creatorCampaignIds.has(l.campaignId))
+    .map(enrichLog)
+    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+  return res.json({
+    success: true,
+    logs,
+    campaigns: creatorCampaigns
+  });
 });
 
 interface UserNotification {

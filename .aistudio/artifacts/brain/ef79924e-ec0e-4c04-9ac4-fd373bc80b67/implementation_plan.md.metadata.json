@@ -1,6 +1,6 @@
 {
-  "summary":  "Revised implementation plan to completely remove the entire AtoPlay username and profile picture login and auto-sync system and restore the original clean Continue with Google authentication and profile display.",
-  "updatedAt":  "2026-10-27T00:43:12.532922857Z",
+  "summary":  "Implementation plan to replace the Creator Tools page with the new My Channel Followers Tracker tool, allowing AtoPlay users to view who followed their channel across their campaigns or via channel link search, see live AtoPlay follower counts, and report fake/unfollowed users with coin deduction.",
+  "updatedAt":  "2026-10-27T11:46:49.861366601Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

@@ -572,7 +572,10 @@ export default function App() {
         )}
 
         {activeTab === 'tools' && (
-          <CreatorTools />
+          <CreatorTools
+            user={user}
+            onOpenCreateModal={handleOpenCreateModal}
+          />
         )}
 
         {activeTab === 'users' && (

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Home, ShieldCheck, Plus, MoreVertical, RefreshCw, Wand2 } from 'lucide-react';
+import { Home, ShieldCheck, Plus, MoreVertical, RefreshCw, Users } from 'lucide-react';
 import { User } from '../types';
 import { SlideDrawer } from './SlideDrawer';
 import { RealCoin } from './RealCoin';
@@ -134,8 +134,8 @@ export const Navbar: React.FC<NavbarProps> = ({
                   : 'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100/80'
               }`}
             >
-              <Wand2 className="w-4 h-4" />
-              <span>Creator Tools</span>
+              <Users className="w-4 h-4" />
+              <span>My Followers</span>
             </button>
 
             {Boolean(user?.isAdmin || user?.email?.toLowerCase().trim() === 'krja462@gmail.com') && (
@@ -249,7 +249,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             </span>
           </button>
 
-          {/* Native Creator Tools Tab Button */}
+          {/* Followers Tracker Tab Button */}
           <button
             onClick={() => setActiveTab('tools')}
             className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition-all cursor-pointer active:scale-95 ${
@@ -258,9 +258,9 @@ export const Navbar: React.FC<NavbarProps> = ({
                 : 'text-zinc-500 hover:text-zinc-800'
             }`}
           >
-            <Wand2 className="w-5 h-5 stroke-[2.2]" />
+            <Users className="w-5 h-5 stroke-[2.2]" />
             <span className={`text-[11px] pt-0.5 tracking-tight ${activeTab === 'tools' ? 'font-bold' : 'font-medium'}`}>
-              Tools
+              Followers
             </span>
           </button>
         </nav>

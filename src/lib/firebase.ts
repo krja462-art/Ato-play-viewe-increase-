@@ -1141,6 +1141,117 @@ export const getFollowLogsFromFirestore = async (campaignId: string): Promise<Fo
 };
 
 /**
+ * Fetch all Follow Logs for a Creator (across all their campaigns or a searched list of campaignIds) from Firestore.
+ * Enriches every follower log with the follower's latest AtoPlay profile photo, @username, and display name.
+ */
+export const getCreatorFollowLogsFromFirestore = async (
+  creatorId?: string,
+  campaignIds: string[] = []
+): Promise<FollowLog[]> => {
+  try {
+    const logsRef = collection(db, 'follow_logs');
+    const logMap = new Map<string, FollowLog>();
+
+    const parseSnap = (docSnap: any) => {
+      const data = docSnap.data();
+      if (!data) return;
+      const entry: FollowLog = {
+        id: docSnap.id,
+        campaignId: data.campaignId || '',
+        creatorId: data.creatorId || '',
+        followerUserId: data.followerUserId || '',
+        followerUsername: data.followerUsername || '',
+        followerEmail: data.followerEmail || '',
+        followerAvatar: data.followerAvatar || '',
+        followerName: data.followerName || '',
+        timestamp: data.timestamp || new Date().toISOString(),
+        status: (data.status as 'active' | 'reported') || 'active',
+        campaignTitle: data.campaignTitle || '',
+        reportedAt: data.reportedAt
+      };
+      // Deduplicate by campaignId + followerUserId or log id
+      const dedupKey = entry.campaignId && entry.followerUserId
+        ? `${entry.campaignId}_${entry.followerUserId}`
+        : entry.id;
+      const existing = logMap.get(dedupKey);
+      if (!existing || entry.status === 'reported') {
+        logMap.set(dedupKey, entry);
+      }
+    };
+
+    const queries: Promise<void>[] = [];
+
+    if (creatorId) {
+      queries.push(
+        getDocs(query(logsRef, where('creatorId', '==', creatorId)))
+          .then(snap => snap.forEach(parseSnap))
+          .catch(() => {})
+      );
+    }
+
+    const uniqueCampaignIds = Array.from(new Set(campaignIds.filter(Boolean)));
+    for (const cId of uniqueCampaignIds) {
+      queries.push(
+        getDocs(query(logsRef, where('campaignId', '==', cId)))
+          .then(snap => snap.forEach(parseSnap))
+          .catch(() => {})
+      );
+    }
+
+    await Promise.allSettled(queries);
+
+    const logs = Array.from(logMap.values());
+
+    // Enrich with follower's latest user document from Firestore
+    const uniqueUserIds = Array.from(new Set(logs.map(l => l.followerUserId).filter(Boolean)));
+    if (uniqueUserIds.length > 0) {
+      const userMap = new Map<string, any>();
+      await Promise.allSettled(
+        uniqueUserIds.map(async (uid) => {
+          try {
+            const uSnap = await getDoc(doc(db, 'users', uid));
+            if (uSnap.exists()) {
+              userMap.set(uid, uSnap.data());
+            }
+          } catch {}
+        })
+      );
+      logs.forEach(log => {
+        const uData = userMap.get(log.followerUserId);
+        if (uData) {
+          const hasRealAtoPlay = isRealAtoPlayAvatarUrl(uData.channelImage) && Boolean(uData.atoPlayUsername || uData.channelName);
+          if (hasRealAtoPlay) {
+            const syncedHandle = (uData.atoPlayUsername || uData.channelName || '').trim().replace(/^@+/, '');
+            const syncedName = (uData.channelName || uData.atoPlayUsername || uData.name || '').trim();
+            log.followerUsername = syncedHandle;
+            log.followerName = syncedName || log.followerName;
+            log.followerAvatar = uData.channelImage;
+          } else {
+            if (!log.followerUsername && (uData.atoPlayUsername || uData.channelName)) {
+              log.followerUsername = String(uData.atoPlayUsername || uData.channelName).trim().replace(/^@+/, '');
+            }
+            if (!log.followerName && (uData.channelName || uData.name)) {
+              log.followerName = uData.channelName || uData.name;
+            }
+            if (!log.followerAvatar && (uData.channelImage || uData.avatar)) {
+              log.followerAvatar = uData.channelImage || uData.avatar;
+            }
+          }
+          if (!log.followerEmail && uData.email) {
+            log.followerEmail = uData.email;
+          }
+        }
+      });
+    }
+
+    return logs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  } catch (err) {
+    console.warn('Error fetching creator follow logs from Firestore:', err);
+    return [];
+  }
+};
+
+/**
  * Report fake follow in Firestore:
  * - Marks log as 'reported' (using setDoc merge so it never fails if doc was missing)
  * - Increments warningCount for follower and deducts 30 coins
