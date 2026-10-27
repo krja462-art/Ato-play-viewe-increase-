@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { 
   Sparkles, 
   CheckCircle, 
@@ -28,6 +28,7 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onLoginSuccess, onOp
   const [googleLoading, setGoogleLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [legalModalTab, setLegalModalTab] = useState<LegalTabType | null>(null);
+  const loginInProgressRef = useRef(false);
   
   const [referralInput, setReferralInput] = useState('');
   const [showReferralField, setShowReferralField] = useState(false);
@@ -55,6 +56,7 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onLoginSuccess, onOp
 
   const handleNativeEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (loginInProgressRef.current) return;
     const cleanEmail = emailInput.trim().toLowerCase();
     const cleanPassword = passwordInput.trim();
     if (!cleanEmail || !cleanEmail.includes('@')) {
@@ -66,10 +68,12 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onLoginSuccess, onOp
       return;
     }
 
+    loginInProgressRef.current = true;
     setGoogleLoading(true);
     setErrorMessage(null);
     const atoRes = await loginAndFetchAtoPlayProfile(cleanEmail, cleanPassword);
     if (!atoRes.success || !atoRes.atoPlayProfile) {
+      loginInProgressRef.current = false;
       setGoogleLoading(false);
       setErrorMessage(atoRes.message || 'Invalid AtoPlay email or password.');
       return;
@@ -98,34 +102,77 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onLoginSuccess, onOp
   ) => {
     setGoogleLoading(true);
     setErrorMessage(null);
+    if (typeof window !== 'undefined') {
+      (window as any).__atoplayLoginInFlight = true;
+    }
     try {
       const cleanEmail = email.trim().toLowerCase();
       const name = displayName || cleanEmail.split('@')[0];
       const avatar = photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(cleanEmail)}`;
 
-      const userId = firebaseUid || (cleanEmail === 'krja462@gmail.com' ? 'admin_krja_primary' : `user_${cleanEmail.replace(/[^a-z0-9]/g, '_')}`);
+      // Check if localStorage already has an account for this exact Gmail address
+      let savedLocalId: string | undefined = undefined;
+      let savedLocalCoins: number | undefined = undefined;
+      try {
+        const raw = localStorage.getItem('atoviewer_user');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed && parsed.email?.toLowerCase().trim() === cleanEmail && parsed.id && !String(parsed.id).startsWith('guest_')) {
+            savedLocalId = parsed.id;
+            if (typeof parsed.coins === 'number') {
+              savedLocalCoins = parsed.coins;
+            }
+          }
+        }
+      } catch {}
+
       const isAdministrator = cleanEmail === 'krja462@gmail.com';
-      const initialCoins = isAdministrator ? 999999999 : 300;
+      const userId = firebaseUid || savedLocalId || (isAdministrator ? 'g_krja462_gmail_com' : `g_${cleanEmail.replace(/[^a-z0-9]/g, '_')}`);
+      const initialCoins = isAdministrator ? 999999999 : (savedLocalCoins ?? 100);
 
       let finalReferralCode = referralInput.trim().toUpperCase();
       if (!finalReferralCode && localStorage.getItem('atoplay_ref_code')) {
         finalReferralCode = localStorage.getItem('atoplay_ref_code') || '';
       }
 
-      // Sync with Backend
+      // 1. Sync with Firestore first so we resolve the single canonical user document for this Gmail
+      let firestoreUser: User | null = null;
+      try {
+        firestoreUser = await syncFirebaseUserWithFirestore({
+          uid: userId,
+          email: cleanEmail,
+          displayName: directAtoPlayProfile?.atoPlayUsername || name,
+          photoURL: directAtoPlayProfile?.channelImage || avatar
+        } as any, finalReferralCode);
+      } catch (fErr) {
+        console.warn('Firestore sync fallback:', fErr);
+      }
+
+      const canonicalId = firestoreUser?.id || userId;
+      const canonicalCoins = isAdministrator
+        ? 999999999
+        : Math.max(firestoreUser?.coins ?? 0, savedLocalCoins ?? 0, 100);
+
+      // 2. Sync with Backend using the exact same canonical UID and email
       let backendUser: User | null = null;
       try {
         const res = await apiFetch('/api/auth/google', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'x-user-id': canonicalId,
+            'x-user-email': cleanEmail
+          },
           body: JSON.stringify({
+            uid: canonicalId,
             email: cleanEmail,
             displayName: name,
             photoURL: avatar,
+            coins: canonicalCoins,
             referralCode: finalReferralCode,
-            atoPlayUsername: directAtoPlayProfile?.atoPlayUsername,
-            channelName: directAtoPlayProfile?.channelName,
-            channelImage: directAtoPlayProfile?.channelImage
+            atoPlayUsername: directAtoPlayProfile?.atoPlayUsername || firestoreUser?.atoPlayUsername,
+            channelName: directAtoPlayProfile?.channelName || firestoreUser?.channelName,
+            channelImage: directAtoPlayProfile?.channelImage || firestoreUser?.channelImage
           })
         });
         if (res?.success && res.user) {
@@ -133,19 +180,6 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onLoginSuccess, onOp
         }
       } catch (err) {
         console.warn('Backend login fallback:', err);
-      }
-
-      // Sync with Firestore
-      let firestoreUser: User | null = null;
-      try {
-        firestoreUser = await syncFirebaseUserWithFirestore({
-          uid: userId,
-          email: cleanEmail,
-          displayName: directAtoPlayProfile?.atoPlayUsername || backendUser?.channelName || backendUser?.atoPlayUsername || name,
-          photoURL: directAtoPlayProfile?.channelImage || backendUser?.channelImage || backendUser?.avatar || avatar
-        } as any, finalReferralCode);
-      } catch (fErr) {
-        console.warn('Firestore sync fallback:', fErr);
       }
 
       const candidateChannelImage =
@@ -170,19 +204,24 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onLoginSuccess, onOp
         ? (directAtoPlayProfile?.channelBanner || firestoreUser?.channelBanner || backendUser?.channelBanner || '')
         : '';
 
+      const mergedCoins = isAdministrator
+        ? 999999999
+        : Math.max(firestoreUser?.coins ?? 0, backendUser?.coins ?? 0, savedLocalCoins ?? 0, initialCoins);
+
       const loggedInUser: User = {
-        ...(firestoreUser || backendUser || {
-          id: userId,
+        ...(backendUser || firestoreUser || {
+          id: canonicalId,
           name: name,
           email: cleanEmail,
           avatar: avatar,
-          coins: initialCoins,
+          coins: mergedCoins,
           streak: 1,
           isAdmin: isAdministrator,
           createdAt: new Date().toISOString()
         }),
-        id: firestoreUser?.id || backendUser?.id || userId,
+        id: canonicalId,
         email: cleanEmail,
+        coins: mergedCoins,
         name: hasRealAtoPlaySync ? (syncedChannelName || syncedAtoPlayUsername) : (firestoreUser?.name || backendUser?.name || name),
         avatar: hasRealAtoPlaySync ? syncedChannelImage : (firestoreUser?.avatar || backendUser?.avatar || avatar),
         atoPlayUsername: syncedAtoPlayUsername,
@@ -210,10 +249,17 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onLoginSuccess, onOp
       console.error('Sign-In failed:', e);
       setErrorMessage(e?.message || 'Sign-In failed. Please try again.');
       setGoogleLoading(false);
+    } finally {
+      loginInProgressRef.current = false;
+      if (typeof window !== 'undefined') {
+        (window as any).__atoplayLoginInFlight = false;
+      }
     }
   };
 
   const handleGoogleSignIn = async () => {
+    if (loginInProgressRef.current) return;
+    loginInProgressRef.current = true;
     try {
       setGoogleLoading(true);
       setErrorMessage(null);
@@ -241,11 +287,13 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onLoginSuccess, onOp
           await signInWithGoogleRedirect();
           return;
         } catch (redirErr: any) {
+          loginInProgressRef.current = false;
           setGoogleLoading(false);
           setErrorMessage(redirErr?.message || 'Google Sign-In could not be started.');
           return;
         }
       }
+      loginInProgressRef.current = false;
       setGoogleLoading(false);
       if (errCode !== 'auth/popup-closed-by-user' && errCode !== 'auth/cancelled-popup-request') {
         setErrorMessage(err?.message || 'Google Sign-In failed. Please try again.');

@@ -109,38 +109,33 @@ export const logOut = async (): Promise<void> => {
 export const ADMIN_EMAIL = 'krja462@gmail.com';
 export const ADMIN_UNLIMITED_COINS = 999999999;
 
+// In-flight deduplication lock per email to prevent concurrent calls (e.g., onAuthStateChanged + manual login on slow network) from creating duplicate Firestore user documents
+const inFlightUserSyncByEmail = new Map<string, Promise<User>>();
+
 /**
  * Synchronize Google Firebase User profile with Cloud Firestore `/users/{uid}`
- * Loads saved coins and state if existing user, or awards 100 Welcome Bonus Coins if new user.
+ * Enforces strictly ONE account per Gmail address even under slow network or offline fallbacks.
+ * Merges any duplicate documents for the same email, preserves highest coin balance,
+ * or awards Welcome Bonus Coins if genuinely new user.
  * Grants Unlimited Coins (999,999,999) to Admin Account (krja462@gmail.com).
  */
 export const syncFirebaseUserWithFirestore = async (fbUser: FirebaseUser, pendingReferralCode?: string): Promise<User> => {
   const cleanEmail = (fbUser.email || '').toLowerCase().trim();
-  const isAdmin = cleanEmail === ADMIN_EMAIL || fbUser.uid.includes('krja462');
-  const now = new Date().toISOString();
-  const today = now.split('T')[0];
+  const lockKey = cleanEmail || fbUser.uid;
 
-  let userRef = doc(db, 'users', fbUser.uid);
-  let docSnap: any = null;
+  const existingPromise = inFlightUserSyncByEmail.get(lockKey);
+  if (existingPromise) {
+    return existingPromise;
+  }
 
-  try {
-    docSnap = await getDoc(userRef).catch(() => null);
+  const syncPromise = (async (): Promise<User> => {
+    const isAdmin = cleanEmail === ADMIN_EMAIL || fbUser.uid.includes('krja462');
+    const now = new Date().toISOString();
+    const today = now.split('T')[0];
 
-    // If not found by uid, query by email to prevent duplicate accounts when logging out and logging back in
-    if (!docSnap || !docSnap.exists()) {
-      try {
-        const q = query(collection(db, 'users'), where('email', '==', cleanEmail), limit(1));
-        const querySnap = await getDocs(q);
-        if (!querySnap.empty) {
-          const existingDoc = querySnap.docs[0];
-          userRef = existingDoc.ref;
-          docSnap = existingDoc;
-        }
-      } catch {}
-    }
-    
-    // Check if client had higher local coins before refresh
+    // Check if client already has local user state for this email or UID
     let localSavedCoins: number | null = null;
+    let localSavedId: string | null = null;
     let localAtoPlayUsername: string | null = null;
     let localChannelBanner: string | null = null;
     let localChannelImage: string | null = null;
@@ -149,8 +144,10 @@ export const syncFirebaseUserWithFirestore = async (fbUser: FirebaseUser, pendin
       const raw = localStorage.getItem('atoviewer_user');
       if (raw) {
         const p = JSON.parse(raw);
-        if (p && p.id === fbUser.uid) {
+        const pEmail = (p?.email || '').toLowerCase().trim();
+        if (p && (p.id === fbUser.uid || (cleanEmail && pEmail === cleanEmail))) {
           if (typeof p.coins === 'number') localSavedCoins = p.coins;
+          if (p.id && !String(p.id).startsWith('guest_')) localSavedId = p.id;
           if (p.atoPlayUsername) localAtoPlayUsername = p.atoPlayUsername;
           if (p.channelBanner) localChannelBanner = p.channelBanner;
           if (p.channelImage) localChannelImage = p.channelImage;
@@ -159,117 +156,193 @@ export const syncFirebaseUserWithFirestore = async (fbUser: FirebaseUser, pendin
       }
     } catch {}
 
-    if (docSnap.exists()) {
-      const data = docSnap.data();
-      const firestoreCoins = typeof data.coins === 'number' ? data.coins : 100;
-      const finalCoins = isAdmin 
-        ? ADMIN_UNLIMITED_COINS 
-        : Math.max(firestoreCoins, localSavedCoins ?? 100);
+    try {
+      const matchedDocsMap = new Map<string, { id: string; ref: any; data: any }>();
 
-      const candidateChannelImage = data.channelImage || localChannelImage || '';
-      const hasVerifiedAtoPlaySync = isRealAtoPlayAvatarUrl(candidateChannelImage) && Boolean(data.atoPlayUsername || localAtoPlayUsername || data.channelName || localChannelName);
-      const effectiveAtoPlayUsername = hasVerifiedAtoPlaySync ? (data.atoPlayUsername || localAtoPlayUsername || data.channelName || localChannelName || '') : '';
-      const effectiveChannelName = hasVerifiedAtoPlaySync ? (data.channelName || localChannelName || effectiveAtoPlayUsername) : '';
-      const effectiveChannelImage = hasVerifiedAtoPlaySync ? candidateChannelImage : '';
-
-      const existingUser: User = {
-        id: fbUser.uid,
-        name: hasVerifiedAtoPlaySync
-          ? (effectiveChannelName || effectiveAtoPlayUsername)
-          : (fbUser.displayName || data.name || (isAdmin ? 'Admin (KRJA)' : 'AtoPlay Creator')),
-        email: fbUser.email || data.email || cleanEmail,
-        coins: finalCoins,
-        avatar: hasVerifiedAtoPlaySync
-          ? effectiveChannelImage
-          : (fbUser.photoURL || data.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80'),
-        streak: typeof data.streak === 'number' ? data.streak : 1,
-        lastCheckIn: data.lastCheckIn || today,
-        createdAt: data.createdAt || now,
-        referralCode: data.referralCode || (isAdmin ? 'REF-KRJA' : `REF-${fbUser.uid.slice(-4).toUpperCase()}`),
-        referralsCount: typeof data.referralsCount === 'number' ? data.referralsCount : 0,
-        referralEarnings: typeof data.referralEarnings === 'number' ? data.referralEarnings : 0,
-        referredBy: data.referredBy,
-        isAdmin: isAdmin ? true : Boolean(data.isAdmin),
-        atoPlayUsername: effectiveAtoPlayUsername,
-        channelName: effectiveChannelName,
-        channelBanner: hasVerifiedAtoPlaySync ? (data.channelBanner || localChannelBanner || '') : '',
-        channelImage: effectiveChannelImage,
-        warningCount: typeof data.warningCount === 'number' ? data.warningCount : 0,
-        isFollowRestricted: Boolean(data.isFollowRestricted),
-        loginMethod: 'google'
-      };
-
-      setDoc(userRef, {
-        name: existingUser.name,
-        avatar: existingUser.avatar,
-        coins: finalCoins,
-        isAdmin: isAdmin ? true : Boolean(data.isAdmin),
-        atoPlayUsername: existingUser.atoPlayUsername,
-        channelName: existingUser.channelName,
-        channelBanner: existingUser.channelBanner,
-        channelImage: existingUser.channelImage,
-        warningCount: existingUser.warningCount,
-        isFollowRestricted: existingUser.isFollowRestricted,
-        loginMethod: 'google'
-      }, { merge: true }).catch(() => {});
-
-      return existingUser;
-    }
-  } catch (readErr) {
-    console.warn('Could not read user doc from Firestore, checking fallback:', readErr);
-  }
-
-  let localInitialCoins = pendingReferralCode ? 350 : 100;
-  let localAtoPlayUsernameFallback = '';
-  let localChannelBannerFallback = '';
-  let localChannelImageFallback = '';
-  let localChannelNameFallback = '';
-  try {
-    const raw = localStorage.getItem('atoviewer_user');
-    if (raw) {
-      const p = JSON.parse(raw);
-      if (p && p.id === fbUser.uid) {
-        if (typeof p.coins === 'number') localInitialCoins = Math.max(localInitialCoins, p.coins);
-        if (isRealAtoPlayAvatarUrl(p.channelImage)) {
-          if (p.atoPlayUsername) localAtoPlayUsernameFallback = p.atoPlayUsername;
-          if (p.channelBanner) localChannelBannerFallback = p.channelBanner;
-          if (p.channelImage) localChannelImageFallback = p.channelImage;
-          if (p.channelName) localChannelNameFallback = p.channelName;
+      // 1. Check direct UID doc
+      if (fbUser.uid) {
+        const directRef = doc(db, 'users', fbUser.uid);
+        const directSnap = await getDoc(directRef).catch(() => null);
+        if (directSnap && directSnap.exists()) {
+          matchedDocsMap.set(directSnap.id, { id: directSnap.id, ref: directRef, data: directSnap.data() });
         }
       }
+
+      // 2. Always query by normalized email to find any existing account(s) for this Gmail
+      if (cleanEmail) {
+        try {
+          const q = query(collection(db, 'users'), where('email', '==', cleanEmail), limit(10));
+          const querySnap = await getDocs(q);
+          querySnap.forEach((d) => {
+            if (!matchedDocsMap.has(d.id)) {
+              matchedDocsMap.set(d.id, { id: d.id, ref: d.ref, data: d.data() });
+            }
+          });
+        } catch {}
+      }
+
+      const matchedDocs = Array.from(matchedDocsMap.values());
+
+      if (matchedDocs.length > 0) {
+        // Choose canonical primary document:
+        // Prefer real Firebase Auth UID (not synthetic 'user_' or 'g_' fallback) if available, otherwise highest coin balance
+        const isSyntheticId = (id: string) => id.startsWith('user_') || id.startsWith('g_');
+        matchedDocs.sort((a, b) => {
+          const aReal = !isSyntheticId(a.id) ? 1 : 0;
+          const bReal = !isSyntheticId(b.id) ? 1 : 0;
+          if (aReal !== bReal) return bReal - aReal;
+          const aCoins = typeof a.data?.coins === 'number' ? a.data.coins : 0;
+          const bCoins = typeof b.data?.coins === 'number' ? b.data.coins : 0;
+          return bCoins - aCoins;
+        });
+
+        const primaryDoc = matchedDocs[0];
+        const canonicalId = (!isSyntheticId(fbUser.uid) && fbUser.uid) ? fbUser.uid : primaryDoc.id;
+        const canonicalRef = doc(db, 'users', canonicalId);
+
+        // Merge data across all matched documents for this email so nothing is ever lost
+        let maxFirestoreCoins = 100;
+        let maxReferralsCount = 0;
+        let maxReferralEarnings = 0;
+        let maxStreak = 1;
+        let maxWarningCount = 0;
+        let isFollowRestricted = false;
+        let mergedReferralCode = '';
+        let mergedReferredBy: string | undefined = undefined;
+        let mergedCreatedAt = now;
+        let mergedLastCheckIn = today;
+        let mergedName = '';
+        let mergedAvatar = '';
+        let mergedAtoPlayUsername = '';
+        let mergedChannelName = '';
+        let mergedChannelImage = '';
+        let mergedChannelBanner = '';
+        let mergedIsAdmin = isAdmin;
+
+        for (const item of matchedDocs) {
+          const d = item.data || {};
+          if (typeof d.coins === 'number' && d.coins > maxFirestoreCoins) maxFirestoreCoins = d.coins;
+          if (typeof d.referralsCount === 'number' && d.referralsCount > maxReferralsCount) maxReferralsCount = d.referralsCount;
+          if (typeof d.referralEarnings === 'number' && d.referralEarnings > maxReferralEarnings) maxReferralEarnings = d.referralEarnings;
+          if (typeof d.streak === 'number' && d.streak > maxStreak) maxStreak = d.streak;
+          if (typeof d.warningCount === 'number' && d.warningCount > maxWarningCount) maxWarningCount = d.warningCount;
+          if (d.isFollowRestricted) isFollowRestricted = true;
+          if (!mergedReferralCode && d.referralCode) mergedReferralCode = d.referralCode;
+          if (!mergedReferredBy && d.referredBy) mergedReferredBy = d.referredBy;
+          if (d.createdAt && d.createdAt < mergedCreatedAt) mergedCreatedAt = d.createdAt;
+          if (d.lastCheckIn) mergedLastCheckIn = d.lastCheckIn;
+          if (!mergedName && d.name) mergedName = d.name;
+          if (!mergedAvatar && d.avatar) mergedAvatar = d.avatar;
+          if (!mergedAtoPlayUsername && d.atoPlayUsername) mergedAtoPlayUsername = d.atoPlayUsername;
+          if (!mergedChannelName && d.channelName) mergedChannelName = d.channelName;
+          if (!mergedChannelImage && isRealAtoPlayAvatarUrl(d.channelImage)) mergedChannelImage = d.channelImage;
+          if (!mergedChannelBanner && d.channelBanner) mergedChannelBanner = d.channelBanner;
+          if (d.isAdmin) mergedIsAdmin = true;
+        }
+
+        const finalCoins = mergedIsAdmin
+          ? ADMIN_UNLIMITED_COINS
+          : Math.max(maxFirestoreCoins, localSavedCoins ?? 100);
+
+        const candidateChannelImage = mergedChannelImage || localChannelImage || '';
+        const hasVerifiedAtoPlaySync = isRealAtoPlayAvatarUrl(candidateChannelImage) && Boolean(
+          mergedAtoPlayUsername || localAtoPlayUsername || mergedChannelName || localChannelName
+        );
+        const effectiveAtoPlayUsername = hasVerifiedAtoPlaySync
+          ? (mergedAtoPlayUsername || localAtoPlayUsername || mergedChannelName || localChannelName || '')
+          : '';
+        const effectiveChannelName = hasVerifiedAtoPlaySync
+          ? (mergedChannelName || localChannelName || effectiveAtoPlayUsername)
+          : '';
+        const effectiveChannelImage = hasVerifiedAtoPlaySync ? candidateChannelImage : '';
+
+        const existingUser: User = {
+          id: canonicalId,
+          name: hasVerifiedAtoPlaySync
+            ? (effectiveChannelName || effectiveAtoPlayUsername)
+            : (fbUser.displayName || mergedName || (mergedIsAdmin ? 'Admin (KRJA)' : 'AtoPlay Creator')),
+          email: cleanEmail || fbUser.email || primaryDoc.data?.email || '',
+          coins: finalCoins,
+          avatar: hasVerifiedAtoPlaySync
+            ? effectiveChannelImage
+            : (fbUser.photoURL || mergedAvatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80'),
+          streak: maxStreak,
+          lastCheckIn: mergedLastCheckIn,
+          createdAt: mergedCreatedAt,
+          referralCode: mergedReferralCode || (mergedIsAdmin ? 'REF-KRJA' : `REF-${canonicalId.slice(-4).toUpperCase()}`),
+          referralsCount: maxReferralsCount,
+          referralEarnings: maxReferralEarnings,
+          referredBy: mergedReferredBy,
+          isAdmin: mergedIsAdmin,
+          atoPlayUsername: effectiveAtoPlayUsername,
+          channelName: effectiveChannelName,
+          channelBanner: hasVerifiedAtoPlaySync ? (mergedChannelBanner || localChannelBanner || '') : '',
+          channelImage: effectiveChannelImage,
+          warningCount: maxWarningCount,
+          isFollowRestricted,
+          loginMethod: 'google'
+        };
+
+        await setDoc(canonicalRef, {
+          ...existingUser,
+          updatedAt: now
+        }, { merge: true }).catch(() => {});
+
+        // Delete any duplicate secondary documents for the same Gmail address
+        for (const item of matchedDocs) {
+          if (item.id !== canonicalId) {
+            deleteDoc(doc(db, 'users', item.id)).catch(() => {});
+          }
+        }
+
+        return existingUser;
+      }
+    } catch (readErr) {
+      console.warn('Could not read user doc from Firestore, checking fallback:', readErr);
     }
-  } catch {}
 
-  const newUser: User = {
-    id: fbUser.uid,
-    name: localChannelNameFallback || fbUser.displayName || (isAdmin ? 'Admin (KRJA)' : (cleanEmail ? cleanEmail.split('@')[0] : 'AtoPlay Creator')),
-    email: cleanEmail,
-    coins: isAdmin ? ADMIN_UNLIMITED_COINS : localInitialCoins,
-    avatar: localChannelImageFallback || fbUser.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80',
-    streak: 1,
-    lastCheckIn: today,
-    createdAt: now,
-    referralCode: isAdmin ? 'REF-KRJA' : `REF-${fbUser.uid.slice(-4).toUpperCase()}`,
-    referralsCount: 0,
-    referralEarnings: 0,
-    referredBy: pendingReferralCode || undefined,
-    isAdmin: isAdmin ? true : undefined,
-    atoPlayUsername: localAtoPlayUsernameFallback,
-    channelName: localChannelNameFallback,
-    channelBanner: localChannelBannerFallback,
-    channelImage: localChannelImageFallback,
-    warningCount: 0,
-    isFollowRestricted: false,
-    loginMethod: 'google'
-  };
+    const canonicalNewId = fbUser.uid || localSavedId || (isAdmin ? 'g_krja462_gmail_com' : `g_${cleanEmail.replace(/[^a-z0-9]/g, '_')}`);
+    const localInitialCoins = Math.max(pendingReferralCode ? 350 : 100, localSavedCoins ?? 0);
+    const hasLocalRealSync = isRealAtoPlayAvatarUrl(localChannelImage);
 
+    const newUser: User = {
+      id: canonicalNewId,
+      name: (hasLocalRealSync && localChannelName) || fbUser.displayName || (isAdmin ? 'Admin (KRJA)' : (cleanEmail ? cleanEmail.split('@')[0] : 'AtoPlay Creator')),
+      email: cleanEmail,
+      coins: isAdmin ? ADMIN_UNLIMITED_COINS : localInitialCoins,
+      avatar: (hasLocalRealSync && localChannelImage) || fbUser.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80',
+      streak: 1,
+      lastCheckIn: today,
+      createdAt: now,
+      referralCode: isAdmin ? 'REF-KRJA' : `REF-${canonicalNewId.slice(-4).toUpperCase()}`,
+      referralsCount: 0,
+      referralEarnings: 0,
+      referredBy: pendingReferralCode || undefined,
+      isAdmin: isAdmin ? true : undefined,
+      atoPlayUsername: hasLocalRealSync ? (localAtoPlayUsername || '') : '',
+      channelName: hasLocalRealSync ? (localChannelName || '') : '',
+      channelBanner: hasLocalRealSync ? (localChannelBanner || '') : '',
+      channelImage: hasLocalRealSync ? (localChannelImage || '') : '',
+      warningCount: 0,
+      isFollowRestricted: false,
+      loginMethod: 'google'
+    };
+
+    try {
+      await setDoc(doc(db, 'users', canonicalNewId), newUser, { merge: true });
+    } catch (writeErr) {
+      console.warn('Could not persist new user doc to Firestore:', writeErr);
+    }
+
+    return newUser;
+  })();
+
+  inFlightUserSyncByEmail.set(lockKey, syncPromise);
   try {
-    await setDoc(userRef, newUser, { merge: true });
-  } catch (writeErr) {
-    console.warn('Could not persist new user doc to Firestore:', writeErr);
+    return await syncPromise;
+  } finally {
+    inFlightUserSyncByEmail.delete(lockKey);
   }
-
-  return newUser;
 };
 
 /**
@@ -690,19 +763,23 @@ export const saveSupportMessageToFirestore = async (messageData: {
 };
 
 /**
- * Get all registered users from Cloud Firestore
+ * Get all registered users from Cloud Firestore (deduplicated by email)
  */
 export const getAllFirestoreUsers = async (): Promise<User[]> => {
   try {
     const q = query(collection(db, 'users'));
     const snapshot = await getDocs(q);
-    const list: User[] = [];
+    const byEmailMap = new Map<string, User>();
+    const duplicateIdsToDelete: string[] = [];
+    const isSyntheticId = (id: string) => id.startsWith('user_') || id.startsWith('g_');
+
     snapshot.forEach(docSnap => {
       const data = docSnap.data();
-      list.push({
+      const cleanEmail = (data.email || '').toLowerCase().trim();
+      const candidate: User = {
         id: docSnap.id,
         name: data.name || 'Creator',
-        email: data.email || '',
+        email: cleanEmail || data.email || '',
         coins: typeof data.coins === 'number' ? data.coins : 100,
         avatar: data.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80',
         streak: data.streak || 1,
@@ -711,10 +788,47 @@ export const getAllFirestoreUsers = async (): Promise<User[]> => {
         referralsCount: data.referralsCount || 0,
         referralEarnings: data.referralEarnings || 0,
         referredBy: data.referredBy,
-        isAdmin: data.isAdmin
-      });
+        isAdmin: data.isAdmin,
+        atoPlayUsername: data.atoPlayUsername,
+        channelName: data.channelName,
+        channelImage: data.channelImage,
+        channelBanner: data.channelBanner
+      };
+
+      const key = cleanEmail || docSnap.id;
+      const existing = byEmailMap.get(key);
+      if (!existing) {
+        byEmailMap.set(key, candidate);
+      } else {
+        // Merge duplicate docs for the same Gmail into a single primary user
+        const preferCandidateId = !isSyntheticId(candidate.id) && isSyntheticId(existing.id);
+        const primary = preferCandidateId ? candidate : existing;
+        const secondary = preferCandidateId ? existing : candidate;
+        const mergedCoins = Math.max(primary.coins || 0, secondary.coins || 0);
+
+        const merged: User = {
+          ...secondary,
+          ...primary,
+          id: primary.id,
+          coins: mergedCoins,
+          referralsCount: Math.max(primary.referralsCount || 0, secondary.referralsCount || 0),
+          referralEarnings: Math.max(primary.referralEarnings || 0, secondary.referralEarnings || 0),
+          atoPlayUsername: primary.atoPlayUsername || secondary.atoPlayUsername,
+          channelName: primary.channelName || secondary.channelName,
+          channelImage: primary.channelImage || secondary.channelImage,
+          channelBanner: primary.channelBanner || secondary.channelBanner
+        };
+        byEmailMap.set(key, merged);
+        duplicateIdsToDelete.push(secondary.id);
+        setDoc(doc(db, 'users', primary.id), { coins: mergedCoins }, { merge: true }).catch(() => {});
+      }
     });
-    return list;
+
+    for (const dupId of duplicateIdsToDelete) {
+      deleteDoc(doc(db, 'users', dupId)).catch(() => {});
+    }
+
+    return Array.from(byEmailMap.values());
   } catch (err) {
     console.warn('Error fetching users from Firestore:', err);
     return [];

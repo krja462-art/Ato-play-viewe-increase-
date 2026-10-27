@@ -330,6 +330,9 @@ export async function apiFetch<T = any>(endpoint: string, options?: RequestInit)
   if (user?.id && !headers.has('x-user-id')) {
     headers.set('x-user-id', user.id);
   }
+  if (user?.email && !headers.has('x-user-email')) {
+    headers.set('x-user-email', user.email.toLowerCase().trim());
+  }
   if (user?.coins !== undefined && !headers.has('x-user-coins')) {
     headers.set('x-user-coins', String(user.coins));
   }
@@ -481,23 +484,26 @@ async function handleClientFallback<T>(endpoint: string, options?: RequestInit, 
 
   // 1. Firebase Login / Google Sign-In Fallback
   if (endpoint.startsWith('/api/auth/firebase-login') || endpoint.startsWith('/api/auth/google')) {
-    const { uid, email, name, displayName, avatar, photoURL } = parsedBody;
+    const { uid, email, name, displayName, avatar, photoURL, coins: requestedCoins } = parsedBody;
     const cleanEmail = String(email || 'user@gmail.com').trim().toLowerCase();
     const isAdmin = cleanEmail === 'krja462@gmail.com' || String(uid || '').includes('krja462');
-    const effectiveUid = uid || `g_${cleanEmail.replace(/[^a-zA-Z0-9]/g, '_')}`;
     const googleName = name || displayName || (isAdmin ? 'Admin (KRJA)' : cleanEmail.split('@')[0]);
     const googleAvatar = avatar || photoURL || `https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80`;
 
     let user = getStoredUser();
     let isNewUser = false;
 
-    if (!user || user.email?.toLowerCase().trim() !== cleanEmail) {
+    const existingSameEmail = Boolean(user && user.email?.toLowerCase().trim() === cleanEmail);
+    const effectiveUid = uid || (existingSameEmail && user?.id && !String(user.id).startsWith('guest_') ? user.id : `g_${cleanEmail.replace(/[^a-zA-Z0-9]/g, '_')}`);
+    const incomingCoins = typeof requestedCoins === 'number' && !isNaN(requestedCoins) ? requestedCoins : 100;
+
+    if (!user || !existingSameEmail) {
       isNewUser = true;
       user = {
         id: effectiveUid,
         name: googleName,
         email: cleanEmail,
-        coins: isAdmin ? 999999999 : 100, // Unlimited coins for Admin, 100 Welcome Bonus coins on first login
+        coins: isAdmin ? 999999999 : Math.max(100, incomingCoins),
         avatar: googleAvatar,
         streak: 1,
         lastCheckIn: new Date().toISOString().split('T')[0],
@@ -517,9 +523,12 @@ async function handleClientFallback<T>(endpoint: string, options?: RequestInit, 
         createdAt: new Date().toISOString()
       });
     } else {
+      user.id = effectiveUid;
       if (isAdmin) {
         user.coins = 999999999;
         user.isAdmin = true;
+      } else {
+        user.coins = Math.max(user.coins || 100, incomingCoins);
       }
       // Preserve synced AtoPlay username & avatar if already synced; otherwise use Google profile
       const hasSyncedAtoPlayAvatar = isRealAtoPlayAvatarUrl(user.channelImage);

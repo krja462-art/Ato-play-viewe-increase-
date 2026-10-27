@@ -486,18 +486,34 @@ referralCodes["REF-KRJA"] = adminUid;
 
 function getActiveUser(req: express.Request): User | null {
   const uid = (req.headers['x-user-id'] as string) || (req.body && req.body.userId) || (req.query && (req.query.uid as string));
-  let user = (uid && users[uid]) ? users[uid] : currentSessionUser;
-
+  const emailHeader = ((req.headers['x-user-email'] as string) || (req.body && req.body.email) || '').toLowerCase().trim();
   const clientCoinsHeader = req.headers['x-user-coins'] ? parseInt(req.headers['x-user-coins'] as string, 10) : undefined;
 
-  // Auto-restore session user if uid was sent but memory was refreshed
-  if (!user && uid) {
-    const cleanUid = String(uid).trim();
-    const isAdmin = cleanUid.includes('krja462') || cleanUid === adminUid;
+  let user: User | null = (uid && users[uid]) ? users[uid] : null;
+
+  // If not found by UID, check by normalized email so we never create a duplicate account for the same Gmail
+  if (!user && emailHeader) {
+    const existingByEmail = Object.values(users).find(
+      u => u && u.email && u.email.toLowerCase().trim() === emailHeader
+    );
+    if (existingByEmail) {
+      user = existingByEmail;
+    }
+  }
+
+  if (!user && !uid && !emailHeader) {
+    user = currentSessionUser;
+  }
+
+  // Auto-restore session user if uid or email was sent but memory was refreshed
+  if (!user && (uid || emailHeader)) {
+    const cleanUid = String(uid || `g_${emailHeader.replace(/[^a-z0-9]/g, '_')}`).trim();
+    const effectiveEmail = emailHeader || (cleanUid.includes('@') ? cleanUid.toLowerCase() : "user@atoplay.com");
+    const isAdmin = effectiveEmail === ADMIN_EMAIL || cleanUid.includes('krja462') || cleanUid === adminUid;
     users[cleanUid] = {
       id: cleanUid,
-      name: isAdmin ? "Admin (KRJA)" : "AtoPlay User",
-      email: isAdmin ? ADMIN_EMAIL : (cleanUid.includes('@') ? cleanUid : "user@atoplay.com"),
+      name: isAdmin ? "Admin (KRJA)" : (effectiveEmail !== "user@atoplay.com" ? effectiveEmail.split('@')[0] : "AtoPlay User"),
+      email: isAdmin ? ADMIN_EMAIL : effectiveEmail,
       coins: isAdmin ? ADMIN_UNLIMITED_COINS : (typeof clientCoinsHeader === 'number' && !isNaN(clientCoinsHeader) ? clientCoinsHeader : 100),
       avatar: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80",
       streak: 1,
@@ -505,7 +521,7 @@ function getActiveUser(req: express.Request): User | null {
       createdAt: new Date().toISOString(),
       referralsCount: 0,
       referralEarnings: 0,
-      referralCode: `REF-${cleanUid.slice(0, 6).toUpperCase()}`,
+      referralCode: `REF-${cleanUid.slice(-4).toUpperCase()}`,
       isAdmin
     };
     user = users[cleanUid];
@@ -1024,6 +1040,7 @@ app.post(["/api/auth/firebase-login", "/api/auth/google"], async (req, res) => {
     avatar,
     displayName,
     photoURL,
+    coins: clientRequestedCoins,
     atoPlayPassword,
     atoPlayUsername: clientAtoPlayUsername,
     channelImage: clientChannelImage,
@@ -1038,24 +1055,25 @@ app.post(["/api/auth/firebase-login", "/api/auth/google"], async (req, res) => {
   const isAdmin = cleanEmail === ADMIN_EMAIL || String(uid || '').includes('krja462');
   const googleName = name || displayName || (isAdmin ? "Admin (KRJA)" : cleanEmail.split('@')[0]);
   const googleAvatar = avatar || photoURL || `https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80`;
-  
-  // Find existing user by email to prevent duplicate accounts when logging out and logging back in
-  let existingKey = Object.keys(users).find(key => {
+  const incomingCoins = typeof clientRequestedCoins === 'number' && !isNaN(clientRequestedCoins) ? clientRequestedCoins : undefined;
+
+  // Find ALL existing user records by email or uid so we never keep duplicate accounts for the same Gmail
+  const matchingKeys = Object.keys(users).filter(key => {
     const u = users[key];
-    return u && u.email && u.email.toLowerCase().trim() === cleanEmail;
+    return u && ((u.email && u.email.toLowerCase().trim() === cleanEmail) || (uid && key === uid));
   });
 
-  let user = existingKey ? users[existingKey] : null;
+  let user: User | null = null;
   let isNewUser = false;
 
-  if (!user) {
+  if (matchingKeys.length === 0) {
     isNewUser = true;
     const effectiveUid = uid || `g_${cleanEmail.replace(/[^a-zA-Z0-9]/g, '_')}`;
     user = {
       id: effectiveUid,
       name: googleName,
       email: cleanEmail,
-      coins: isAdmin ? ADMIN_UNLIMITED_COINS : 300, // Unlimited coins for admin, 300 Starter Welcome Bonus
+      coins: isAdmin ? ADMIN_UNLIMITED_COINS : Math.max(300, incomingCoins ?? 300),
       avatar: googleAvatar,
       streak: 1,
       lastCheckIn: new Date().toISOString().split('T')[0],
@@ -1070,7 +1088,7 @@ app.post(["/api/auth/firebase-login", "/api/auth/google"], async (req, res) => {
 
     transactions.push({
       id: `tx_${Date.now()}`,
-      userId: uid,
+      userId: effectiveUid,
       type: "bonus_signup",
       amount: isAdmin ? ADMIN_UNLIMITED_COINS : 100,
       description: isAdmin ? "Admin Unlimited Coins Granted" : "Welcome Bonus Coins on Google Signup (+100 Coins)",
@@ -1083,7 +1101,7 @@ app.post(["/api/auth/firebase-login", "/api/auth/google"], async (req, res) => {
       const referrerId = referralCodes[cleanRef];
       const referrer = referrerId ? users[referrerId] : null;
 
-      if (referrer && referrer.id !== uid) {
+      if (referrer && referrer.id !== effectiveUid) {
         user.referredBy = referrer.id;
         referrer.coins += 250;
         referrer.referralsCount = (referrer.referralsCount || 0) + 1;
@@ -1110,9 +1128,41 @@ app.post(["/api/auth/firebase-login", "/api/auth/google"], async (req, res) => {
       }
     }
   } else {
+    // Merge all matching records for this Gmail into a single canonical user object
+    const isSyntheticId = (id: string) => id.startsWith('user_') || id.startsWith('g_');
+    const canonicalId = (uid && !isSyntheticId(String(uid))) ? String(uid) : matchingKeys[0];
+    const primaryExisting = users[matchingKeys[0]];
+    let maxCoins = primaryExisting.coins || 100;
+    let maxReferrals = primaryExisting.referralsCount || 0;
+    let maxEarnings = primaryExisting.referralEarnings || 0;
+
+    for (const k of matchingKeys) {
+      const candidate = users[k];
+      if (!candidate) continue;
+      if ((candidate.coins || 0) > maxCoins) maxCoins = candidate.coins;
+      if ((candidate.referralsCount || 0) > maxReferrals) maxReferrals = candidate.referralsCount || 0;
+      if ((candidate.referralEarnings || 0) > maxEarnings) maxEarnings = candidate.referralEarnings || 0;
+      if (!primaryExisting.atoPlayUsername && candidate.atoPlayUsername) primaryExisting.atoPlayUsername = candidate.atoPlayUsername;
+      if (!primaryExisting.channelName && candidate.channelName) primaryExisting.channelName = candidate.channelName;
+      if (!primaryExisting.channelImage && candidate.channelImage) primaryExisting.channelImage = candidate.channelImage;
+      if (!primaryExisting.referralCode && candidate.referralCode) primaryExisting.referralCode = candidate.referralCode;
+      if (k !== canonicalId) {
+        delete users[k];
+      }
+    }
+
+    user = primaryExisting;
+    user.id = canonicalId;
+    user.email = cleanEmail;
+    user.referralsCount = maxReferrals;
+    user.referralEarnings = maxEarnings;
+    users[canonicalId] = user;
+
     if (isAdmin) {
       user.coins = ADMIN_UNLIMITED_COINS;
       user.isAdmin = true;
+    } else {
+      user.coins = Math.max(maxCoins, incomingCoins ?? 0);
     }
     const hasSyncedAtoPlayAvatar = isRealAtoPlayAvatarOnServer(user.channelImage);
     if (user.atoPlayUsername && hasSyncedAtoPlayAvatar) {

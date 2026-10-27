@@ -187,25 +187,30 @@ export default function App() {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
       if (fbUser && fbUser.email) {
+        // If SplashScreen is already actively completing manual login, do not run a duplicate parallel sync
+        if (typeof window !== 'undefined' && (window as any).__atoplayLoginInFlight) {
+          setLoading(false);
+          return;
+        }
         try {
           let syncedUser = await syncFirebaseUserWithFirestore(fbUser);
           setUser(syncedUser);
           localStorage.setItem('atoviewer_user', JSON.stringify(syncedUser));
 
-          const googleIdToken = typeof window !== 'undefined' ? (sessionStorage.getItem('atoplay_google_id_token') || undefined) : undefined;
-
-          // Also inform server API session
+          // Also inform server API session with canonical ID and coin balance
           const res = await apiFetch('/api/auth/firebase-login', {
             method: 'POST',
             headers: { 
               'Content-Type': 'application/json',
-              'x-user-id': fbUser.uid
+              'x-user-id': syncedUser.id,
+              'x-user-email': syncedUser.email
             },
             body: JSON.stringify({
-              uid: fbUser.uid,
-              email: fbUser.email,
+              uid: syncedUser.id,
+              email: syncedUser.email,
               name: fbUser.displayName || syncedUser.name,
               avatar: fbUser.photoURL || syncedUser.avatar,
+              coins: syncedUser.coins,
               atoPlayUsername: syncedUser.atoPlayUsername,
               channelName: syncedUser.channelName,
               channelImage: syncedUser.channelImage
@@ -222,9 +227,12 @@ export default function App() {
             const mergedChannelName = hasAtoPlay ? (syncedUser.channelName || srvUser.channelName || mergedAtoPlayUsername) : '';
             const mergedChannelImage = hasAtoPlay ? candidateImage : '';
             const mergedChannelBanner = hasAtoPlay ? (syncedUser.channelBanner || srvUser.channelBanner || '') : '';
+            const mergedCoins = syncedUser.isAdmin ? ADMIN_UNLIMITED_COINS : Math.max(syncedUser.coins || 0, srvUser.coins || 0);
 
             syncedUser = {
               ...syncedUser,
+              id: syncedUser.id,
+              coins: mergedCoins,
               atoPlayUsername: mergedAtoPlayUsername,
               channelName: mergedChannelName,
               channelImage: mergedChannelImage,
