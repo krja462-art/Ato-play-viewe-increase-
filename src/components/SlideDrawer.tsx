@@ -32,7 +32,7 @@ import {
 } from 'lucide-react';
 import { User } from '../types';
 import { usePWAInstall } from '../hooks/usePWAInstall';
-import { apiFetch } from '../lib/api';
+import { apiFetch, loginAndFetchAtoPlayProfile, isRealAtoPlayAvatarUrl } from '../lib/api';
 import { saveSupportMessageToFirestore, saveUserAtoPlayProfileToFirestore } from '../lib/firebase';
 
 import { AtoPlayBadge } from './AtoPlayBadge';
@@ -67,12 +67,12 @@ export const SlideDrawer: React.FC<SlideDrawerProps> = ({
   const [redeeming, setRedeeming] = useState(false);
   const [redeemMessage, setRedeemMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  // AtoPlay Profile Sync State
+  // AtoPlay Profile Sync State (Email + Password Login Sync)
   const [syncingAtoPlay, setSyncingAtoPlay] = useState(false);
   const [showManualSyncInput, setShowManualSyncInput] = useState(false);
-  const [manualAtoPlayInput, setManualAtoPlayInput] = useState('');
-  const [syncStatusMsg, setSyncStatusMsg] = useState<string | null>(null);
-  const triedAutoSyncRef = React.useRef<string | null>(null);
+  const [atoPlayEmailInput, setAtoPlayEmailInput] = useState(user?.email || '');
+  const [atoPlayPasswordInput, setAtoPlayPasswordInput] = useState('');
+  const [syncStatusMsg, setSyncStatusMsg] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
 
   // Contact Form State
   const [contactSubject, setContactSubject] = useState('');
@@ -84,75 +84,100 @@ export const SlideDrawer: React.FC<SlideDrawerProps> = ({
 
   React.useEffect(() => {
     if (user?.name && !contactName) setContactName(user.name);
-    if (user?.email && !contactEmail) setContactEmail(user.email);
+    if (user?.email) {
+      if (!contactEmail) setContactEmail(user.email);
+      if (!atoPlayEmailInput) setAtoPlayEmailInput(user.email);
+    }
   }, [user]);
 
-  const handleSyncAtoPlayProfile = React.useCallback(async (queryOverride?: string, silent = false) => {
+  const handleSyncAtoPlayWithPassword = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     if (!user || user.id.startsWith('guest_')) return;
-    try {
-      if (!silent) {
-        setSyncingAtoPlay(true);
-        setSyncStatusMsg(null);
-      }
-      const googleIdToken = typeof window !== 'undefined' ? (sessionStorage.getItem('atoplay_google_id_token') || undefined) : undefined;
-      const res = await apiFetch('/api/atoplay/sync-profile', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-user-id': user.id
-        },
-        body: JSON.stringify({
-          email: user.email,
-          channelQuery: queryOverride ? queryOverride.trim() : undefined,
-          googleIdToken
-        })
-      });
 
-      if (res?.success && res.synced && res.user) {
+    const cleanEmail = (atoPlayEmailInput || user.email || '').trim().toLowerCase();
+    const cleanPassword = atoPlayPasswordInput.trim();
+
+    if (!cleanEmail || !cleanEmail.includes('@')) {
+      setSyncStatusMsg({ type: 'error', text: 'Please enter your valid AtoPlay Gmail address.' });
+      return;
+    }
+    if (!cleanPassword) {
+      setSyncStatusMsg({ type: 'error', text: 'Please enter your AtoPlay account password to sync.' });
+      return;
+    }
+
+    try {
+      setSyncingAtoPlay(true);
+      setSyncStatusMsg(null);
+
+      // 1. Directly authenticate with AtoPlay API and fetch /api/users/me (works on increase.vercel.app & local)
+      const directRes = await loginAndFetchAtoPlayProfile(cleanEmail, cleanPassword);
+
+      if (directRes.success && directRes.atoPlayProfile) {
+        const syncedName = directRes.atoPlayProfile.atoPlayUsername;
+        const syncedAvatar = directRes.atoPlayProfile.channelImage || user.channelImage || user.avatar;
+        const syncedBanner = directRes.atoPlayProfile.channelBanner || user.channelBanner;
+
         const updatedUser: User = {
           ...user,
-          ...res.user,
-          coins: Math.max(user.coins || 0, res.user.coins || 0)
+          name: syncedName,
+          atoPlayUsername: syncedName,
+          channelName: syncedName,
+          channelImage: syncedAvatar,
+          avatar: syncedAvatar,
+          ...(syncedBanner ? { channelBanner: syncedBanner } : {})
         };
+
         localStorage.setItem('atoviewer_user', JSON.stringify(updatedUser));
+        localStorage.setItem('atoplay_active_user', JSON.stringify(updatedUser));
         if (onUserUpdate) onUserUpdate(updatedUser);
+
+        // 2. Persist synced AtoPlay account name & avatar to Firestore + update all existing follow_logs
         saveUserAtoPlayProfileToFirestore(updatedUser.id, {
-          atoPlayUsername: updatedUser.atoPlayUsername,
-          channelName: updatedUser.channelName,
-          channelImage: updatedUser.channelImage,
-          channelBanner: updatedUser.channelBanner,
-          name: updatedUser.name,
-          avatar: updatedUser.avatar,
+          atoPlayUsername: syncedName,
+          channelName: syncedName,
+          channelImage: syncedAvatar,
+          channelBanner: syncedBanner,
+          name: syncedName,
+          avatar: syncedAvatar,
           email: updatedUser.email
         }).catch(() => {});
-        if (!silent) {
-          setShowManualSyncInput(false);
-          setManualAtoPlayInput('');
-          setSyncStatusMsg('AtoPlay profile synced!');
-          setTimeout(() => setSyncStatusMsg(null), 3000);
-        }
-      } else if (!silent) {
-        setSyncStatusMsg(res?.message || 'No AtoPlay channel found for this Gmail. Enter your AtoPlay username or channel link to sync.');
-        setShowManualSyncInput(true);
-      }
-    } catch {
-      if (!silent) {
-        setSyncStatusMsg('Could not reach AtoPlay right now.');
-      }
-    } finally {
-      if (!silent) setSyncingAtoPlay(false);
-    }
-  }, [user, onUserUpdate]);
 
-  // Automatically check AtoPlay sync by Gmail when drawer opens if not already synced
-  React.useEffect(() => {
-    if (isOpen && user && !user.id.startsWith('guest_') && !user.atoPlayUsername && !user.channelName) {
-      if (triedAutoSyncRef.current !== user.email) {
-        triedAutoSyncRef.current = user.email;
-        handleSyncAtoPlayProfile(undefined, true);
+        // 3. Also sync with server memory if backend is running
+        apiFetch('/api/atoplay/sync-profile', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-user-id': user.id
+          },
+          body: JSON.stringify({
+            email: cleanEmail,
+            password: cleanPassword
+          })
+        }).catch(() => {});
+
+        setAtoPlayPasswordInput('');
+        setShowManualSyncInput(false);
+        setSyncStatusMsg({
+          type: 'success',
+          text: `AtoPlay account "${syncedName}" & profile photo synced!`
+        });
+        setTimeout(() => setSyncStatusMsg(null), 4000);
+      } else {
+        setSyncStatusMsg({
+          type: 'error',
+          text: directRes.message || 'Invalid AtoPlay email or password. Please try again.'
+        });
       }
+    } catch (err: any) {
+      setSyncStatusMsg({
+        type: 'error',
+        text: err?.message || 'Could not connect to AtoPlay right now.'
+      });
+    } finally {
+      setSyncingAtoPlay(false);
     }
-  }, [isOpen, user, handleSyncAtoPlayProfile]);
+  };
 
   const referralCode = user?.referralCode || 'REF-A482';
   const referralLink = typeof window !== 'undefined' 
@@ -347,9 +372,14 @@ export const SlideDrawer: React.FC<SlideDrawerProps> = ({
 
             {/* User Profile Card */}
             {user && (() => {
-              const isAtoPlaySynced = Boolean(user.atoPlayUsername || user.channelName);
-              const displayUsername = (user.channelName || user.atoPlayUsername || user.name || 'Creator').trim();
-              const displayHandle = (user.atoPlayUsername || user.channelName || '').trim().replace(/^@+/, '');
+              const hasRealAtoPlayAvatar = isRealAtoPlayAvatarUrl(user.channelImage);
+              const isAtoPlaySynced = Boolean((user.atoPlayUsername || user.channelName) && hasRealAtoPlayAvatar);
+              const displayUsername = isAtoPlaySynced
+                ? (user.atoPlayUsername || user.channelName || user.name || 'Creator').trim()
+                : (user.name || 'Creator').trim();
+              const displayHandle = isAtoPlaySynced
+                ? (user.atoPlayUsername || user.channelName || '').trim().replace(/^@+/, '')
+                : '';
               const displayAvatar = isAtoPlaySynced
                 ? (user.channelImage || user.avatar)
                 : user.avatar;
@@ -379,7 +409,7 @@ export const SlideDrawer: React.FC<SlideDrawerProps> = ({
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center space-x-1.5">
                         <h3 className="font-extrabold text-base text-zinc-900 truncate">
-                          {isAtoPlaySynced ? displayUsername : user.name}
+                          {displayUsername}
                         </h3>
                         {Boolean(user.isAdmin || user.email?.toLowerCase().trim() === 'krja462@gmail.com') && (
                           <span className="px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-900 text-[10px] font-black uppercase tracking-wider border border-amber-300 shrink-0">
@@ -404,24 +434,32 @@ export const SlideDrawer: React.FC<SlideDrawerProps> = ({
                           </div>
                           <button
                             type="button"
-                            onClick={() => handleSyncAtoPlayProfile(displayHandle, false)}
+                            onClick={() => {
+                              setAtoPlayEmailInput(user.email || '');
+                              setShowManualSyncInput(prev => !prev);
+                              setSyncStatusMsg(null);
+                            }}
                             disabled={syncingAtoPlay}
                             className="text-[10px] font-bold text-zinc-400 hover:text-blue-600 inline-flex items-center space-x-0.5 cursor-pointer"
-                            title="Refresh AtoPlay Profile"
+                            title="Re-sync AtoPlay Profile"
                           >
                             <RefreshCw className={`w-3 h-3 ${syncingAtoPlay ? 'animate-spin text-blue-600' : ''}`} />
                           </button>
                         </div>
                       ) : (
-                        <div className="mt-1 flex items-center justify-between">
-                          <div className="flex items-center space-x-1 text-[11px] font-semibold text-emerald-700">
-                            <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                            <span>Google Account Verified</span>
+                        <div className="mt-1 flex items-center justify-between gap-1">
+                          <div className="flex items-center space-x-1 text-[11px] font-semibold text-emerald-700 truncate">
+                            <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                            <span className="truncate">Google Account Verified</span>
                           </div>
                           <button
                             type="button"
-                            onClick={() => setShowManualSyncInput(prev => !prev)}
-                            className="text-[10px] font-bold text-blue-600 hover:underline cursor-pointer"
+                            onClick={() => {
+                              setAtoPlayEmailInput(user.email || '');
+                              setShowManualSyncInput(prev => !prev);
+                              setSyncStatusMsg(null);
+                            }}
+                            className="px-2 py-0.5 rounded-md bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-extrabold shrink-0 cursor-pointer shadow-2xs"
                           >
                             Sync AtoPlay
                           </button>
@@ -431,34 +469,64 @@ export const SlideDrawer: React.FC<SlideDrawerProps> = ({
                   </div>
 
                   {syncStatusMsg && (
-                    <p className="text-[11px] font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded-xl px-2.5 py-1.5">
-                      {syncStatusMsg}
-                    </p>
+                    <div
+                      className={`text-[11px] font-bold rounded-xl px-2.5 py-2 border ${
+                        syncStatusMsg.type === 'success'
+                          ? 'text-emerald-800 bg-emerald-50 border-emerald-200'
+                          : syncStatusMsg.type === 'error'
+                          ? 'text-red-700 bg-red-50 border-red-200'
+                          : 'text-blue-700 bg-blue-50 border-blue-200'
+                      }`}
+                    >
+                      {syncStatusMsg.text}
+                    </div>
                   )}
 
-                  {showManualSyncInput && !user.id.startsWith('guest_') && (
-                    <div className="pt-2 border-t border-zinc-200 space-y-2">
-                      <label className="text-[11px] font-bold text-zinc-700 block">
-                        Sync Your AtoPlay Channel Username or Link
-                      </label>
+                  {(showManualSyncInput || (!isAtoPlaySynced && !user.id.startsWith('guest_'))) && !user.id.startsWith('guest_') && (
+                    <form onSubmit={handleSyncAtoPlayWithPassword} className="pt-2.5 border-t border-zinc-200 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-[11px] font-extrabold text-zinc-800 block">
+                          Sync AtoPlay Dashboard Name & Photo
+                        </label>
+                        {showManualSyncInput && isAtoPlaySynced && (
+                          <button
+                            type="button"
+                            onClick={() => setShowManualSyncInput(false)}
+                            className="text-[10px] font-bold text-zinc-400 hover:text-zinc-600 cursor-pointer"
+                          >
+                            Cancel
+                          </button>
+                        )}
+                      </div>
+                      <input
+                        type="email"
+                        required
+                        value={atoPlayEmailInput}
+                        onChange={(e) => setAtoPlayEmailInput(e.target.value)}
+                        placeholder="AtoPlay Email (e.g. krja462@gmail.com)"
+                        className="w-full px-2.5 py-1.5 rounded-lg bg-white border border-zinc-300 text-xs font-semibold text-zinc-900 focus:outline-none focus:border-blue-500"
+                      />
                       <div className="flex items-center space-x-1.5">
                         <input
-                          type="text"
-                          value={manualAtoPlayInput}
-                          onChange={(e) => setManualAtoPlayInput(e.target.value)}
-                          placeholder="@username or channel link"
+                          type="password"
+                          required
+                          value={atoPlayPasswordInput}
+                          onChange={(e) => setAtoPlayPasswordInput(e.target.value)}
+                          placeholder="Enter AtoPlay Password"
                           className="flex-1 px-2.5 py-1.5 rounded-lg bg-white border border-zinc-300 text-xs font-semibold text-zinc-900 focus:outline-none focus:border-blue-500"
                         />
                         <button
-                          type="button"
-                          disabled={syncingAtoPlay || !manualAtoPlayInput.trim()}
-                          onClick={() => handleSyncAtoPlayProfile(manualAtoPlayInput, false)}
-                          className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:bg-zinc-300 text-white font-bold text-xs cursor-pointer"
+                          type="submit"
+                          disabled={syncingAtoPlay || !atoPlayPasswordInput.trim()}
+                          className="px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:bg-zinc-300 text-white font-extrabold text-xs cursor-pointer shrink-0 transition-colors"
                         >
                           {syncingAtoPlay ? 'Syncing...' : 'Sync'}
                         </button>
                       </div>
-                    </div>
+                      <p className="text-[10px] text-zinc-500 leading-tight">
+                        Login with your AtoPlay email & password to sync your real AtoPlay Dashboard username & profile picture.
+                      </p>
+                    </form>
                   )}
 
                   {/* Coin Balance Badge */}

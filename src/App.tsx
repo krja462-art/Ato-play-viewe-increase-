@@ -25,7 +25,7 @@ import {
   subscribeToUserNotificationsInFirestore,
   markNotificationReadInFirestore
 } from './lib/firebase';
-import { apiFetch } from './lib/api';
+import { apiFetch, isRealAtoPlayAvatarUrl } from './lib/api';
 import { FollowReportWarningModal, UserWarningNotification } from './components/FollowReportWarningModal';
 
 export default function App() {
@@ -194,7 +194,7 @@ export default function App() {
 
           const googleIdToken = typeof window !== 'undefined' ? (sessionStorage.getItem('atoplay_google_id_token') || undefined) : undefined;
 
-          // Also inform server API session (and auto-discover AtoPlay account for this Gmail)
+          // Also inform server API session
           const res = await apiFetch('/api/auth/firebase-login', {
             method: 'POST',
             headers: { 
@@ -206,17 +206,22 @@ export default function App() {
               email: fbUser.email,
               name: fbUser.displayName || syncedUser.name,
               avatar: fbUser.photoURL || syncedUser.avatar,
-              googleIdToken
+              atoPlayUsername: syncedUser.atoPlayUsername,
+              channelName: syncedUser.channelName,
+              channelImage: syncedUser.channelImage
             })
           });
 
           if (res?.success && res?.user) {
             const srvUser = res.user;
-            const hasAtoPlay = Boolean(srvUser.atoPlayUsername || srvUser.channelName || syncedUser.atoPlayUsername || syncedUser.channelName);
-            const mergedAtoPlayUsername = srvUser.atoPlayUsername || syncedUser.atoPlayUsername || '';
-            const mergedChannelName = srvUser.channelName || syncedUser.channelName || '';
-            const mergedChannelImage = srvUser.channelImage || syncedUser.channelImage || '';
-            const mergedChannelBanner = srvUser.channelBanner || syncedUser.channelBanner || '';
+            const candidateImage = syncedUser.channelImage || srvUser.channelImage || '';
+            const hasAtoPlay = isRealAtoPlayAvatarUrl(candidateImage) && Boolean(
+              syncedUser.atoPlayUsername || srvUser.atoPlayUsername || syncedUser.channelName || srvUser.channelName
+            );
+            const mergedAtoPlayUsername = hasAtoPlay ? (syncedUser.atoPlayUsername || srvUser.atoPlayUsername || '') : '';
+            const mergedChannelName = hasAtoPlay ? (syncedUser.channelName || srvUser.channelName || mergedAtoPlayUsername) : '';
+            const mergedChannelImage = hasAtoPlay ? candidateImage : '';
+            const mergedChannelBanner = hasAtoPlay ? (syncedUser.channelBanner || srvUser.channelBanner || '') : '';
 
             syncedUser = {
               ...syncedUser,
@@ -224,14 +229,14 @@ export default function App() {
               channelName: mergedChannelName,
               channelImage: mergedChannelImage,
               channelBanner: mergedChannelBanner,
-              name: hasAtoPlay ? (mergedChannelName || mergedAtoPlayUsername || syncedUser.name) : syncedUser.name,
-              avatar: hasAtoPlay && mergedChannelImage ? mergedChannelImage : syncedUser.avatar
+              name: hasAtoPlay ? (mergedChannelName || mergedAtoPlayUsername || syncedUser.name) : (fbUser.displayName || syncedUser.name),
+              avatar: hasAtoPlay ? mergedChannelImage : (fbUser.photoURL || syncedUser.avatar)
             };
 
             setUser(syncedUser);
             localStorage.setItem('atoviewer_user', JSON.stringify(syncedUser));
 
-            if (mergedAtoPlayUsername || mergedChannelImage) {
+            if (hasAtoPlay) {
               saveUserAtoPlayProfileToFirestore(syncedUser.id, {
                 atoPlayUsername: mergedAtoPlayUsername,
                 channelName: mergedChannelName,

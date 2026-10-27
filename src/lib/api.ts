@@ -31,6 +31,165 @@ export function resolveCampaignType(campaignType?: string, videoUrl?: string): '
   return isExplicitChannelUrl ? 'follower' : 'video';
 }
 
+export function normalizeAtoPlayImageUrl(raw?: string | null): string | undefined {
+  if (!raw || typeof raw !== 'string' || !raw.trim()) return undefined;
+  const trimmed = raw.trim();
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('data:')) {
+    return trimmed;
+  }
+  return `https://cdn.atoplay.in/${trimmed.replace(/^\//, '')}`;
+}
+
+export function isRealAtoPlayAvatarUrl(url?: string | null): boolean {
+  if (!url || typeof url !== 'string' || !url.trim()) return false;
+  const lower = url.trim().toLowerCase();
+  if (
+    lower.includes('googleusercontent.com') ||
+    lower.includes('unsplash.com') ||
+    lower.includes('dicebear.com')
+  ) {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Authenticates directly with AtoPlay API (`POST https://api.atoplay.com/api/auth/login`)
+ * and fetches the user's real AtoPlay Dashboard account name (`fname`) and avatar (`profileImage`)
+ * from `GET https://api.atoplay.com/api/users/me`.
+ */
+export async function loginAndFetchAtoPlayProfile(email: string, password: string): Promise<{
+  success: boolean;
+  synced: boolean;
+  matched: boolean;
+  message: string;
+  atoPlayProfile?: {
+    id?: string;
+    email: string;
+    atoPlayUsername: string;
+    channelName: string;
+    channelImage?: string;
+    channelBanner?: string;
+  };
+}> {
+  const cleanEmail = (email || '').trim().toLowerCase();
+  const cleanPassword = (password || '').trim();
+
+  if (!cleanEmail || !cleanEmail.includes('@')) {
+    return {
+      success: false,
+      synced: false,
+      matched: false,
+      message: 'Please enter your valid AtoPlay email address.'
+    };
+  }
+  if (!cleanPassword) {
+    return {
+      success: false,
+      synced: false,
+      matched: false,
+      message: 'Please enter your AtoPlay account password.'
+    };
+  }
+
+  try {
+    const loginRes = await fetch('https://api.atoplay.com/api/auth/login', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      body: JSON.stringify({
+        email: cleanEmail,
+        password: cleanPassword
+      })
+    });
+
+    const loginData = await loginRes.json().catch(() => ({}));
+    if (!loginRes.ok) {
+      const errMsg = Array.isArray(loginData?.message)
+        ? loginData.message.join(', ')
+        : (loginData?.message || 'Invalid AtoPlay email or password. Please check your credentials.');
+      return {
+        success: false,
+        synced: false,
+        matched: false,
+        message: errMsg
+      };
+    }
+
+    const accessToken = loginData?.data?.accessToken || loginData?.accessToken || loginData?.token;
+    const loginUser = loginData?.data?.user || loginData?.user || {};
+
+    let meUser: any = {};
+    if (accessToken) {
+      try {
+        const meRes = await fetch('https://api.atoplay.com/api/users/me', {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Accept': 'application/json'
+          }
+        });
+        if (meRes.ok) {
+          const meJson = await meRes.json().catch(() => ({}));
+          meUser = meJson?.data || meJson?.user || meJson || {};
+        }
+      } catch {}
+    }
+
+    const fname = String(meUser.fname ?? loginUser.fname ?? '').trim();
+    const lname = String(meUser.lname ?? loginUser.lname ?? '').trim();
+    const accountName = [fname, lname].filter(Boolean).join(' ').trim() || fname || cleanEmail.split('@')[0];
+    let accountAvatar = normalizeAtoPlayImageUrl(
+      meUser.profileImage || loginUser.profileImage || meUser.avatar || loginUser.avatar
+    );
+    let channelBanner: string | undefined = undefined;
+    const atoPlayUserId = String(meUser.id || loginUser.id || '');
+
+    // If account avatar isn't set on /users/me, check user's channel image as fallback
+    if (!accountAvatar && atoPlayUserId) {
+      try {
+        const chRes = await fetch(`https://api.atoplay.com/api/channels/user/${encodeURIComponent(atoPlayUserId)}`, {
+          headers: { 'Accept': 'application/json' }
+        });
+        if (chRes.ok) {
+          const chData = await chRes.json().catch(() => ({}));
+          const firstCh = Array.isArray(chData) ? chData[0] : (chData?.channels?.[0] || chData?.data?.[0]);
+          if (firstCh) {
+            const chImg = normalizeAtoPlayImageUrl(firstCh.channelImage);
+            if (chImg) accountAvatar = chImg;
+            const chBan = normalizeAtoPlayImageUrl(firstCh.channelBanner);
+            if (chBan) channelBanner = chBan;
+          }
+        }
+      } catch {}
+    }
+
+    return {
+      success: true,
+      synced: true,
+      matched: true,
+      message: `AtoPlay account "${accountName}" synced successfully!`,
+      atoPlayProfile: {
+        id: atoPlayUserId,
+        email: String(meUser.email || loginUser.email || cleanEmail).trim().toLowerCase(),
+        atoPlayUsername: accountName,
+        channelName: accountName,
+        channelImage: accountAvatar,
+        channelBanner
+      }
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      synced: false,
+      matched: false,
+      message: err?.message || 'Could not connect to AtoPlay right now. Please try again.'
+    };
+  }
+}
+
 export function getDeletedCampaignIds(): Set<string> {
   try {
     const raw = localStorage.getItem(STORAGE_KEYS.DELETED_CAMPAIGNS);
@@ -256,24 +415,90 @@ async function handleClientFallback<T>(endpoint: string, options?: RequestInit, 
     return { success: true, message: 'All Google accounts reset successfully' } as any;
   }
 
+  // 0b. AtoPlay Account Sync Fallback (Direct AtoPlay Email & Password Login + /api/users/me)
+  if (endpoint.startsWith('/api/atoplay/sync-profile')) {
+    const targetEmail = String(parsedBody?.email || activeUser?.email || '').trim().toLowerCase();
+    const password = String(parsedBody?.password || '').trim();
+
+    if (password) {
+      const syncRes = await loginAndFetchAtoPlayProfile(targetEmail, password);
+      if (syncRes.success && syncRes.atoPlayProfile) {
+        const current = activeUser || getStoredUser();
+        const updatedUser: User = {
+          ...(current || {
+            id: `g_${targetEmail.replace(/[^a-zA-Z0-9]/g, '_')}`,
+            email: targetEmail,
+            coins: targetEmail === 'krja462@gmail.com' ? 999999999 : 100,
+            streak: 1,
+            createdAt: new Date().toISOString()
+          }),
+          name: syncRes.atoPlayProfile.atoPlayUsername,
+          atoPlayUsername: syncRes.atoPlayProfile.atoPlayUsername,
+          channelName: syncRes.atoPlayProfile.channelName,
+          channelImage: syncRes.atoPlayProfile.channelImage || current?.channelImage || '',
+          avatar: syncRes.atoPlayProfile.channelImage || current?.channelImage || current?.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80',
+          ...(syncRes.atoPlayProfile.channelBanner ? { channelBanner: syncRes.atoPlayProfile.channelBanner } : {})
+        };
+        setStoredUser(updatedUser);
+        return {
+          success: true,
+          synced: true,
+          matched: true,
+          atoPlayProfile: syncRes.atoPlayProfile,
+          user: updatedUser,
+          message: syncRes.message
+        } as any;
+      }
+      return {
+        success: false,
+        synced: false,
+        matched: false,
+        message: syncRes.message
+      } as any;
+    }
+
+    // Silent check without password: check if user already synced a real AtoPlay profile
+    const current = activeUser || getStoredUser();
+    if (current && current.atoPlayUsername && isRealAtoPlayAvatarUrl(current.channelImage)) {
+      return {
+        success: true,
+        synced: true,
+        matched: true,
+        user: current,
+        message: `Synced with AtoPlay account ${current.atoPlayUsername}`
+      } as any;
+    }
+
+    return {
+      success: false,
+      synced: false,
+      matched: false,
+      requiresPassword: true,
+      user: current || null,
+      message: 'Enter your AtoPlay email and password to sync your real AtoPlay Dashboard username & profile photo.'
+    } as any;
+  }
+
   // 1. Firebase Login / Google Sign-In Fallback
-  if (endpoint.startsWith('/api/auth/firebase-login')) {
-    const { uid, email, name, avatar } = parsedBody;
+  if (endpoint.startsWith('/api/auth/firebase-login') || endpoint.startsWith('/api/auth/google')) {
+    const { uid, email, name, displayName, avatar, photoURL } = parsedBody;
     const cleanEmail = String(email || 'user@gmail.com').trim().toLowerCase();
     const isAdmin = cleanEmail === 'krja462@gmail.com' || String(uid || '').includes('krja462');
     const effectiveUid = uid || `g_${cleanEmail.replace(/[^a-zA-Z0-9]/g, '_')}`;
+    const googleName = name || displayName || (isAdmin ? 'Admin (KRJA)' : cleanEmail.split('@')[0]);
+    const googleAvatar = avatar || photoURL || `https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80`;
 
     let user = getStoredUser();
     let isNewUser = false;
 
-    if (!user || user.email !== cleanEmail) {
+    if (!user || user.email?.toLowerCase().trim() !== cleanEmail) {
       isNewUser = true;
       user = {
         id: effectiveUid,
-        name: name || (isAdmin ? 'Admin (KRJA)' : cleanEmail.split('@')[0]),
+        name: googleName,
         email: cleanEmail,
         coins: isAdmin ? 999999999 : 100, // Unlimited coins for Admin, 100 Welcome Bonus coins on first login
-        avatar: avatar || `https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80`,
+        avatar: googleAvatar,
         streak: 1,
         lastCheckIn: new Date().toISOString().split('T')[0],
         createdAt: new Date().toISOString(),
@@ -296,8 +521,15 @@ async function handleClientFallback<T>(endpoint: string, options?: RequestInit, 
         user.coins = 999999999;
         user.isAdmin = true;
       }
-      if (name) user.name = name;
-      if (avatar) user.avatar = avatar;
+      // Preserve synced AtoPlay username & avatar if already synced; otherwise use Google profile
+      const hasSyncedAtoPlayAvatar = isRealAtoPlayAvatarUrl(user.channelImage);
+      if (user.atoPlayUsername && hasSyncedAtoPlayAvatar) {
+        user.name = user.channelName || user.atoPlayUsername;
+        user.avatar = user.channelImage!;
+      } else {
+        if (googleName) user.name = googleName;
+        if (googleAvatar) user.avatar = googleAvatar;
+      }
     }
 
     setStoredUser(user);
@@ -837,6 +1069,22 @@ async function handleClientFallback<T>(endpoint: string, options?: RequestInit, 
       } catch {}
     }
 
+    const hasSyncedAtoPlay = Boolean(activeUser?.atoPlayUsername && isRealAtoPlayAvatarUrl(activeUser?.channelImage));
+    const syncedHandle = (activeUser?.atoPlayUsername || activeUser?.channelName || '').trim().replace(/^@+/, '');
+    const followLog = activeUser ? {
+      id: `flog_${Date.now()}_${activeUser.id.slice(-4)}`,
+      campaignId,
+      creatorId: targetCamp?.userId || parsedBody?.creatorId || 'creator',
+      followerUserId: activeUser.id,
+      followerUsername: hasSyncedAtoPlay ? syncedHandle : '',
+      followerEmail: activeUser.email,
+      followerAvatar: hasSyncedAtoPlay ? (activeUser.channelImage || activeUser.avatar) : activeUser.avatar,
+      followerName: hasSyncedAtoPlay ? (activeUser.channelName || syncedHandle || activeUser.name) : activeUser.name,
+      timestamp: new Date().toISOString(),
+      status: 'active' as const,
+      campaignTitle: targetCamp?.title || parsedBody?.title || channelName
+    } : undefined;
+
     return {
       success: true,
       verified: true,
@@ -846,6 +1094,7 @@ async function handleClientFallback<T>(endpoint: string, options?: RequestInit, 
       countAfter,
       channelName: liveRes.channelName || channelName,
       user: activeUser,
+      followLog,
       message: `AtoPlay Live Verified! Creator followers increased from ${baseline} to ${countAfter} (+${countAfter - baseline} Follower). +30 Coins added to your wallet!`
     } as any;
   }

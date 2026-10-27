@@ -15,7 +15,7 @@ import {
   syncFirebaseUserWithFirestore,
   saveUserAtoPlayProfileToFirestore
 } from '../lib/firebase';
-import { apiFetch } from '../lib/api';
+import { apiFetch, loginAndFetchAtoPlayProfile, isRealAtoPlayAvatarUrl } from '../lib/api';
 import { AtoPlayBadge } from './AtoPlayBadge';
 import { LegalModal, LegalTabType } from './LegalModal';
 
@@ -33,7 +33,7 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onLoginSuccess, onOp
   const [showReferralField, setShowReferralField] = useState(false);
   const [showEmailLogin, setShowEmailLogin] = useState(false);
   const [emailInput, setEmailInput] = useState('');
-  const [nameInput, setNameInput] = useState('');
+  const [passwordInput, setPasswordInput] = useState('');
 
   const handleGuestLogin = () => {
     setGoogleLoading(false);
@@ -56,15 +56,46 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onLoginSuccess, onOp
   const handleNativeEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleanEmail = emailInput.trim().toLowerCase();
+    const cleanPassword = passwordInput.trim();
     if (!cleanEmail || !cleanEmail.includes('@')) {
-      setErrorMessage('Please enter a valid email address.');
+      setErrorMessage('Please enter a valid AtoPlay email address.');
       return;
     }
-    const cleanName = nameInput.trim() || cleanEmail.split('@')[0];
-    await completeGoogleLogin(cleanEmail, cleanName);
+    if (!cleanPassword) {
+      setErrorMessage('Please enter your AtoPlay password.');
+      return;
+    }
+
+    setGoogleLoading(true);
+    setErrorMessage(null);
+    const atoRes = await loginAndFetchAtoPlayProfile(cleanEmail, cleanPassword);
+    if (!atoRes.success || !atoRes.atoPlayProfile) {
+      setGoogleLoading(false);
+      setErrorMessage(atoRes.message || 'Invalid AtoPlay email or password.');
+      return;
+    }
+
+    await completeGoogleLogin(
+      cleanEmail,
+      atoRes.atoPlayProfile.atoPlayUsername,
+      atoRes.atoPlayProfile.channelImage,
+      undefined,
+      atoRes.atoPlayProfile
+    );
   };
 
-  const completeGoogleLogin = async (email: string, displayName?: string, photoURL?: string, firebaseUid?: string) => {
+  const completeGoogleLogin = async (
+    email: string,
+    displayName?: string,
+    photoURL?: string,
+    firebaseUid?: string,
+    directAtoPlayProfile?: {
+      atoPlayUsername: string;
+      channelName: string;
+      channelImage?: string;
+      channelBanner?: string;
+    }
+  ) => {
     setGoogleLoading(true);
     setErrorMessage(null);
     try {
@@ -81,9 +112,7 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onLoginSuccess, onOp
         finalReferralCode = localStorage.getItem('atoplay_ref_code') || '';
       }
 
-      const googleIdToken = typeof window !== 'undefined' ? (sessionStorage.getItem('atoplay_google_id_token') || undefined) : undefined;
-
-      // Sync with Backend (also checks if this Gmail has an AtoPlay account/channel)
+      // Sync with Backend
       let backendUser: User | null = null;
       try {
         const res = await apiFetch('/api/auth/google', {
@@ -94,7 +123,9 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onLoginSuccess, onOp
             displayName: name,
             photoURL: avatar,
             referralCode: finalReferralCode,
-            googleIdToken
+            atoPlayUsername: directAtoPlayProfile?.atoPlayUsername,
+            channelName: directAtoPlayProfile?.channelName,
+            channelImage: directAtoPlayProfile?.channelImage
           })
         });
         if (res?.success && res.user) {
@@ -110,17 +141,34 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onLoginSuccess, onOp
         firestoreUser = await syncFirebaseUserWithFirestore({
           uid: userId,
           email: cleanEmail,
-          displayName: backendUser?.channelName || backendUser?.atoPlayUsername || name,
-          photoURL: backendUser?.channelImage || backendUser?.avatar || avatar
+          displayName: directAtoPlayProfile?.atoPlayUsername || backendUser?.channelName || backendUser?.atoPlayUsername || name,
+          photoURL: directAtoPlayProfile?.channelImage || backendUser?.channelImage || backendUser?.avatar || avatar
         } as any, finalReferralCode);
       } catch (fErr) {
         console.warn('Firestore sync fallback:', fErr);
       }
 
-      const syncedAtoPlayUsername = backendUser?.atoPlayUsername || firestoreUser?.atoPlayUsername || '';
-      const syncedChannelName = backendUser?.channelName || firestoreUser?.channelName || '';
-      const syncedChannelImage = backendUser?.channelImage || firestoreUser?.channelImage || '';
-      const syncedChannelBanner = backendUser?.channelBanner || firestoreUser?.channelBanner || '';
+      const candidateChannelImage =
+        directAtoPlayProfile?.channelImage ||
+        firestoreUser?.channelImage ||
+        backendUser?.channelImage ||
+        '';
+      const hasRealAtoPlaySync = isRealAtoPlayAvatarUrl(candidateChannelImage) && Boolean(
+        directAtoPlayProfile?.atoPlayUsername ||
+        firestoreUser?.atoPlayUsername ||
+        backendUser?.atoPlayUsername
+      );
+
+      const syncedAtoPlayUsername = hasRealAtoPlaySync
+        ? (directAtoPlayProfile?.atoPlayUsername || firestoreUser?.atoPlayUsername || backendUser?.atoPlayUsername || '')
+        : '';
+      const syncedChannelName = hasRealAtoPlaySync
+        ? (directAtoPlayProfile?.channelName || firestoreUser?.channelName || backendUser?.channelName || syncedAtoPlayUsername)
+        : '';
+      const syncedChannelImage = hasRealAtoPlaySync ? candidateChannelImage : '';
+      const syncedChannelBanner = hasRealAtoPlaySync
+        ? (directAtoPlayProfile?.channelBanner || firestoreUser?.channelBanner || backendUser?.channelBanner || '')
+        : '';
 
       const loggedInUser: User = {
         ...(firestoreUser || backendUser || {
@@ -135,15 +183,15 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onLoginSuccess, onOp
         }),
         id: firestoreUser?.id || backendUser?.id || userId,
         email: cleanEmail,
-        name: syncedChannelName || syncedAtoPlayUsername || firestoreUser?.name || backendUser?.name || name,
-        avatar: syncedChannelImage || firestoreUser?.avatar || backendUser?.avatar || avatar,
+        name: hasRealAtoPlaySync ? (syncedChannelName || syncedAtoPlayUsername) : (firestoreUser?.name || backendUser?.name || name),
+        avatar: hasRealAtoPlaySync ? syncedChannelImage : (firestoreUser?.avatar || backendUser?.avatar || avatar),
         atoPlayUsername: syncedAtoPlayUsername,
         channelName: syncedChannelName,
         channelImage: syncedChannelImage,
         channelBanner: syncedChannelBanner
       };
 
-      if (syncedAtoPlayUsername || syncedChannelImage) {
+      if (hasRealAtoPlaySync) {
         saveUserAtoPlayProfileToFirestore(loggedInUser.id, {
           atoPlayUsername: syncedAtoPlayUsername,
           channelName: syncedChannelName,
@@ -240,19 +288,21 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onLoginSuccess, onOp
         <div className="space-y-3">
           {showEmailLogin ? (
             <form onSubmit={handleNativeEmailLogin} className="space-y-3 bg-black/25 p-4 rounded-2xl border border-white/15">
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-blue-200 block">AtoPlay Username / Channel Name</label>
-                <input
-                  type="text"
-                  required
-                  value={nameInput}
-                  onChange={(e) => setNameInput(e.target.value)}
-                  placeholder="Enter your AtoPlay username or name"
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-white text-zinc-900 font-bold text-xs focus:outline-none"
-                />
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-extrabold text-amber-300">Login with AtoPlay Email & Password</label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowEmailLogin(false);
+                    setErrorMessage(null);
+                  }}
+                  className="text-[11px] font-bold text-blue-200 hover:text-white underline cursor-pointer"
+                >
+                  Back
+                </button>
               </div>
               <div className="space-y-1">
-                <label className="text-xs font-bold text-blue-200 block">Gmail Address (login your AtoPlay gmail account)</label>
+                <label className="text-xs font-bold text-blue-200 block">AtoPlay Gmail Address</label>
                 <input
                   type="email"
                   required
@@ -262,16 +312,27 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onLoginSuccess, onOp
                   className="w-full px-3.5 py-2.5 rounded-xl bg-white text-zinc-900 font-bold text-xs focus:outline-none"
                 />
               </div>
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-blue-200 block">AtoPlay Password</label>
+                <input
+                  type="password"
+                  required
+                  value={passwordInput}
+                  onChange={(e) => setPasswordInput(e.target.value)}
+                  placeholder="Enter your AtoPlay password"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-white text-zinc-900 font-bold text-xs focus:outline-none"
+                />
+              </div>
               <button
                 type="submit"
                 disabled={googleLoading}
                 className="w-full py-3.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-extrabold text-sm shadow-lg transition-all cursor-pointer"
               >
-                {googleLoading ? 'Signing in...' : 'Sign In & Sync AtoPlay Account'}
+                {googleLoading ? 'Syncing AtoPlay Dashboard...' : 'Sign In & Sync AtoPlay Account'}
               </button>
             </form>
           ) : (
-            <div className="space-y-1.5">
+            <div className="space-y-2">
               <p className="text-center text-xs font-extrabold text-amber-300 tracking-wide">
                 (login your AtoPlay gmail account)
               </p>
@@ -306,6 +367,19 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onLoginSuccess, onOp
                     </span>
                   </>
                 )}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setShowEmailLogin(true);
+                  setErrorMessage(null);
+                }}
+                disabled={googleLoading}
+                className="w-full py-2.5 px-4 rounded-2xl bg-blue-600/30 hover:bg-blue-600/45 border border-blue-400/40 text-blue-100 font-extrabold text-xs flex items-center justify-center space-x-2 transition-all cursor-pointer"
+              >
+                <ShieldCheck className="w-4 h-4 text-amber-300" />
+                <span>Sync with AtoPlay Email & Password</span>
               </button>
             </div>
           )}

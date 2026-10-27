@@ -7,7 +7,7 @@ import { AtoPlayBadge } from './AtoPlayBadge';
 import { RealCoin } from './RealCoin';
 import { playCoinCelebrationSound } from '../utils/audio';
 import { triggerWatchCompleteCelebration } from '../utils/confetti';
-import { apiFetch, getWatchedIds, addWatchedId, addFollowedId, cleanVideoUrl, openAtoPlayUrl, fetchLiveAtoPlayFollowerCount, resolveCampaignType, getDeletedCampaignIds } from '../lib/api';
+import { apiFetch, getWatchedIds, addWatchedId, addFollowedId, cleanVideoUrl, openAtoPlayUrl, fetchLiveAtoPlayFollowerCount, resolveCampaignType, getDeletedCampaignIds, isRealAtoPlayAvatarUrl } from '../lib/api';
 import { 
   updateCampaignViewsInFirestore, 
   updateCampaignFollowersInFirestore,
@@ -124,7 +124,7 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
       : (camp.channelFollowers ?? camp.initialFollowers ?? 0);
 
     try {
-      const hasSyncedAtoPlay = Boolean(user.atoPlayUsername || user.channelName);
+      const hasSyncedAtoPlay = Boolean((user.atoPlayUsername || user.channelName) && isRealAtoPlayAvatarUrl(user.channelImage));
       const syncedHandle = (user.atoPlayUsername || user.channelName || '').trim().replace(/^@+/, '');
 
       const requestBody = {
@@ -181,15 +181,16 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
         onCoinEarned(updatedUser);
         saveUserCoinsToFirestore(updatedUser.id, updatedUser.coins, updatedUser.email).catch(() => {});
 
-        const logToSave: FollowLog = res.followLog || {
-          id: `flog_${Date.now()}_${user.id.slice(-4)}`,
+        const logToSave: FollowLog = {
+          ...(res.followLog || {}),
+          id: res.followLog?.id || `flog_${Date.now()}_${user.id.slice(-4)}`,
           campaignId: camp.id,
           creatorId: camp.userId,
           followerUserId: user.id,
           followerUsername: hasSyncedAtoPlay ? syncedHandle : '',
           followerEmail: user.email,
           followerAvatar: hasSyncedAtoPlay ? (user.channelImage || user.avatar) : user.avatar,
-          followerName: hasSyncedAtoPlay ? (user.channelName || syncedHandle || user.name) : user.name,
+          followerName: hasSyncedAtoPlay ? (user.atoPlayUsername || user.channelName || syncedHandle || user.name) : user.name,
           timestamp: new Date().toISOString(),
           status: 'active',
           campaignTitle: camp.title
@@ -669,6 +670,23 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
           onCoinEarned(updated);
         }
 
+        const hasSyncedAtoPlay = Boolean((user.atoPlayUsername || user.channelName) && isRealAtoPlayAvatarUrl(user.channelImage));
+        const syncedHandle = (user.atoPlayUsername || user.channelName || '').trim().replace(/^@+/, '');
+        const logToSave: FollowLog = {
+          ...(res.followLog || {}),
+          id: res.followLog?.id || `flog_${Date.now()}_${user.id.slice(-4)}`,
+          campaignId: camp.id,
+          creatorId: camp.userId,
+          followerUserId: user.id,
+          followerUsername: hasSyncedAtoPlay ? syncedHandle : '',
+          followerEmail: user.email,
+          followerAvatar: hasSyncedAtoPlay ? (user.channelImage || user.avatar) : user.avatar,
+          followerName: hasSyncedAtoPlay ? (user.atoPlayUsername || user.channelName || syncedHandle || user.name) : user.name,
+          timestamp: new Date().toISOString(),
+          status: 'active',
+          campaignTitle: camp.title
+        };
+        saveFollowLogToFirestore(logToSave).catch(() => {});
         updateCampaignFollowersInFirestore(camp.id, user.id, res.countAfter).catch(() => {});
         setFollowedCampaignIds(prev => new Set([...prev, camp.id]));
         addFollowedId(user.id, camp.id);

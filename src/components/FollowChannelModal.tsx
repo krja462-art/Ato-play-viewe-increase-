@@ -246,24 +246,30 @@ export const FollowChannelModal: React.FC<FollowChannelModalProps> = ({
         setStatusType('success');
         playCoinCelebrationSound();
 
-        // Save Follow Log to Cloud Firestore
-        const logToSave: FollowLog = data.followLog || {
-          id: `flog_${Date.now()}_${user.id.slice(-4)}`,
+        // Save Follow Log to Cloud Firestore with synced AtoPlay Account Name & Avatar (or Google fallback)
+        const hasSyncedAtoPlay = Boolean(
+          (user.atoPlayUsername || user.channelName) &&
+          user.channelImage &&
+          !user.channelImage.toLowerCase().includes('googleusercontent.com') &&
+          !user.channelImage.toLowerCase().includes('unsplash.com') &&
+          !user.channelImage.toLowerCase().includes('dicebear.com')
+        );
+        const syncedHandle = (user.atoPlayUsername || user.channelName || '').trim().replace(/^@+/, '');
+
+        const logToSave: FollowLog = {
+          ...(data.followLog || {}),
+          id: data.followLog?.id || `flog_${Date.now()}_${user.id.slice(-4)}`,
           campaignId: campaign.id,
           creatorId: campaign.userId,
           followerUserId: user.id,
-          followerUsername: user.atoPlayUsername || user.name || 'AtoPlay User',
+          followerUsername: hasSyncedAtoPlay ? syncedHandle : '',
           followerEmail: user.email,
-          followerAvatar: user.avatar,
-          followerName: user.name,
+          followerAvatar: hasSyncedAtoPlay ? (user.channelImage || user.avatar) : user.avatar,
+          followerName: hasSyncedAtoPlay ? (user.atoPlayUsername || user.channelName || syncedHandle || user.name) : user.name,
           timestamp: new Date().toISOString(),
           status: 'active',
           campaignTitle: campaign.title
         };
-        // Ensure email and avatar are attached even if data.followLog was partial
-        if (!logToSave.followerEmail && user.email) logToSave.followerEmail = user.email;
-        if (!logToSave.followerAvatar && user.avatar) logToSave.followerAvatar = user.avatar;
-        if (!logToSave.followerName && user.name) logToSave.followerName = user.name;
         saveFollowLogToFirestore(logToSave).catch(err => console.warn('Follow log firestore err:', err));
         updateCampaignFollowersInFirestore(campaign.id, user.id, data.countAfter).catch(() => {});
 

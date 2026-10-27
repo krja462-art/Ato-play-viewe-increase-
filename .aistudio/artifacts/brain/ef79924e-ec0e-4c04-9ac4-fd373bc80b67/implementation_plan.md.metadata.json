@@ -1,6 +1,6 @@
 {
-  "summary":  "Implementation plan for removing Creator Controls and hiding creator's own campaigns from the Home feed (showing them exclusively in My Campaigns while keeping them visible to all other users), and introducing a realistic 3D Metallic Gold Coin design with specular shine across Header, Home Cards, Campaign Modals, and Reward Toasts.",
-  "updatedAt":  "2026-10-26T07:23:03.837872810Z",
+  "summary":  "Implementation plan for syncing the user's real AtoPlay Dashboard Account Name (e.g., khan rja) and Account Avatar (profileImage) via AtoPlay email & password login across the SlideDrawer and Follower Logs, working seamlessly on both static deployments (increase.vercel.app) and the backend server.",
+  "updatedAt":  "2026-10-26T23:51:19.900238165Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

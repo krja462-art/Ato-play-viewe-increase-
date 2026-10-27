@@ -30,7 +30,7 @@ import {
 import firebaseConfig from '../../firebase-applet-config.json';
 import { User, Campaign, FollowLog } from '../types';
 import { cleanVideoUrl } from './videoExtractor';
-import { resolveCampaignType, getDeletedCampaignIds, addDeletedCampaignId } from './api';
+import { resolveCampaignType, getDeletedCampaignIds, addDeletedCampaignId, isRealAtoPlayAvatarUrl } from './api';
 
 // Initialize Firebase App
 export const app = initializeApp(firebaseConfig);
@@ -166,12 +166,22 @@ export const syncFirebaseUserWithFirestore = async (fbUser: FirebaseUser, pendin
         ? ADMIN_UNLIMITED_COINS 
         : Math.max(firestoreCoins, localSavedCoins ?? 100);
 
+      const candidateChannelImage = data.channelImage || localChannelImage || '';
+      const hasVerifiedAtoPlaySync = isRealAtoPlayAvatarUrl(candidateChannelImage) && Boolean(data.atoPlayUsername || localAtoPlayUsername || data.channelName || localChannelName);
+      const effectiveAtoPlayUsername = hasVerifiedAtoPlaySync ? (data.atoPlayUsername || localAtoPlayUsername || data.channelName || localChannelName || '') : '';
+      const effectiveChannelName = hasVerifiedAtoPlaySync ? (data.channelName || localChannelName || effectiveAtoPlayUsername) : '';
+      const effectiveChannelImage = hasVerifiedAtoPlaySync ? candidateChannelImage : '';
+
       const existingUser: User = {
         id: fbUser.uid,
-        name: data.channelName || data.name || fbUser.displayName || (isAdmin ? 'Admin (KRJA)' : 'AtoPlay Creator'),
+        name: hasVerifiedAtoPlaySync
+          ? (effectiveChannelName || effectiveAtoPlayUsername)
+          : (fbUser.displayName || data.name || (isAdmin ? 'Admin (KRJA)' : 'AtoPlay Creator')),
         email: fbUser.email || data.email || cleanEmail,
         coins: finalCoins,
-        avatar: data.channelImage || fbUser.photoURL || data.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80',
+        avatar: hasVerifiedAtoPlaySync
+          ? effectiveChannelImage
+          : (fbUser.photoURL || data.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80'),
         streak: typeof data.streak === 'number' ? data.streak : 1,
         lastCheckIn: data.lastCheckIn || today,
         createdAt: data.createdAt || now,
@@ -180,10 +190,10 @@ export const syncFirebaseUserWithFirestore = async (fbUser: FirebaseUser, pendin
         referralEarnings: typeof data.referralEarnings === 'number' ? data.referralEarnings : 0,
         referredBy: data.referredBy,
         isAdmin: isAdmin ? true : Boolean(data.isAdmin),
-        atoPlayUsername: data.atoPlayUsername || localAtoPlayUsername || '',
-        channelName: data.channelName || localChannelName || '',
-        channelBanner: data.channelBanner || localChannelBanner || '',
-        channelImage: data.channelImage || localChannelImage || '',
+        atoPlayUsername: effectiveAtoPlayUsername,
+        channelName: effectiveChannelName,
+        channelBanner: hasVerifiedAtoPlaySync ? (data.channelBanner || localChannelBanner || '') : '',
+        channelImage: effectiveChannelImage,
         warningCount: typeof data.warningCount === 'number' ? data.warningCount : 0,
         isFollowRestricted: Boolean(data.isFollowRestricted),
         loginMethod: 'google'
@@ -220,10 +230,12 @@ export const syncFirebaseUserWithFirestore = async (fbUser: FirebaseUser, pendin
       const p = JSON.parse(raw);
       if (p && p.id === fbUser.uid) {
         if (typeof p.coins === 'number') localInitialCoins = Math.max(localInitialCoins, p.coins);
-        if (p.atoPlayUsername) localAtoPlayUsernameFallback = p.atoPlayUsername;
-        if (p.channelBanner) localChannelBannerFallback = p.channelBanner;
-        if (p.channelImage) localChannelImageFallback = p.channelImage;
-        if (p.channelName) localChannelNameFallback = p.channelName;
+        if (isRealAtoPlayAvatarUrl(p.channelImage)) {
+          if (p.atoPlayUsername) localAtoPlayUsernameFallback = p.atoPlayUsername;
+          if (p.channelBanner) localChannelBannerFallback = p.channelBanner;
+          if (p.channelImage) localChannelImageFallback = p.channelImage;
+          if (p.channelName) localChannelNameFallback = p.channelName;
+        }
       }
     }
   } catch {}
@@ -801,18 +813,31 @@ export const saveUserAtoPlayProfileToFirestore = async (
 
     await setDoc(userRef, updates, { merge: true });
 
-    // Also update any follow_logs where this user is the follower so other creators see the synced AtoPlay username & avatar
+    // Also update any follow_logs where this user is the follower (by followerUserId or followerEmail)
+    // so other creators immediately see the synced AtoPlay account name & avatar in their follower logs.
     if (cleanUsername || cleanImage) {
       try {
-        const logsQ = query(collection(db, 'follow_logs'), where('followerUserId', '==', userId));
-        const logsSnap = await getDocs(logsQ);
+        const logIdsToUpdate = new Set<string>();
+        const logsByUidQ = query(collection(db, 'follow_logs'), where('followerUserId', '==', userId));
+        const logsByUidSnap = await getDocs(logsByUidQ);
+        logsByUidSnap.forEach(d => logIdsToUpdate.add(d.id));
+
+        const cleanEmail = (profile.email || '').trim().toLowerCase();
+        if (cleanEmail) {
+          try {
+            const logsByEmailQ = query(collection(db, 'follow_logs'), where('followerEmail', '==', cleanEmail));
+            const logsByEmailSnap = await getDocs(logsByEmailQ);
+            logsByEmailSnap.forEach(d => logIdsToUpdate.add(d.id));
+          } catch {}
+        }
+
         const logUpdates: Promise<any>[] = [];
-        logsSnap.forEach(logDoc => {
+        logIdsToUpdate.forEach(logId => {
           const logPatch: Record<string, any> = {};
           if (cleanUsername) logPatch.followerUsername = cleanUsername;
           if (cleanChannelName) logPatch.followerName = cleanChannelName;
           if (cleanImage) logPatch.followerAvatar = cleanImage;
-          logUpdates.push(setDoc(doc(db, 'follow_logs', logDoc.id), logPatch, { merge: true }));
+          logUpdates.push(setDoc(doc(db, 'follow_logs', logId), logPatch, { merge: true }));
         });
         if (logUpdates.length > 0) {
           await Promise.allSettled(logUpdates);
@@ -978,13 +1003,13 @@ export const getFollowLogsFromFirestore = async (campaignId: string): Promise<Fo
       logs.forEach(log => {
         const uData = userMap.get(log.followerUserId);
         if (uData) {
-          const syncedHandle = (uData.atoPlayUsername || uData.channelName || '').trim().replace(/^@+/, '');
-          const syncedAvatar = (uData.channelImage || uData.avatar || '').trim();
-          const syncedName = (uData.channelName || uData.atoPlayUsername || uData.name || '').trim();
-          if (syncedHandle) {
+          const hasRealAtoPlay = isRealAtoPlayAvatarUrl(uData.channelImage) && Boolean(uData.atoPlayUsername || uData.channelName);
+          if (hasRealAtoPlay) {
+            const syncedHandle = (uData.atoPlayUsername || uData.channelName || '').trim().replace(/^@+/, '');
+            const syncedName = (uData.channelName || uData.atoPlayUsername || uData.name || '').trim();
             log.followerUsername = syncedHandle;
             log.followerName = syncedName || log.followerName;
-            if (syncedAvatar) log.followerAvatar = syncedAvatar;
+            log.followerAvatar = uData.channelImage;
           } else {
             if (!log.followerName && uData.name) log.followerName = uData.name;
             if (!log.followerAvatar && uData.avatar) log.followerAvatar = uData.avatar;
