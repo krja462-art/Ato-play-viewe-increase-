@@ -476,7 +476,7 @@ export const CreatorTools: React.FC<CreatorToolsProps> = ({ user, onOpenCreateMo
                 </span>
               </div>
               <p className="text-xs sm:text-sm text-zinc-600 mt-0.5">
-                Dekhein kis-kis user ne aapke AtoPlay channel ko follow kiya hai aur unfollowers ko report karein.
+                View all users who followed your AtoPlay channel and report anyone who unfollowed.
               </p>
             </div>
           </div>
@@ -804,12 +804,12 @@ export const CreatorTools: React.FC<CreatorToolsProps> = ({ user, onOpenCreateMo
             <div className="space-y-1 max-w-md mx-auto">
               <h3 className="text-sm sm:text-base font-extrabold text-zinc-900">
                 {followLogs.length === 0
-                  ? 'Abhi tak koi campaign follower record nahi hua hai'
+                  ? 'No campaign followers recorded yet'
                   : 'No followers match your filter'}
               </h3>
               <p className="text-xs text-zinc-500 leading-relaxed">
                 {followLogs.length === 0
-                  ? 'Jab bhi koi user aapke AtoPlay Follower Campaign ko follow karke verify karega, uska AtoPlay photo, @username aur follow time yahan turant dikhega.'
+                  ? 'Whenever a user follows and verifies your AtoPlay Follower Campaign, their AtoPlay photo, @username, and follow time will appear here instantly.'
                   : 'Try switching the filter tab above or clearing your search text.'}
               </p>
             </div>
@@ -959,7 +959,7 @@ export const CreatorTools: React.FC<CreatorToolsProps> = ({ user, onOpenCreateMo
         <div className="text-xs text-blue-950 space-y-1">
           <p className="font-bold">Creator Anti-Unfollow Protection</p>
           <p className="text-blue-900/80 leading-relaxed">
-            Agar koi user 30 bonus coins lene ke baad aapka AtoPlay channel unfollow kar deta hai, to aap uske naam ke aage <strong>Report Unfollow</strong> button daba sakte hain. Report hote hi uske wallet se 30 coins deduct ho jayenge aur 3 warnings par uska follow bonus block ho jayega.
+            If a user unfollows your AtoPlay channel after claiming the 30 bonus coins, click the <strong>Report Unfollow</strong> button next to their name. Reporting immediately deducts 30 coins from their wallet, and 3 warnings will block their follow bonus.
           </p>
         </div>
       </div>
