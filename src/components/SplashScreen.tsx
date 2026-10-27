@@ -214,14 +214,6 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onLoginSuccess, onOp
   };
 
   const handleGoogleSignIn = async () => {
-    // Detect Android WebView where Google OAuth blocks embedded user-agents (disallowed_useragent)
-    const ua = navigator.userAgent || '';
-    const isAndroidWebView = /; wv\)/i.test(ua) || (/Android/i.test(ua) && /Version\/[\d.]+/i.test(ua) && !/Chrome\/[\d.]+ Mobile Safari/i.test(ua));
-    if (isAndroidWebView) {
-      setShowEmailLogin(true);
-      return;
-    }
-
     try {
       setGoogleLoading(true);
       setErrorMessage(null);
@@ -240,9 +232,24 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onLoginSuccess, onOp
       }
     } catch (err: any) {
       console.warn('Google Sign-In popup attempt:', err);
-      // If popup was blocked or disallowed in WebView, open native in-app email sign-in form
+      const errCode = err?.code || '';
+      if (
+        errCode === 'auth/popup-blocked' ||
+        errCode === 'auth/operation-not-supported-in-this-environment'
+      ) {
+        try {
+          await signInWithGoogleRedirect();
+          return;
+        } catch (redirErr: any) {
+          setGoogleLoading(false);
+          setErrorMessage(redirErr?.message || 'Google Sign-In could not be started.');
+          return;
+        }
+      }
       setGoogleLoading(false);
-      setShowEmailLogin(true);
+      if (errCode !== 'auth/popup-closed-by-user' && errCode !== 'auth/cancelled-popup-request') {
+        setErrorMessage(err?.message || 'Google Sign-In failed. Please try again.');
+      }
     }
   };
 
