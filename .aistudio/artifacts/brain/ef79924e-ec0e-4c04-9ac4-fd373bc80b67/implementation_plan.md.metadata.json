@@ -1,6 +1,6 @@
 {
-  "summary":  "Implementation plan for syncing the user's real AtoPlay Dashboard Account Name (e.g., khan rja) and Account Avatar (profileImage) via AtoPlay email & password login across the SlideDrawer and Follower Logs, working seamlessly on both static deployments (increase.vercel.app) and the backend server.",
-  "updatedAt":  "2026-10-26T23:51:19.900238165Z",
+  "summary":  "Revised implementation plan to completely remove the entire AtoPlay username and profile picture login and auto-sync system and restore the original clean Continue with Google authentication and profile display.",
+  "updatedAt":  "2026-10-27T00:43:12.532922857Z",
   "requestFeedback":  true,
   "userFacing":  true
 }
