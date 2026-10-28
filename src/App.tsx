@@ -3,7 +3,6 @@ import { User } from './types';
 import { Navbar } from './components/Navbar';
 import { HomeWatchFeed } from './components/HomeWatchFeed';
 import { Campaigns } from './components/Campaigns';
-import { CreatorTools } from './components/CreatorTools';
 import { AdminUsers } from './components/AdminUsers';
 import { SplashScreen } from './components/SplashScreen';
 import { PreLoginInstallScreen } from './components/PreLoginInstallScreen';
@@ -568,13 +567,6 @@ export default function App() {
             onCloseCreateModal={handleCloseCreateModal}
             onOpenCreateModal={handleOpenCreateModal}
             refreshTrigger={refreshTrigger}
-          />
-        )}
-
-        {activeTab === 'tools' && (
-          <CreatorTools
-            user={user}
-            onOpenCreateModal={handleOpenCreateModal}
           />
         )}
 

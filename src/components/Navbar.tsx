@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Home, ShieldCheck, Plus, MoreVertical, RefreshCw, Users } from 'lucide-react';
+import { Home, ShieldCheck, Plus, MoreVertical, RefreshCw } from 'lucide-react';
 import { User } from '../types';
 import { SlideDrawer } from './SlideDrawer';
 import { RealCoin } from './RealCoin';
@@ -126,18 +126,6 @@ export const Navbar: React.FC<NavbarProps> = ({
               <span>My Campaigns</span>
             </button>
 
-            <button
-              onClick={() => setActiveTab('tools')}
-              className={`flex items-center space-x-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all cursor-pointer ${
-                activeTab === 'tools'
-                  ? 'bg-blue-600 text-white shadow-sm shadow-blue-600/20'
-                  : 'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100/80'
-              }`}
-            >
-              <Users className="w-4 h-4" />
-              <span>My Followers</span>
-            </button>
-
             {Boolean(user?.isAdmin || user?.email?.toLowerCase().trim() === 'krja462@gmail.com') && (
               <button
                 onClick={() => setActiveTab('users')}
@@ -212,7 +200,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           {/* Home Tab Button */}
           <button
             onClick={() => setActiveTab('home')}
-            className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition-all cursor-pointer active:scale-95 ${
+            className={`flex flex-col items-center justify-center py-1 px-4 rounded-xl transition-all cursor-pointer active:scale-95 ${
               activeTab === 'home' 
                 ? 'text-blue-600' 
                 : 'text-zinc-500 hover:text-zinc-800'
@@ -227,7 +215,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           {/* Center Create Button - Sleek Native App Action */}
           <button
             onClick={onOpenCreate}
-            className="flex items-center space-x-1 px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-95 text-white font-semibold text-xs shadow-sm shadow-blue-600/30 transition-all cursor-pointer"
+            className="flex items-center space-x-1.5 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-95 text-white font-semibold text-xs shadow-sm shadow-blue-600/30 transition-all cursor-pointer"
             title="Create Campaign"
           >
             <Plus className="w-4 h-4 stroke-[2.5]" />
@@ -237,7 +225,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           {/* Campaign Tab Button */}
           <button
             onClick={() => setActiveTab('campaigns')}
-            className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition-all cursor-pointer active:scale-95 ${
+            className={`flex flex-col items-center justify-center py-1 px-4 rounded-xl transition-all cursor-pointer active:scale-95 ${
               activeTab === 'campaigns' 
                 ? 'text-blue-600' 
                 : 'text-zinc-500 hover:text-zinc-800'
@@ -246,21 +234,6 @@ export const Navbar: React.FC<NavbarProps> = ({
             <ShieldCheck className="w-5 h-5 stroke-[2.2]" />
             <span className={`text-[11px] pt-0.5 tracking-tight ${activeTab === 'campaigns' ? 'font-bold' : 'font-medium'}`}>
               Campaigns
-            </span>
-          </button>
-
-          {/* Followers Tracker Tab Button */}
-          <button
-            onClick={() => setActiveTab('tools')}
-            className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition-all cursor-pointer active:scale-95 ${
-              activeTab === 'tools' 
-                ? 'text-blue-600' 
-                : 'text-zinc-500 hover:text-zinc-800'
-            }`}
-          >
-            <Users className="w-5 h-5 stroke-[2.2]" />
-            <span className={`text-[11px] pt-0.5 tracking-tight ${activeTab === 'tools' ? 'font-bold' : 'font-medium'}`}>
-              Followers
             </span>
           </button>
         </nav>
