@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Home, ShieldCheck, Plus, MoreVertical, RefreshCw } from 'lucide-react';
+import { Home, ShieldCheck, Plus, MoreVertical, RefreshCw, Sparkles } from 'lucide-react';
 import { User } from '../types';
 import { SlideDrawer } from './SlideDrawer';
 import { RealCoin } from './RealCoin';
@@ -116,7 +116,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
             <button
               onClick={() => setActiveTab('campaigns')}
-              className={`flex items-center space-x-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all cursor-pointer ${
+              className={`flex items-center space-x-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
                 activeTab === 'campaigns'
                   ? 'bg-blue-600 text-white shadow-sm shadow-blue-600/20'
                   : 'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100/80'
@@ -124,6 +124,18 @@ export const Navbar: React.FC<NavbarProps> = ({
             >
               <ShieldCheck className="w-4 h-4" />
               <span>My Campaigns</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('ai-assistant')}
+              className={`flex items-center space-x-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+                activeTab === 'ai-assistant'
+                  ? 'bg-blue-600 text-white shadow-sm shadow-blue-600/20'
+                  : 'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100/80'
+              }`}
+            >
+              <Sparkles className="w-4 h-4" />
+              <span>AI Assistant</span>
             </button>
 
             {Boolean(user?.isAdmin || user?.email?.toLowerCase().trim() === 'krja462@gmail.com') && (
@@ -225,7 +237,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           {/* Campaign Tab Button */}
           <button
             onClick={() => setActiveTab('campaigns')}
-            className={`flex flex-col items-center justify-center py-1 px-4 rounded-xl transition-all cursor-pointer active:scale-95 ${
+            className={`flex flex-col items-center justify-center py-1 px-3 rounded-xl transition-all cursor-pointer active:scale-95 whitespace-nowrap shrink-0 ${
               activeTab === 'campaigns' 
                 ? 'text-blue-600' 
                 : 'text-zinc-500 hover:text-zinc-800'
@@ -234,6 +246,21 @@ export const Navbar: React.FC<NavbarProps> = ({
             <ShieldCheck className="w-5 h-5 stroke-[2.2]" />
             <span className={`text-[11px] pt-0.5 tracking-tight ${activeTab === 'campaigns' ? 'font-bold' : 'font-medium'}`}>
               Campaigns
+            </span>
+          </button>
+
+          {/* AI Video Growth Assistant Tab Button */}
+          <button
+            onClick={() => setActiveTab('ai-assistant')}
+            className={`flex flex-col items-center justify-center py-1 px-3 rounded-xl transition-all cursor-pointer active:scale-95 whitespace-nowrap shrink-0 ${
+              activeTab === 'ai-assistant' 
+                ? 'text-blue-600' 
+                : 'text-zinc-500 hover:text-zinc-800'
+            }`}
+          >
+            <Sparkles className="w-5 h-5 stroke-[2.2]" />
+            <span className={`text-[11px] pt-0.5 tracking-tight ${activeTab === 'ai-assistant' ? 'font-bold' : 'font-medium'}`}>
+              AI Assistant
             </span>
           </button>
         </nav>

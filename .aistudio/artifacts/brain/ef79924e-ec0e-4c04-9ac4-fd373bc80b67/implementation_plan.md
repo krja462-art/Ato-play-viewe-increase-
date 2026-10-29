@@ -1,31 +1,58 @@
-# Channel Followers Tracker Implementation Plan
+# Implementation Plan: Gemini-Style AI Video Growth Assistant with Voice-to-Text (`Web Speech API`)
 
-## 1. Overview & Goal
-Replace the existing Creator Tools page (`CreatorTools.tsx`) with a dedicated **Channel Followers Tracker ("My Followers")** tool so AtoPlay creators can easily see every user who followed their AtoPlay channel, inspect live channel follower counts, search by AtoPlay channel link or username, and report users who unfollowed (automatically deducting 30 coins and issuing a warning).
+## Overview
+We will redesign the **AI Assistant** page (`/src/components/AIVideoAssistant.tsx`) to match the clean, minimalist mobile assistant layout from your screenshot while integrating the browser **Web Speech API** (`SpeechRecognition` / `webkitSpeechRecognition`) for voice-to-text dictation.
 
-## 2. Key Features & User Experience
-- **Navigation Update (`Navbar.tsx` & `App.tsx`)**:
-  - Update the navigation label and icon from "Creator Tools / Tools" to **"Followers"** (with the `Users` icon) in both the desktop header and mobile bottom navigation bar.
-  - Pass the logged-in `user` object into `CreatorTools` so it can automatically load the creator's follower campaigns and channel data.
-- **Channel Summary & Live Follower Count Header**:
-  - Automatically detect the user's AtoPlay channel from their active/past Follower Campaigns or synced AtoPlay channel profile.
-  - Display the channel avatar, channel name, total live AtoPlay channel follower count (fetched live via `fetchLiveAtoPlayFollowerCount`), and total app-verified followers count.
-  - Include a **Channel Link / Username Search Bar** so the user can also paste any AtoPlay channel URL or `@username` to inspect its live AtoPlay follower stats and matching campaign follower logs.
-- **Who Followed My Channel List (Follower Cards)**:
-  - Aggregate and deduplicate all follower logs from both the backend (`/api/campaigns/:id/followers` and `/api/channels/followers`) and Cloud Firestore (`follow_logs` collection by `creatorId` / `campaignId` / `channelUrl`).
-  - Filter and search followers by username/name or filter between **All Followers**, **Verified Active**, and **Reported / Unfollowed**.
-  - Each follower row displays:
-    - **Follower AtoPlay Profile Photo & Badge** (with clean fallback avatar if no photo is set).
-    - **Follower AtoPlay Username & Display Name** (`@username`).
-    - **Follow Timestamp** (relative time and formatted date/time) and the campaign/channel they followed.
-    - **Report Unfollow Button**: Allows the channel owner to report a user who unfollowed on AtoPlay, immediately marking the log as `reported`, deducting 30 coins from the offender, and sending a real-time warning notification via both `/api/campaigns/:id/report-follower` and `reportFakeFollowInFirestore`.
+---
 
-## 3. Technical Changes
-1. **Backend (`server.ts`)**:
-   - Add `GET /api/my-followers` endpoint that returns all `followLogs` belonging to the authenticated creator (`creatorId === user.id`) or matching a queried `channelUrl` / `channelName`, enriched with each follower's latest AtoPlay profile photo and username.
-2. **Firestore Helper (`src/lib/firebase.ts`)**:
-   - Add `getCreatorFollowLogsFromFirestore(creatorId: string, campaignIds: string[])` to fetch and enrich all `follow_logs` for the user's follower campaigns directly from Cloud Firestore.
-3. **Followers Tool UI (`src/components/CreatorTools.tsx`)**:
-   - Replace the old 4-tab toolkit (SEO, Calculator, Notepad, Device Settings) with the full **Channel Followers Tracker** interface designed for mobile-first touch ergonomics (`44px+` touch targets, clean hairline dividers, tabular numerals, and instant filter tabs).
-4. **Navigation & Wiring (`src/components/Navbar.tsx`, `src/App.tsx`)**:
-   - Pass `user` prop to `<CreatorTools user={user} />` and update the tab icon/label to **Followers**.
+## Key Features & UX Flow
+
+### 1. Minimalist Gemini-Inspired Page Layout & "New Chat" Support
+- **Top Header Bar (Inside AI Assistant Page)**:
+  - Displays the assistant title (**AtoPlay AI** with current active Task & Language indicator) on the left and a **New Chat (`+ New Chat`)** button on the right so creators can start a fresh session anytime.
+- **Zero-State Welcome Screen (When Chat is Empty)**:
+  - Centered 4-point colorful sparkle icon and **"Where should we start?"** heading on a soft airy canvas.
+  - 4 clickable starter rows above the input bar (one for each Creator Task: *Viral Titles & SEO Tags*, *Video Script & 15s Hook*, *Thumbnail Concept Guide*, *Description & Hashtags*) so tapping any row sets the task and pre-fills or prompts the user immediately.
+- **Scrollable Chat & Result Feed**:
+  - When the user submits a topic, the conversation and structured AI result cards appear directly on the page above the fixed bottom input bar.
+  - Each generated result includes **one-click Copy buttons** for Titles, SEO Tags, Hook Script, Thumbnail Text, Description, Hashtags, and Full Output.
+
+### 2. Fixed Bottom Pill Input Bar (Above Mobile Bottom Navbar)
+- Positioned cleanly above the mobile navigation bar (`fixed bottom-16 md:bottom-4 left-0 right-0 z-30`) so it never overlaps with the bottom navbar.
+- **Left `+` (Plus) Button**:
+  - Tapping `+` opens a smooth **Bottom Sheet / Action Drawer** right above the input bar where the user can:
+    1. **Choose Creator Task**:
+       - *Auto-Detect Task*
+       - *1. Title & SEO Tag Generator*
+       - *2. Video Script & Idea Generator*
+       - *3. Thumbnail Concept Guide*
+       - *4. Description & Hashtag Writer*
+    2. **Select Output Language**:
+       - *Hinglish (Mix)*
+       - *Hindi (हिंदी)*
+       - *English*
+    3. **Start a New Chat**: Clear current page results and return to the fresh welcome screen.
+- **Center Input Box**:
+  - Displays the selected task/language indicator and allows typing or editing dictated voice text before sending.
+- **Right Voice Input (`Mic`) & `Send` Buttons**:
+  - **Microphone Button**: Starts/stops live voice-to-text dictation via the browser Web Speech API.
+  - **Send Button**: Appears/activates to submit the prompt and display the AI response on the page.
+
+### 3. Browser Web Speech API Integration (Voice-to-Text)
+- Uses `window.SpeechRecognition || window.webkitSpeechRecognition`.
+- **Language Matching**:
+  - Automatically sets recognition language based on the user's selected language:
+    - **Hindi** $\rightarrow$ `hi-IN`
+    - **Hinglish / English** $\rightarrow$ `en-IN`
+- **Review Before Sending**:
+  - Spoken words populate directly into the input box (including live interim speech preview while speaking) so the creator can review or edit the text before tapping Send.
+- **Visual Listening Feedback**:
+  - Shows a clear `"Listening..."` state on the input bar and microphone button while recording, plus a helpful fallback message if the browser does not support Web Speech API.
+
+---
+
+## Files to Modify
+1. **`/src/components/AIVideoAssistant.tsx`**:
+   - Replace the two-column layout with the Gemini-inspired full-height chat canvas, `"Where should we start?"` welcome state, New Chat reset control, fixed bottom pill input bar (`+` button, text field, Web Speech API microphone button, send button), and the `+` bottom sheet selector for Creator Task and Language.
+2. **`/src/App.tsx`**:
+   - Ensure main container spacing accommodates the fixed bottom AI input bar smoothly on both mobile and desktop viewports.

@@ -4,6 +4,7 @@ import { Navbar } from './components/Navbar';
 import { HomeWatchFeed } from './components/HomeWatchFeed';
 import { Campaigns } from './components/Campaigns';
 import { AdminUsers } from './components/AdminUsers';
+import { AIVideoAssistant } from './components/AIVideoAssistant';
 import { SplashScreen } from './components/SplashScreen';
 import { PreLoginInstallScreen } from './components/PreLoginInstallScreen';
 import { PWAInstallBanner } from './components/PWAInstallBanner';
@@ -568,6 +569,10 @@ export default function App() {
             onOpenCreateModal={handleOpenCreateModal}
             refreshTrigger={refreshTrigger}
           />
+        )}
+
+        {activeTab === 'ai-assistant' && (
+          <AIVideoAssistant user={user} />
         )}
 
         {activeTab === 'users' && (

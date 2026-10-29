@@ -3,6 +3,7 @@ import path from "path";
 import fs from "fs";
 import crypto from "crypto";
 import { fileURLToPath } from "url";
+import { GoogleGenAI, Type } from "@google/genai";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -3876,6 +3877,184 @@ app.post("/api/assetlinks", (req, res) => {
     });
   } catch (err: any) {
     res.status(500).json({ success: false, message: err.message || "Failed saving assetlinks" });
+  }
+});
+
+// ============================================================================
+// AI VIDEO GROWTH ASSISTANT ENDPOINT (FOR ATOPLAY CREATORS & VIDEO PROMOTERS)
+// ============================================================================
+app.post("/api/ai/video-assistant", async (req, res) => {
+  try {
+    const rawPrompt = String(req.body?.prompt || "").trim();
+    const requestedTask = String(req.body?.taskType || "auto").trim();
+    const language = String(req.body?.language || "hinglish").trim().toLowerCase();
+
+    if (!rawPrompt) {
+      return res.status(400).json({
+        success: false,
+        message: "Please enter your video topic, niche, or question."
+      });
+    }
+
+    const languageInstruction =
+      language === "hindi"
+        ? "Write the output in simple, energetic, creator-friendly Hindi (Devanagari & popular creator terms)."
+        : language === "english"
+        ? "Write the output in simple, energetic, modern, creator-friendly English."
+        : "Write the output in energetic, modern, simple, creator-friendly Hinglish (Hindi + English mix in Roman script, ideal for Indian AtoPlay creators).";
+
+    const taskInstructionMap: Record<string, string> = {
+      title_seo:
+        "Task requested: 1. Title & SEO Tag Generator. Generate 3 viral, high-CTR titles and 8-10 trending AtoPlay SEO tags/keywords.",
+      script_idea:
+        "Task requested: 2. Video Script & Idea Generator. Generate 2 unique video concepts and a catchy 15-second opening hook script.",
+      thumbnail_guide:
+        "Task requested: 3. Thumbnail Concept Guide. Provide catchy text to overlay on the thumbnail, background image suggestions, and high-contrast color combinations.",
+      description_hashtags:
+        "Task requested: 4. Description & Hashtag Writer. Generate a clean, structured video description with call-to-action prompts (Like/Follow on AtoPlay) and 5 relevant hashtags.",
+      auto:
+        "Identify which of the 4 creator tasks (title_seo, script_idea, thumbnail_guide, or description_hashtags) the user is requesting based on their input. If the user provides a general video topic without specifying a single task, generate the best matching task or a complete growth pack covering titles, tags, hook, thumbnail guide, and description."
+    };
+
+    const selectedTaskGuidance = taskInstructionMap[requestedTask] || taskInstructionMap.auto;
+
+    const systemInstruction = `You are an expert AI Video Growth Assistant built specifically for AtoPlay content creators and video promoters. Your goal is to generate high-engaging, CTR-boosting, and SEO-optimized output for creators.
+
+When the user asks for assistance, identify which of the 4 creator tasks they are requesting based on their input:
+1. Title & SEO Tag Generator (title_seo): Generate 3 viral, high-CTR titles (in Hindi/Hinglish/English mix as requested) and 8-10 trending tags/keywords.
+2. Video Script & Idea Generator (script_idea): Generate 2 unique video concepts and a catchy 15-second opening hook script.
+3. Thumbnail Concept Guide (thumbnail_guide): Provide catchy text to overlay on the thumbnail, background image suggestions, and high-contrast color combinations.
+4. Description & Hashtag Writer (description_hashtags): Generate a clean, structured video description with call-to-action buttons/prompts (Like/Follow) and 5 relevant hashtags.
+
+Guidelines:
+- ${languageInstruction}
+- ${selectedTaskGuidance}
+- Keep the language energetic, modern, simple, and creator-friendly.
+- Keep formatting clean using bold text, bullet points, and clear line breaks in cleanFormattedOutput.
+- Avoid unnecessary filler text; directly output the requested information.`;
+
+    const ai = new GoogleGenAI({
+      apiKey: process.env.GEMINI_API_KEY,
+      httpOptions: {
+        headers: {
+          "User-Agent": "aistudio-build"
+        }
+      }
+    });
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3.8-flash",
+      contents: `Creator Input / Video Topic: ${rawPrompt}\nSelected Task Mode: ${requestedTask}\nPreferred Language: ${language}`,
+      config: {
+        systemInstruction,
+        temperature: 0.8,
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            detectedTask: {
+              type: Type.STRING,
+              description: "One of: title_seo, script_idea, thumbnail_guide, description_hashtags, or all_in_one"
+            },
+            taskTitle: {
+              type: Type.STRING,
+              description: "Clean heading for the generated task output"
+            },
+            titles: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING },
+              description: "3 viral, high-CTR video titles if applicable"
+            },
+            seoTags: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING },
+              description: "8-10 trending SEO tags/keywords if applicable"
+            },
+            videoConcepts: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  title: { type: Type.STRING },
+                  concept: { type: Type.STRING }
+                },
+                required: ["title", "concept"]
+              },
+              description: "2 unique video concepts if applicable"
+            },
+            openingHook: {
+              type: Type.STRING,
+              description: "Catchy 15-second opening hook script if applicable"
+            },
+            thumbnailOverlays: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING },
+              description: "Catchy text phrases to overlay on the thumbnail if applicable"
+            },
+            thumbnailBackgrounds: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING },
+              description: "Background visual and composition suggestions for the thumbnail if applicable"
+            },
+            thumbnailColors: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING },
+              description: "High-contrast color combinations for the thumbnail if applicable"
+            },
+            descriptionText: {
+              type: Type.STRING,
+              description: "Clean, structured AtoPlay video description with Like/Follow CTA prompts if applicable"
+            },
+            hashtags: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING },
+              description: "5 relevant hashtags starting with # if applicable"
+            },
+            cleanFormattedOutput: {
+              type: Type.STRING,
+              description: "Direct, zero-filler formatted output using bold text, bullet points, and clear line breaks"
+            }
+          },
+          required: ["detectedTask", "taskTitle", "cleanFormattedOutput"]
+        }
+      }
+    });
+
+    const rawText = response.text || "{}";
+    let parsedResult: any = {};
+    try {
+      parsedResult = JSON.parse(rawText);
+    } catch {
+      parsedResult = {
+        detectedTask: requestedTask === "auto" ? "all_in_one" : requestedTask,
+        taskTitle: "AI Video Growth Output",
+        cleanFormattedOutput: rawText
+      };
+    }
+
+    return res.json({
+      success: true,
+      result: {
+        detectedTask: parsedResult.detectedTask || (requestedTask === "auto" ? "all_in_one" : requestedTask),
+        taskTitle: parsedResult.taskTitle || "AtoPlay Creator Growth Plan",
+        titles: Array.isArray(parsedResult.titles) ? parsedResult.titles : [],
+        seoTags: Array.isArray(parsedResult.seoTags) ? parsedResult.seoTags : [],
+        videoConcepts: Array.isArray(parsedResult.videoConcepts) ? parsedResult.videoConcepts : [],
+        openingHook: parsedResult.openingHook || "",
+        thumbnailOverlays: Array.isArray(parsedResult.thumbnailOverlays) ? parsedResult.thumbnailOverlays : [],
+        thumbnailBackgrounds: Array.isArray(parsedResult.thumbnailBackgrounds) ? parsedResult.thumbnailBackgrounds : [],
+        thumbnailColors: Array.isArray(parsedResult.thumbnailColors) ? parsedResult.thumbnailColors : [],
+        descriptionText: parsedResult.descriptionText || "",
+        hashtags: Array.isArray(parsedResult.hashtags) ? parsedResult.hashtags : [],
+        cleanFormattedOutput: parsedResult.cleanFormattedOutput || ""
+      }
+    });
+  } catch (err: any) {
+    console.error("AI Video Growth Assistant Error:", err);
+    return res.status(500).json({
+      success: false,
+      message: err?.message || "Failed to generate AI creator growth content. Please try again."
+    });
   }
 });
 
