@@ -155,14 +155,11 @@ export const PreLoginInstallScreen: React.FC<PreLoginInstallScreenProps> = ({ on
       }
     } else {
       const userAgent = navigator.userAgent || navigator.vendor || (window as any).opera;
-      if (/android/i.test(userAgent)) {
-        window.alert('To install AtoPlay Booster instantly on Android:\n1. Tap the Chrome 3-dots menu (top right)\n2. Select "Add to Home screen" or "Install app"');
-      } else if (/iphone|ipad|ipod/i.test(userAgent)) {
+      if (/iphone|ipad|ipod/i.test(userAgent)) {
         setShowIOSModal(true);
       } else {
-        window.alert('To install AtoPlay Booster, tap your browser menu and select "Install AtoPlay Booster" or "Add to Home Screen".');
+        onSkip();
       }
-      onSkip();
     }
   };
 
@@ -182,7 +179,7 @@ export const PreLoginInstallScreen: React.FC<PreLoginInstallScreenProps> = ({ on
               AtoPlay Booster
             </span>
             <span className="text-[11px] text-blue-200 font-medium">
-              Community Promotion Network
+              Creator Community &amp; AI Studio
             </span>
           </div>
         </div>
@@ -193,7 +190,7 @@ export const PreLoginInstallScreen: React.FC<PreLoginInstallScreenProps> = ({ on
           onClick={onSkip}
           className="px-4 py-2 rounded-full bg-white/10 hover:bg-white/20 border border-white/25 text-white text-xs sm:text-sm font-extrabold transition-all cursor-pointer flex items-center space-x-1.5 shadow-md active:scale-95"
         >
-          <span>Continue to Login</span>
+          <span>Continue to App</span>
           <ArrowRight className="w-4 h-4" />
         </button>
       </header>
@@ -308,7 +305,7 @@ export const PreLoginInstallScreen: React.FC<PreLoginInstallScreenProps> = ({ on
 
       </main>
 
-      {/* "inke niche install app baner ho" - Modern Install App Banner */}
+      {/* Modern Install App Banner */}
       <footer className="w-full max-w-md mx-auto pt-2 pb-3 shrink-0">
         <div className="bg-white text-zinc-900 border border-blue-200/90 rounded-3xl p-3.5 sm:p-4 shadow-2xl flex items-center justify-between gap-3">
           
@@ -337,7 +334,7 @@ export const PreLoginInstallScreen: React.FC<PreLoginInstallScreenProps> = ({ on
                 </span>
               </div>
               <p className="text-xs text-zinc-500 truncate mt-0.5">
-                Install for auto-viewing & instant coins
+                Install for Creator Community &amp; AI SEO Studio
               </p>
             </div>
           </div>

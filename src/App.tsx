@@ -408,11 +408,8 @@ export default function App() {
         method: 'POST',
         headers: { 'x-user-id': user.id }
       });
-      if (data?.success) {
+      if (data?.success && data.user) {
         handleUpdateUser(data.user);
-        alert(data.message);
-      } else {
-        alert(data?.message || 'Check-in failed');
       }
     } catch (err) {
       console.error('Checkin failed', err);
@@ -426,11 +423,8 @@ export default function App() {
         method: 'POST',
         headers: { 'x-user-id': user.id }
       });
-      if (data?.success) {
+      if (data?.success && data.user) {
         handleUpdateUser(data.user);
-        alert(data.message);
-      } else {
-        alert(data?.message || 'Ad reward failed');
       }
     } catch (err) {
       console.error('Ad reward failed', err);
@@ -493,7 +487,7 @@ export default function App() {
     return (
       <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center text-white space-y-4">
         <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
-        <p className="text-blue-200 font-medium tracking-wide">Connecting to AtoViewer Network...</p>
+        <p className="text-blue-200 font-medium tracking-wide">Loading AtoPlay Booster Studio...</p>
       </div>
     );
   }

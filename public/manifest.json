@@ -1,8 +1,8 @@
 {
   "id": "/",
-  "name": "AtoPlay Booster - Ato Play Views Increase",
-  "short_name": "AtoPlay",
-  "description": "India's #1 AtoPlay video view exchange and watch time booster platform. Increase real AtoPlay views, earn coins, and monetize your channel faster.",
+  "name": "AtoPlay Booster - Creator Community & AI Growth Studio",
+  "short_name": "AtoBooster",
+  "description": "Independent creator community, video discovery, and AI SEO toolkit for video creators. Generate viral titles, tags, scripts, and promote your channel organically.",
   "lang": "en",
   "dir": "ltr",
   "start_url": "/",
@@ -12,7 +12,7 @@
   "orientation": "portrait",
   "background_color": "#ffffff",
   "theme_color": "#2563eb",
-  "categories": ["entertainment", "utilities", "social"],
+  "categories": ["productivity", "utilities", "social"],
   "iarc_rating_id": "e84b072d-71b3-4d3e-86ae-31a8ce4e53b7",
   "prefer_related_applications": false,
   "handle_links": "preferred",
@@ -59,9 +59,9 @@
   ],
   "shortcuts": [
     {
-      "name": "Watch & Earn Coins",
-      "short_name": "Watch",
-      "description": "Watch AtoPlay videos and earn free coins",
+      "name": "Explore Creator Videos",
+      "short_name": "Explore",
+      "description": "Discover creator videos and community feed",
       "url": "/?tab=home",
       "icons": [
         {
@@ -72,9 +72,22 @@
       ]
     },
     {
-      "name": "Create Campaign",
+      "name": "AI Growth Assistant",
+      "short_name": "AI Studio",
+      "description": "Generate viral titles, tags, and video scripts",
+      "url": "/?tab=ai-assistant",
+      "icons": [
+        {
+          "src": "/pwa-192x192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Promote Video",
       "short_name": "Campaign",
-      "description": "Promote your AtoPlay video",
+      "description": "Share your video with the creator community",
       "url": "/?tab=campaigns",
       "icons": [
         {
@@ -91,21 +104,21 @@
       "sizes": "1080x1920",
       "type": "image/png",
       "form_factor": "narrow",
-      "label": "AtoPlay Booster Video Player and Coins Exchange"
+      "label": "AtoPlay Booster Creator Discovery & AI SEO Studio"
     },
     {
       "src": "/screenshot-mobile-2.png",
       "sizes": "1080x1920",
       "type": "image/png",
       "form_factor": "narrow",
-      "label": "AtoPlay Booster Campaign Dashboard"
+      "label": "AtoPlay Booster Community Campaign Dashboard"
     },
     {
       "src": "/screenshot-desktop-1.png",
       "sizes": "1920x1080",
       "type": "image/png",
       "form_factor": "wide",
-      "label": "AtoPlay Booster Desktop Overview"
+      "label": "AtoPlay Booster Creator Studio Desktop Overview"
     },
     {
       "src": "/screenshot-desktop-2.png",

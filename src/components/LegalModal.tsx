@@ -114,26 +114,27 @@ export const LegalModal: React.FC<LegalModalProps> = ({
             <div className="p-3.5 rounded-2xl bg-blue-50 border border-blue-200 text-blue-900">
               <p className="font-extrabold text-sm">Privacy Overview (Last Updated: October 2026)</p>
               <p className="text-xs pt-1 text-blue-800">
-                AtoPlay Booster is committed to protecting your privacy. We collect minimal information strictly necessary to provide the video view exchange service and never sell your personal data.
+                AtoPlay Booster is committed to protecting your privacy. We collect minimal information strictly necessary to provide the creator community showcase and AI Video Growth Studio, and never sell your personal data.
               </p>
             </div>
 
             <div>
-              <h3 className="font-bold text-zinc-900 text-sm">1. Information We Collect</h3>
+              <h3 className="font-bold text-zinc-900 text-sm">1. Information We Collect &amp; Permissions</h3>
               <ul className="list-disc pl-5 pt-1 space-y-1 text-xs">
-                <li><strong>Authentication Data:</strong> When logging in with Google, we receive basic public profile information: your name, email address, and profile photo avatar. We never access, request, or store your Google password.</li>
-                <li><strong>Creator Information:</strong> Public video links and channel URLs that you submit to create campaigns.</li>
-                <li><strong>Activity Data:</strong> Session verification tokens, watch time duration (60-second timer), and coin balances used for campaign exchanges.</li>
+                <li><strong>Authentication Data:</strong> When logging in with Google, we receive basic public profile information: your name, email address, and profile photo avatar. We never access, request, or store your Google password or third-party passwords.</li>
+                <li><strong>Creator Showcase Links:</strong> Public video links and channel URLs that you submit to share with the community.</li>
+                <li><strong>AI Assistant &amp; Voice Dictation (Microphone):</strong> When you tap the Voice-to-Text button in the AI Assistant, your browser&apos;s built-in Web Speech API converts speech to text locally. We never record, save, or upload raw audio files.</li>
+                <li><strong>Activity Data:</strong> Community discovery sessions and virtual coin balances used for campaign showcases.</li>
               </ul>
             </div>
 
             <div>
               <h3 className="font-bold text-zinc-900 text-sm">2. How We Use Information</h3>
               <ul className="list-disc pl-5 pt-1 space-y-1 text-xs">
-                <li>To enable peer-to-peer video promotion and track genuine 60-second view exchanges.</li>
-                <li>To verify channel follow campaigns via official AtoPlay public endpoints.</li>
-                <li>To prevent fraud, automated bots, and duplicate coin exploits.</li>
-                <li>To provide creator support and resolve campaign disputes.</li>
+                <li>To enable community video discovery and creator showcase campaigns.</li>
+                <li>To generate AI video titles, descriptions, SEO tags, and scripts based on your topic prompts.</li>
+                <li>To prevent spam, automated bots, and abuse of community features.</li>
+                <li>To provide creator support and resolve account inquiries.</li>
               </ul>
             </div>
 
@@ -147,7 +148,7 @@ export const LegalModal: React.FC<LegalModalProps> = ({
             <div>
               <h3 className="font-bold text-zinc-900 text-sm">4. Data Retention &amp; User Rights</h3>
               <p className="text-xs pt-1">
-                You retain complete control over your data. You can delete your campaigns anytime with full coin refunds. You can request complete account deletion by contacting us at <strong className="text-zinc-900">Developer</strong> or using the in-app "Delete Account" tab.
+                You retain complete control over your data. You can delete your campaigns anytime with full coin refunds. You can request complete account deletion by contacting us at <a href="mailto:krja462@gmail.com" className="text-blue-600 font-bold underline">krja462@gmail.com</a> or using the in-app &ldquo;Delete Account&rdquo; tab.
               </p>
             </div>
 
@@ -171,35 +172,34 @@ export const LegalModal: React.FC<LegalModalProps> = ({
             </div>
 
             <div>
-              <h3 className="font-bold text-zinc-900 text-sm">1. Community Exchange Model</h3>
+              <h3 className="font-bold text-zinc-900 text-sm">1. Creator Community &amp; AI SEO Toolkit</h3>
               <p className="text-xs pt-1">
-                AtoPlay Booster is an honest, voluntary view and follower exchange utility. Users earn virtual in-app coins by watching other creators&apos; videos for at least 60 seconds and following creator channels.
+                AtoPlay Booster is a collaborative creator community and AI video growth toolkit. Users can discover fellow creators&apos; channels, generate SEO titles/tags/scripts with the AI Assistant, and earn virtual in-app community coins to showcase their own videos.
               </p>
             </div>
 
             <div>
               <h3 className="font-bold text-zinc-900 text-sm">2. Coin Utility (No Cash Value)</h3>
               <p className="text-xs pt-1">
-                Coins earned in AtoPlay Booster are strictly virtual utility tokens for launching promotional campaigns within the app. Coins hold NO real-world monetary value, cannot be redeemed for fiat currency, and cannot be withdrawn or sold.
+                Coins earned in AtoPlay Booster are strictly virtual utility tokens for launching promotional showcases within the app. Coins hold NO real-world monetary value, cannot be redeemed for fiat currency, and cannot be withdrawn or sold.
               </p>
             </div>
 
             <div>
-              <h3 className="font-bold text-zinc-900 text-sm">3. Anti-Fraud &amp; Fair Play Policy</h3>
+              <h3 className="font-bold text-zinc-900 text-sm">3. Fair Play &amp; Anti-Spam Policy</h3>
               <p className="text-xs pt-1">
-                To guarantee genuine watch time for all creators, the app enforces anti-cheat verification:
+                To maintain a safe and authentic community for all creators:
               </p>
               <ul className="list-disc pl-5 pt-1 space-y-1 text-xs">
-                <li>Videos must be watched for a minimum of 60 seconds to earn coins.</li>
-                <li>Channel follow campaigns require a minimum 4-second visit and genuine follower verification via public APIs.</li>
-                <li>The use of automated scripts, emulators, bots, or deceptive practices is strictly prohibited and results in permanent account suspension.</li>
+                <li>Community discovery sessions must be completed genuinely by human creators.</li>
+                <li>The use of automated scripts, emulators, auto-clickers, or bots is strictly prohibited and results in account suspension.</li>
               </ul>
             </div>
 
             <div>
               <h3 className="font-bold text-zinc-900 text-sm">4. Campaign Content Guidelines</h3>
               <p className="text-xs pt-1">
-                Users may only submit public, lawful AtoPlay links. Campaigns containing hate speech, copyrighted pirated material, violence, or illegal content will be removed immediately without coin refund.
+                Users may only submit public, lawful video links. Campaigns containing hate speech, copyrighted pirated material, violence, adult content, or illegal material will be removed immediately.
               </p>
             </div>
           </div>
@@ -214,7 +214,7 @@ export const LegalModal: React.FC<LegalModalProps> = ({
                 <span>Third-Party Independent Utility Disclaimer</span>
               </div>
               <p className="text-xs leading-relaxed font-medium">
-                <strong>AtoPlay Booster</strong> is an independent community utility developed to assist video creators in discovering and supporting each other.
+                <strong>AtoPlay Booster</strong> is an independent community &amp; AI SEO utility developed to assist video creators in discovering and supporting each other.
               </p>
             </div>
 
@@ -228,14 +228,14 @@ export const LegalModal: React.FC<LegalModalProps> = ({
             <div>
               <h3 className="font-bold text-zinc-900 text-sm">2. Trademark Notice</h3>
               <p className="text-xs pt-1">
-                &ldquo;AtoPlay&rdquo;, the AtoPlay logo, and related trademarks are the registered property of Bluedoors Technologies Pvt. Ltd. Any reference to &ldquo;AtoPlay&rdquo; in this application is used purely for nominative, descriptive, and interoperability purposes to describe the compatibility of video promotion links.
+                &ldquo;AtoPlay&rdquo;, the AtoPlay logo, and related trademarks are the registered property of Bluedoors Technologies Pvt. Ltd. Any reference to &ldquo;AtoPlay&rdquo; in this application is used purely for nominative, descriptive, and interoperability purposes to describe compatibility with public creator links.
               </p>
             </div>
 
             <div>
               <h3 className="font-bold text-zinc-900 text-sm">3. Independent External Browser Viewing</h3>
               <p className="text-xs pt-1">
-                All video and channel links submitted by users are opened directly in your standard external web browser (Chrome, Samsung Internet, etc.) on the official AtoPlay website. We do not modify, host, or scrape private AtoPlay data.
+                All video and channel links submitted by users are opened directly in your standard external web browser (Chrome, Samsung Internet, etc.) on the official website. We do not modify, host, or scrape private user data.
               </p>
             </div>
           </div>
@@ -254,11 +254,11 @@ export const LegalModal: React.FC<LegalModalProps> = ({
             <div className="p-3.5 rounded-2xl bg-zinc-50 border border-zinc-200 space-y-1">
               <div className="flex items-center space-x-2 text-zinc-900 font-bold text-xs">
                 <Mail className="w-4 h-4 text-emerald-600" />
-                <span>Developer Support</span>
+                <span>Official Developer Support Email</span>
               </div>
-              <p className="text-xs text-zinc-800 font-bold">
-                Developer
-              </p>
+              <a href="mailto:krja462@gmail.com" className="text-xs text-blue-600 hover:underline font-bold block">
+                krja462@gmail.com
+              </a>
               <p className="text-[11px] text-zinc-500">Fast response within 24 hours</p>
             </div>
 
@@ -267,7 +267,7 @@ export const LegalModal: React.FC<LegalModalProps> = ({
                 <CheckCircle2 className="w-10 h-10 text-emerald-600 mx-auto" />
                 <h4 className="font-extrabold text-emerald-900 text-sm">Message Prepared!</h4>
                 <p className="text-xs text-emerald-700">
-                  Click below to open your email client and send your query directly to <strong>Developer</strong>.
+                  Click below to open your email client and send your query directly to <strong>krja462@gmail.com</strong>.
                 </p>
                 <a
                   href={`mailto:krja462@gmail.com?subject=AtoPlay%20Booster%20Inquiry%20from%20${encodeURIComponent(contactName || 'User')}&body=${encodeURIComponent(`Name: ${contactName}\nEmail: ${contactEmail}\n\nMessage:\n${contactMessage}`)}`}
