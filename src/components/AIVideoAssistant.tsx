@@ -154,33 +154,96 @@ const LANGUAGE_OPTIONS: {
   }
 ];
 
-const FourPointSparkle: React.FC<{ className?: string }> = ({ className = 'w-10 h-10' }) => (
-  <svg
-    viewBox="0 0 48 48"
-    fill="none"
-    xmlns="http://www.w3.org/2000/svg"
-    className={className}
-    aria-hidden="true"
-  >
-    <defs>
-      <linearGradient id="atoplaySparkleGrad" x1="4" y1="4" x2="44" y2="44" gradientUnits="userSpaceOnUse">
-        <stop offset="0%" stopColor="#EF4444" />
-        <stop offset="35%" stopColor="#F59E0B" />
-        <stop offset="68%" stopColor="#10B981" />
-        <stop offset="100%" stopColor="#3B82F6" />
-      </linearGradient>
-    </defs>
-    <path
-      d="M24 3C24 14.598 33.402 24 45 24C33.402 24 24 33.402 24 45C24 33.402 14.598 24 3 24C14.598 24 24 14.598 24 3Z"
-      fill="url(#atoplaySparkleGrad)"
-    />
-  </svg>
-);
+/**
+ * Helper to render clean formatted AI text with **bold** spans, headings, and bullet points
+ * inside a ChatGPT / Gemini style conversational bubble.
+ */
+const FormattedAIMessage: React.FC<{ text: string }> = ({ text }) => {
+  const lines = String(text || '').split('\n');
+
+  const renderInlineBold = (lineText: string) => {
+    const parts = lineText.split(/(\*\*[^*]+\*\*)/g);
+    return parts.map((part, idx) => {
+      if (part.startsWith('**') && part.endsWith('**') && part.length > 4) {
+        return (
+          <strong key={idx} className="font-bold text-zinc-900">
+            {part.slice(2, -2)}
+          </strong>
+        );
+      }
+      return <React.Fragment key={idx}>{part}</React.Fragment>;
+    });
+  };
+
+  return (
+    <div className="space-y-2 text-sm sm:text-[15px] text-zinc-800 leading-relaxed">
+      {lines.map((rawLine, idx) => {
+        const line = rawLine.trim();
+        if (!line) {
+          return <div key={idx} className="h-1.5" />;
+        }
+
+        // Heading line (e.g. ### Heading or full **Heading**)
+        if (line.startsWith('### ') || line.startsWith('## ')) {
+          const cleanHeading = line.replace(/^#{2,3}\s+/, '').replace(/\*\*/g, '');
+          return (
+            <h3 key={idx} className="text-sm sm:text-base font-bold text-zinc-900 pt-2 first:pt-0">
+              {cleanHeading}
+            </h3>
+          );
+        }
+
+        if (
+          line.startsWith('**') &&
+          line.endsWith('**') &&
+          line.indexOf('**', 2) === line.length - 2
+        ) {
+          return (
+            <h3 key={idx} className="text-sm sm:text-base font-bold text-zinc-900 pt-2 first:pt-0">
+              {line.slice(2, -2)}
+            </h3>
+          );
+        }
+
+        // Bullet point line
+        if (line.startsWith('• ') || line.startsWith('- ') || line.startsWith('* ')) {
+          const bulletBody = line.slice(2).trim();
+          return (
+            <div key={idx} className="flex items-start gap-2.5 pl-1">
+              <span className="text-blue-600 font-bold mt-0.5 select-none">•</span>
+              <p className="flex-1 break-words">{renderInlineBold(bulletBody)}</p>
+            </div>
+          );
+        }
+
+        // Numbered list line (e.g., "1. Title...")
+        const numMatch = line.match(/^(\d+\.)\s+(.*)$/);
+        if (numMatch) {
+          return (
+            <div key={idx} className="flex items-start gap-2.5 pl-1">
+              <span className="text-blue-600 font-bold tabular-nums shrink-0 mt-0.5">
+                {numMatch[1]}
+              </span>
+              <p className="flex-1 break-words">{renderInlineBold(numMatch[2])}</p>
+            </div>
+          );
+        }
+
+        return (
+          <p key={idx} className="break-words">
+            {renderInlineBold(rawLine)}
+          </p>
+        );
+      })}
+    </div>
+  );
+};
 
 export const AIVideoAssistant: React.FC<AIVideoAssistantProps> = ({ user }) => {
   const [selectedTask, setSelectedTask] = useState<CreatorTaskType>('auto');
   const [language, setLanguage] = useState<OutputLanguage>('hinglish');
   const [prompt, setPrompt] = useState('');
+  const [pendingPrompt, setPendingPrompt] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [chatTurns, setChatTurns] = useState<ChatTurnItem[]>([]);
@@ -355,128 +418,17 @@ export const AIVideoAssistant: React.FC<AIVideoAssistantProps> = ({ user }) => {
     }
     setChatTurns([]);
     setPrompt('');
+    setPendingPrompt(null);
     setErrorMsg(null);
     setSpeechNotice(null);
     setIsPlusMenuOpen(false);
     setIsHistoryDrawerOpen(false);
   };
-
-  const handleGenerate = async (e?: React.FormEvent, customTopic?: string, overrideTask?: CreatorTaskType) => {
-    if (e) e.preventDefault();
-    const targetPrompt = (customTopic !== undefined ? customTopic : prompt).trim();
-    if (!targetPrompt || isGenerating) return;
-
-    if (isListening && recognitionRef.current) {
-      try {
-        recognitionRef.current.stop();
-      } catch {
-        // ignore
-      }
-      setIsListening(false);
-    }
-
-    const taskToUse = overrideTask || selectedTask;
-    setIsGenerating(true);
-    setErrorMsg(null);
-    setSpeechNotice(null);
-    setIsPlusMenuOpen(false);
-    if (customTopic === undefined) {
-      setPrompt('');
-    }
-    scrollToLatestTurn();
-
-    try {
-      const data = await apiFetch('/api/ai/video-assistant', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-user-id': user.id
-        },
-        body: JSON.stringify({
-          prompt: targetPrompt,
-          taskType: taskToUse,
-          language
-        })
-      });
-
-      if (!data?.success || !data?.result) {
-        throw new Error(data?.message || 'Could not generate response. Please try again.');
-      }
-
-      const result: AIGrowthResult = data.result;
-      const nowStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      const turnId = `ai_${Date.now()}`;
-
-      const newTurn: ChatTurnItem = {
-        id: turnId,
-        prompt: targetPrompt,
-        taskType: taskToUse,
-        language,
-        createdAt: nowStr,
-        result
-      };
-
-      setChatTurns((prev) => [...prev, newTurn]);
-
-      const newHistoryItem: SavedAIHistoryItem = {
-        id: turnId,
-        prompt: targetPrompt,
-        taskType: taskToUse,
-        language,
-        createdAt: nowStr,
-        result
-      };
-
-      saveHistoryToLocal([newHistoryItem, ...history.filter((h) => h.prompt !== targetPrompt)].slice(0, 15));
-      scrollToLatestTurn();
-    } catch (err: any) {
-      setErrorMsg(err?.message || 'Network error while generating AI content. Please try again.');
-      if (customTopic === undefined) {
-        setPrompt(targetPrompt);
-      }
-    } finally {
-      setIsGenerating(false);
-    }
-  };
-
-  const handleDeleteHistoryItem = (id: string) => {
-    const updated = history.filter((item) => item.id !== id);
-    saveHistoryToLocal(updated);
-  };
-
-  const handleClearAllHistory = () => {
-    saveHistoryToLocal([]);
-  };
-
-  const handleLoadHistoryItem = (item: SavedAIHistoryItem) => {
-    setSelectedTask(item.taskType);
-    setLanguage(item.language);
-    setChatTurns([
-      {
-        id: item.id,
-        prompt: item.prompt,
-        taskType: item.taskType,
-        language: item.language,
-        createdAt: item.createdAt,
-        result: item.result
-      }
-    ]);
-    setErrorMsg(null);
-    setIsHistoryDrawerOpen(false);
-    setIsPlusMenuOpen(false);
-    scrollToLatestTurn();
-  };
-
-  const handleSelectStarterTask = (task: typeof TASK_CARDS[number]) => {
-    setSelectedTask(task.id);
-    setIsPlusMenuOpen(false);
-    inputRef.current?.focus();
-  };
-
-  const activeTaskMeta = TASK_CARDS.find((t) => t.id === selectedTask);
-  const activeLanguageMeta = LANGUAGE_OPTIONS.find((l) => l.id === language) || LANGUAGE_OPTIONS[0];
 
   const buildFullCopyText = (res: AIGrowthResult) => {
+    if (res.cleanFormattedOutput && res.cleanFormattedOutput.trim()) {
+      return res.cleanFormattedOutput.replace(/\*\*/g, '').trim();
+    }
     const parts: string[] = [];
     if (res.titles?.length > 0) {
       parts.push(`VIRAL TITLES:\n${res.titles.map((t, i) => `${i + 1}. ${t}`).join('\n')}`);
@@ -509,17 +461,152 @@ export const AIVideoAssistant: React.FC<AIVideoAssistantProps> = ({ user }) => {
     if (res.hashtags?.length > 0) {
       parts.push(`HASHTAGS:\n${res.hashtags.join(' ')}`);
     }
-    if (parts.length === 0 && res.cleanFormattedOutput) {
-      return res.cleanFormattedOutput;
-    }
     return parts.join('\n\n');
   };
+
+  const getDisplayBubbleText = (res: AIGrowthResult) => {
+    if (res.cleanFormattedOutput && res.cleanFormattedOutput.trim()) {
+      return res.cleanFormattedOutput.trim();
+    }
+    return buildFullCopyText(res);
+  };
+
+  const handleGenerate = async (
+    e?: React.FormEvent,
+    customTopic?: string,
+    overrideTask?: CreatorTaskType
+  ) => {
+    if (e) e.preventDefault();
+    const targetPrompt = (customTopic !== undefined ? customTopic : prompt).trim();
+    if (!targetPrompt || isGenerating) return;
+
+    if (isListening && recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+      } catch {
+        // ignore
+      }
+      setIsListening(false);
+    }
+
+    const taskToUse = overrideTask || selectedTask;
+    setIsGenerating(true);
+    setPendingPrompt(targetPrompt);
+    setErrorMsg(null);
+    setSpeechNotice(null);
+    setIsPlusMenuOpen(false);
+    if (customTopic === undefined) {
+      setPrompt('');
+    }
+    scrollToLatestTurn();
+
+    // Build multi-turn conversation history for follow-up AI context memory
+    const conversationHistory = chatTurns.flatMap((turn) => [
+      { role: 'user', text: turn.prompt },
+      { role: 'model', text: getDisplayBubbleText(turn.result) }
+    ]);
+
+    try {
+      const data = await apiFetch('/api/ai/video-assistant', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': user.id
+        },
+        body: JSON.stringify({
+          prompt: targetPrompt,
+          taskType: taskToUse,
+          language,
+          messages: conversationHistory
+        })
+      });
+
+      if (!data?.success || !data?.result) {
+        throw new Error(data?.message || 'Could not generate AI response. Please try again.');
+      }
+
+      const result: AIGrowthResult = data.result;
+      const nowStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const turnId = `ai_${Date.now()}`;
+
+      const newTurn: ChatTurnItem = {
+        id: turnId,
+        prompt: targetPrompt,
+        taskType: taskToUse,
+        language,
+        createdAt: nowStr,
+        result
+      };
+
+      setChatTurns((prev) => [...prev, newTurn]);
+
+      const newHistoryItem: SavedAIHistoryItem = {
+        id: turnId,
+        prompt: targetPrompt,
+        taskType: taskToUse,
+        language,
+        createdAt: nowStr,
+        result
+      };
+
+      saveHistoryToLocal(
+        [newHistoryItem, ...history.filter((h) => h.prompt !== targetPrompt)].slice(0, 15)
+      );
+      scrollToLatestTurn();
+    } catch (err: any) {
+      setErrorMsg(err?.message || 'Network error while generating AI content. Please try again.');
+      if (customTopic === undefined) {
+        setPrompt(targetPrompt);
+      }
+    } finally {
+      setIsGenerating(false);
+      setPendingPrompt(null);
+    }
+  };
+
+  const handleDeleteHistoryItem = (id: string) => {
+    const updated = history.filter((item) => item.id !== id);
+    saveHistoryToLocal(updated);
+  };
+
+  const handleClearAllHistory = () => {
+    saveHistoryToLocal([]);
+  };
+
+  const handleLoadHistoryItem = (item: SavedAIHistoryItem) => {
+    setSelectedTask(item.taskType);
+    setLanguage(item.language);
+    setChatTurns([
+      {
+        id: item.id,
+        prompt: item.prompt,
+        taskType: item.taskType,
+        language: item.language,
+        createdAt: item.createdAt,
+        result: item.result
+      }
+    ]);
+    setErrorMsg(null);
+    setIsHistoryDrawerOpen(false);
+    setIsPlusMenuOpen(false);
+    scrollToLatestTurn();
+  };
+
+  const handleSelectStarterTask = (task: (typeof TASK_CARDS)[number]) => {
+    setSelectedTask((prev) => (prev === task.id ? 'auto' : task.id));
+    setIsPlusMenuOpen(false);
+    inputRef.current?.focus();
+  };
+
+  const activeTaskMeta = TASK_CARDS.find((t) => t.id === selectedTask);
+  const activeLanguageMeta =
+    LANGUAGE_OPTIONS.find((l) => l.id === language) || LANGUAGE_OPTIONS[0];
 
   const isZeroState = chatTurns.length === 0 && !isGenerating;
 
   return (
     <div className="relative min-h-[calc(100vh-8rem)] flex flex-col justify-between bg-gradient-to-b from-white via-blue-50/35 to-blue-100/45 rounded-3xl border border-zinc-200/70 overflow-hidden pb-36 md:pb-32">
-      {/* Top Minimal Gemini-Style Sub-Header */}
+      {/* Top Minimal Sub-Header */}
       <div className="sticky top-0 z-20 flex items-center justify-between px-4 sm:px-6 py-3.5 bg-white/85 backdrop-blur-md border-b border-zinc-200/60">
         <button
           type="button"
@@ -530,7 +617,7 @@ export const AIVideoAssistant: React.FC<AIVideoAssistantProps> = ({ user }) => {
             AtoPlay AI
           </span>
           <span className="text-sm sm:text-base font-medium text-zinc-500 group-hover:text-blue-600 transition-colors flex items-center gap-1">
-            {activeTaskMeta ? activeTaskMeta.shortLabel : 'Auto'}
+            {activeTaskMeta ? activeTaskMeta.shortLabel : 'All-in-One Chat'}
             <ChevronDown className="w-4 h-4 text-zinc-400 group-hover:text-blue-600 transition-transform" />
           </span>
         </button>
@@ -560,7 +647,7 @@ export const AIVideoAssistant: React.FC<AIVideoAssistantProps> = ({ user }) => {
             </button>
           )}
 
-          {/* New Chat Button (Matches top-right dashed/pen icon in reference) */}
+          {/* New Chat Button */}
           <button
             type="button"
             onClick={handleNewChat}
@@ -633,31 +720,31 @@ export const AIVideoAssistant: React.FC<AIVideoAssistantProps> = ({ user }) => {
         </div>
       )}
 
-      {/* Main Content Area: Zero-State Welcome OR Active Chat Results */}
+      {/* Main Content Area: Zero-State Welcome OR Active Conversational Chat Thread */}
       <div className="flex-1 flex flex-col justify-between max-w-3xl w-full mx-auto px-4 sm:px-6 pt-6 pb-8">
         {isZeroState ? (
-          <>
-            {/* Center Sparkle & "Where should we start?" Greeting */}
-            <div className="my-auto py-10 sm:py-14 flex flex-col items-center text-center">
-              <div className="mb-5">
-                <FourPointSparkle className="w-11 h-11 sm:w-12 sm:h-12" />
-              </div>
-              <h1 className="text-2xl sm:text-4xl font-medium text-zinc-900 tracking-tight">
-                Where should we start?
-              </h1>
-              <p className="text-xs sm:text-sm text-zinc-500 mt-2 max-w-md">
-                Swipe the quick task chips below, tap <span className="font-semibold text-zinc-700">+</span> to switch language, or use the mic to speak your video topic.
-              </p>
-            </div>
-          </>
+          /* Clean Text-Only Greeting Without Any Gemini Logo Above It */
+          <div className="my-auto py-12 sm:py-16 flex flex-col items-center text-center">
+            <h1 className="text-2xl sm:text-4xl font-semibold text-zinc-900 tracking-tight text-balance">
+              Where should we start?
+            </h1>
+            <p className="text-xs sm:text-sm text-zinc-500 mt-2.5 max-w-md leading-relaxed">
+              Ask any question, pick a quick task chip below, tap{' '}
+              <span className="font-semibold text-zinc-700">+</span> to change language, or use the
+              mic to speak your video topic.
+            </p>
+          </div>
         ) : (
-          /* Active Conversation & Generated Creator Results Feed */
+          /* Active Conversational AI Chat Feed (Clean Formatted Text Bubbles + Copy Button) */
           <div className="space-y-6">
             {chatTurns.map((turn) => {
               const res = turn.result;
+              const bubbleText = getDisplayBubbleText(res);
+              const copyableText = buildFullCopyText(res);
+
               return (
-                <div key={turn.id} className="space-y-4">
-                  {/* User Prompt Bubble */}
+                <div key={turn.id} className="space-y-3">
+                  {/* User Message Bubble */}
                   <div className="flex justify-end">
                     <div className="max-w-[85%] sm:max-w-[75%] rounded-3xl rounded-tr-lg bg-zinc-900 text-white px-4 py-3 shadow-xs">
                       <p className="text-sm sm:text-base leading-relaxed break-words">
@@ -669,67 +756,33 @@ export const AIVideoAssistant: React.FC<AIVideoAssistantProps> = ({ user }) => {
                     </div>
                   </div>
 
-                  {/* Structured AI Growth Assistant Response Card */}
-                  <div className="bg-white rounded-3xl border border-zinc-200/90 p-4 sm:p-6 space-y-5 shadow-xs">
-                    {/* Result Header Bar */}
-                    <div className="flex flex-wrap items-center justify-between gap-3 pb-3.5 border-b border-zinc-100">
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <FourPointSparkle className="w-6 h-6 shrink-0" />
-                        <div className="min-w-0">
-                          <span className="text-xs font-bold text-blue-600 block truncate">
-                            {res.taskTitle}
-                          </span>
-                          <h2 className="text-sm sm:text-base font-bold text-zinc-900 truncate">
-                            AtoPlay Creator Growth Pack
-                          </h2>
-                        </div>
-                      </div>
+                  {/* Clean ChatGPT / Gemini Style Formatted AI Text Bubble */}
+                  <div className="flex justify-start">
+                    <div className="w-full max-w-[96%] sm:max-w-[90%] bg-white rounded-3xl rounded-tl-lg border border-zinc-200/90 p-4 sm:p-5 space-y-4 shadow-xs">
+                      {/* Bubble Top Bar: Task Label + Copy & Regenerate Actions */}
+                      <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-zinc-100">
+                        <span className="text-xs font-bold text-blue-600 truncate">
+                          {res.taskTitle || 'AtoPlay AI Assistant'}
+                        </span>
 
-                      <div className="flex items-center gap-2 shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => handleGenerate(undefined, turn.prompt, turn.taskType)}
-                          disabled={isGenerating}
-                          className="h-9 px-3 rounded-xl border border-zinc-200 hover:bg-zinc-50 text-xs font-semibold text-zinc-700 flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0"
-                        >
-                          <RotateCcw className="w-3.5 h-3.5" />
-                          <span>Regenerate</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => handleCopy(buildFullCopyText(res), `full_${turn.id}`)}
-                          className="h-9 px-3.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0"
-                        >
-                          {copiedKey === `full_${turn.id}` ? (
-                            <>
-                              <Check className="w-3.5 h-3.5" />
-                              <span>Copied All</span>
-                            </>
-                          ) : (
-                            <>
-                              <Copy className="w-3.5 h-3.5" />
-                              <span>Copy All</span>
-                            </>
-                          )}
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* 1. Viral Titles Section */}
-                    {res.titles && res.titles.length > 0 && (
-                      <div className="space-y-2.5">
-                        <div className="flex items-center justify-between">
-                          <h3 className="text-xs sm:text-sm font-bold text-zinc-900 flex items-center gap-2">
-                            <TypeIcon className="w-4 h-4 text-blue-600" />
-                            <span>Viral High-CTR Titles</span>
-                          </h3>
+                        <div className="flex items-center gap-1.5 shrink-0">
                           <button
                             type="button"
-                            onClick={() => handleCopy(res.titles.join('\n'), `titles_${turn.id}`)}
-                            className="text-xs font-semibold text-blue-600 hover:text-blue-700 flex items-center gap-1 cursor-pointer whitespace-nowrap"
+                            onClick={() => handleGenerate(undefined, turn.prompt, turn.taskType)}
+                            disabled={isGenerating}
+                            className="h-8 px-2.5 rounded-xl border border-zinc-200 hover:bg-zinc-50 text-xs font-semibold text-zinc-700 flex items-center gap-1 transition-colors cursor-pointer whitespace-nowrap"
+                            title="Regenerate response"
                           >
-                            {copiedKey === `titles_${turn.id}` ? (
+                            <RotateCcw className="w-3.5 h-3.5" />
+                            <span>Regenerate</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleCopy(copyableText, `full_${turn.id}`)}
+                            className="h-8 px-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap"
+                          >
+                            {copiedKey === `full_${turn.id}` ? (
                               <>
                                 <Check className="w-3.5 h-3.5" />
                                 <span>Copied</span>
@@ -737,354 +790,115 @@ export const AIVideoAssistant: React.FC<AIVideoAssistantProps> = ({ user }) => {
                             ) : (
                               <>
                                 <Copy className="w-3.5 h-3.5" />
-                                <span>Copy All Titles</span>
+                                <span>Copy</span>
                               </>
                             )}
                           </button>
                         </div>
-
-                        <div className="space-y-2">
-                          {res.titles.map((title, idx) => {
-                            const itemKey = `title_${turn.id}_${idx}`;
-                            return (
-                              <div
-                                key={itemKey}
-                                className="p-3 rounded-2xl bg-zinc-50 border border-zinc-200/80 flex items-center justify-between gap-3"
-                              >
-                                <div className="flex items-start gap-2.5 min-w-0">
-                                  <span className="text-xs font-bold text-blue-600 tabular-nums mt-0.5">
-                                    0{idx + 1}.
-                                  </span>
-                                  <p className="text-sm font-semibold text-zinc-900 break-words">
-                                    {title}
-                                  </p>
-                                </div>
-                                <button
-                                  type="button"
-                                  onClick={() => handleCopy(title, itemKey)}
-                                  className="px-2.5 py-1.5 rounded-xl bg-white border border-zinc-200 hover:border-zinc-300 text-xs font-semibold text-zinc-700 flex items-center gap-1 shrink-0 cursor-pointer whitespace-nowrap"
-                                >
-                                  {copiedKey === itemKey ? (
-                                    <>
-                                      <Check className="w-3.5 h-3.5 text-emerald-600" />
-                                      <span>Copied</span>
-                                    </>
-                                  ) : (
-                                    <>
-                                      <Copy className="w-3.5 h-3.5" />
-                                      <span>Copy</span>
-                                    </>
-                                  )}
-                                </button>
-                              </div>
-                            );
-                          })}
-                        </div>
                       </div>
-                    )}
 
-                    {/* 2. SEO Tags & Keywords Section */}
-                    {res.seoTags && res.seoTags.length > 0 && (
-                      <div className="space-y-2.5 pt-2 border-t border-zinc-100">
-                        <div className="flex items-center justify-between">
-                          <h3 className="text-xs sm:text-sm font-bold text-zinc-900 flex items-center gap-2">
-                            <Hash className="w-4 h-4 text-blue-600" />
-                            <span>Trending SEO Tags ({res.seoTags.length})</span>
-                          </h3>
-                          <button
-                            type="button"
-                            onClick={() => handleCopy(res.seoTags.join(', '), `tags_${turn.id}`)}
-                            className="text-xs font-semibold text-blue-600 hover:text-blue-700 flex items-center gap-1 cursor-pointer whitespace-nowrap"
-                          >
-                            {copiedKey === `tags_${turn.id}` ? (
-                              <>
-                                <Check className="w-3.5 h-3.5" />
-                                <span>Copied Tags</span>
-                              </>
-                            ) : (
-                              <>
-                                <Copy className="w-3.5 h-3.5" />
-                                <span>Copy Tags</span>
-                              </>
-                            )}
-                          </button>
-                        </div>
+                      {/* Formatted Conversational AI Text Content */}
+                      <FormattedAIMessage text={bubbleText} />
 
-                        <div className="p-3.5 rounded-2xl bg-zinc-50 border border-zinc-200/80">
-                          <p className="text-xs sm:text-sm text-zinc-800 leading-relaxed font-medium">
-                            {res.seoTags.join(' · ')}
-                          </p>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* 3. Video Concepts & 15-Second Opening Hook */}
-                    {(res.videoConcepts?.length > 0 || res.openingHook) && (
-                      <div className="space-y-4 pt-2 border-t border-zinc-100">
-                        {res.videoConcepts?.length > 0 && (
-                          <div className="space-y-2.5">
-                            <h3 className="text-xs sm:text-sm font-bold text-zinc-900 flex items-center gap-2">
-                              <Lightbulb className="w-4 h-4 text-blue-600" />
-                              <span>Unique Video Concepts</span>
-                            </h3>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                              {res.videoConcepts.map((item, idx) => {
-                                const cKey = `concept_${turn.id}_${idx}`;
-                                return (
-                                  <div
-                                    key={cKey}
-                                    className="p-3.5 rounded-2xl bg-zinc-50 border border-zinc-200/80 space-y-1.5 flex flex-col justify-between"
-                                  >
-                                    <div className="space-y-1">
-                                      <span className="text-xs font-bold text-blue-600">
-                                        Concept 0{idx + 1}
-                                      </span>
-                                      <h4 className="text-sm font-bold text-zinc-900">{item.title}</h4>
-                                      <p className="text-xs text-zinc-700 leading-relaxed">
-                                        {item.concept}
-                                      </p>
-                                    </div>
-                                    <div className="pt-2 flex justify-end">
-                                      <button
-                                        type="button"
-                                        onClick={() => handleCopy(`${item.title}\n${item.concept}`, cKey)}
-                                        className="text-xs font-semibold text-zinc-600 hover:text-blue-600 flex items-center gap-1 cursor-pointer whitespace-nowrap"
-                                      >
-                                        {copiedKey === cKey ? (
-                                          <>
-                                            <Check className="w-3.5 h-3.5 text-emerald-600" />
-                                            <span>Copied</span>
-                                          </>
-                                        ) : (
-                                          <>
-                                            <Copy className="w-3.5 h-3.5" />
-                                            <span>Copy Concept</span>
-                                          </>
-                                        )}
-                                      </button>
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        )}
-
-                        {res.openingHook && (
-                          <div className="space-y-2">
-                            <div className="flex items-center justify-between">
-                              <h3 className="text-xs sm:text-sm font-bold text-zinc-900 flex items-center gap-2">
-                                <FileVideo className="w-4 h-4 text-blue-600" />
-                                <span>15-Second Opening Hook Script</span>
-                              </h3>
-                              <button
-                                type="button"
-                                onClick={() => handleCopy(res.openingHook, `hook_${turn.id}`)}
-                                className="text-xs font-semibold text-blue-600 hover:text-blue-700 flex items-center gap-1 cursor-pointer whitespace-nowrap"
-                              >
-                                {copiedKey === `hook_${turn.id}` ? (
-                                  <>
-                                    <Check className="w-3.5 h-3.5" />
-                                    <span>Copied Hook</span>
-                                  </>
-                                ) : (
-                                  <>
-                                    <Copy className="w-3.5 h-3.5" />
-                                    <span>Copy Hook Script</span>
-                                  </>
-                                )}
-                              </button>
-                            </div>
-                            <div className="p-4 rounded-2xl bg-blue-50/50 border border-blue-200/80 text-sm text-zinc-900 whitespace-pre-line leading-relaxed font-medium">
-                              {res.openingHook}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {/* 4. Thumbnail Concept Guide */}
-                    {(res.thumbnailOverlays?.length > 0 ||
-                      res.thumbnailBackgrounds?.length > 0 ||
-                      res.thumbnailColors?.length > 0) && (
-                      <div className="space-y-3 pt-2 border-t border-zinc-100">
-                        <div className="flex items-center justify-between">
-                          <h3 className="text-xs sm:text-sm font-bold text-zinc-900 flex items-center gap-2">
-                            <Palette className="w-4 h-4 text-blue-600" />
-                            <span>Thumbnail Concept Guide</span>
-                          </h3>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              handleCopy(
-                                [
-                                  `Overlay Text: ${res.thumbnailOverlays.join(' | ')}`,
-                                  `Background Visuals: ${res.thumbnailBackgrounds.join(' | ')}`,
-                                  `Color Combos: ${res.thumbnailColors.join(' | ')}`
-                                ].join('\n'),
-                                `thumb_${turn.id}`
-                              )
-                            }
-                            className="text-xs font-semibold text-blue-600 hover:text-blue-700 flex items-center gap-1 cursor-pointer whitespace-nowrap"
-                          >
-                            {copiedKey === `thumb_${turn.id}` ? (
-                              <>
-                                <Check className="w-3.5 h-3.5" />
-                                <span>Copied Guide</span>
-                              </>
-                            ) : (
-                              <>
-                                <Copy className="w-3.5 h-3.5" />
-                                <span>Copy Guide</span>
-                              </>
-                            )}
-                          </button>
-                        </div>
-
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                          {res.thumbnailOverlays?.length > 0 && (
-                            <div className="p-3.5 rounded-2xl bg-zinc-50 border border-zinc-200/80 space-y-2">
-                              <span className="text-xs font-bold text-zinc-900 block">
-                                Catchy Thumbnail Text
-                              </span>
-                              <ul className="space-y-1.5 text-xs text-zinc-700 font-medium">
-                                {res.thumbnailOverlays.map((txt, i) => (
-                                  <li key={i} className="flex items-start gap-1.5">
-                                    <span className="text-blue-600 font-bold">•</span>
-                                    <span>{txt}</span>
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
-                          )}
-
-                          {res.thumbnailBackgrounds?.length > 0 && (
-                            <div className="p-3.5 rounded-2xl bg-zinc-50 border border-zinc-200/80 space-y-2">
-                              <span className="text-xs font-bold text-zinc-900 block">
-                                Background Visuals
-                              </span>
-                              <ul className="space-y-1.5 text-xs text-zinc-700">
-                                {res.thumbnailBackgrounds.map((bg, i) => (
-                                  <li key={i} className="flex items-start gap-1.5">
-                                    <span className="text-blue-600 font-bold">•</span>
-                                    <span>{bg}</span>
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
-                          )}
-
-                          {res.thumbnailColors?.length > 0 && (
-                            <div className="p-3.5 rounded-2xl bg-zinc-50 border border-zinc-200/80 space-y-2">
-                              <span className="text-xs font-bold text-zinc-900 block">
-                                High-Contrast Colors
-                              </span>
-                              <ul className="space-y-1.5 text-xs text-zinc-700">
-                                {res.thumbnailColors.map((col, i) => (
-                                  <li key={i} className="flex items-start gap-1.5">
-                                    <span className="text-blue-600 font-bold">•</span>
-                                    <span>{col}</span>
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* 5. Video Description & Hashtags */}
-                    {(res.descriptionText || res.hashtags?.length > 0) && (
-                      <div className="space-y-3 pt-2 border-t border-zinc-100">
-                        <div className="flex items-center justify-between">
-                          <h3 className="text-xs sm:text-sm font-bold text-zinc-900 flex items-center gap-2">
-                            <FileText className="w-4 h-4 text-blue-600" />
-                            <span>Structured Description & Hashtags</span>
-                          </h3>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              handleCopy(
-                                `${res.descriptionText}\n\n${(res.hashtags || []).join(' ')}`.trim(),
-                                `desc_${turn.id}`
-                              )
-                            }
-                            className="text-xs font-semibold text-blue-600 hover:text-blue-700 flex items-center gap-1 cursor-pointer whitespace-nowrap"
-                          >
-                            {copiedKey === `desc_${turn.id}` ? (
-                              <>
-                                <Check className="w-3.5 h-3.5" />
-                                <span>Copied Description</span>
-                              </>
-                            ) : (
-                              <>
-                                <Copy className="w-3.5 h-3.5" />
-                                <span>Copy All</span>
-                              </>
-                            )}
-                          </button>
-                        </div>
-
-                        {res.descriptionText && (
-                          <div className="p-4 rounded-2xl bg-zinc-50 border border-zinc-200/80 text-xs sm:text-sm text-zinc-800 whitespace-pre-line leading-relaxed">
-                            {res.descriptionText}
-                          </div>
-                        )}
-
-                        {res.hashtags && res.hashtags.length > 0 && (
-                          <div className="flex items-center justify-between gap-3 p-3 rounded-2xl bg-blue-50/50 border border-blue-200/70">
-                            <p className="text-xs sm:text-sm font-bold text-blue-700 break-words">
-                              {res.hashtags.join('  ')}
-                            </p>
+                      {/* Optional Quick Copy Row for Titles / Tags / Hashtags */}
+                      {(res.titles?.length > 0 ||
+                        res.seoTags?.length > 0 ||
+                        res.hashtags?.length > 0) && (
+                        <div className="pt-3 border-t border-zinc-100 flex flex-wrap items-center gap-2">
+                          {res.titles?.length > 0 && (
                             <button
                               type="button"
-                              onClick={() => handleCopy(res.hashtags.join(' '), `hash_${turn.id}`)}
-                              className="px-2.5 py-1.5 rounded-xl bg-white border border-blue-200 text-xs font-semibold text-blue-700 shrink-0 cursor-pointer flex items-center gap-1 whitespace-nowrap"
+                              onClick={() => handleCopy(res.titles.join('\n'), `titles_${turn.id}`)}
+                              className="px-2.5 py-1.5 rounded-xl bg-zinc-50 hover:bg-zinc-100 border border-zinc-200/80 text-xs font-semibold text-zinc-700 flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
                             >
-                              {copiedKey === `hash_${turn.id}` ? (
+                              {copiedKey === `titles_${turn.id}` ? (
                                 <>
-                                  <Check className="w-3.5 h-3.5" />
-                                  <span>Copied</span>
+                                  <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                  <span>Titles Copied</span>
                                 </>
                               ) : (
                                 <>
-                                  <Copy className="w-3.5 h-3.5" />
+                                  <Copy className="w-3.5 h-3.5 text-blue-600" />
+                                  <span>Copy Titles</span>
+                                </>
+                              )}
+                            </button>
+                          )}
+
+                          {res.seoTags?.length > 0 && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleCopy(res.seoTags.join(', '), `tags_${turn.id}`)
+                              }
+                              className="px-2.5 py-1.5 rounded-xl bg-zinc-50 hover:bg-zinc-100 border border-zinc-200/80 text-xs font-semibold text-zinc-700 flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+                            >
+                              {copiedKey === `tags_${turn.id}` ? (
+                                <>
+                                  <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                  <span>Tags Copied</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Copy className="w-3.5 h-3.5 text-blue-600" />
+                                  <span>Copy SEO Tags</span>
+                                </>
+                              )}
+                            </button>
+                          )}
+
+                          {res.hashtags?.length > 0 && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleCopy(res.hashtags.join(' '), `hash_${turn.id}`)
+                              }
+                              className="px-2.5 py-1.5 rounded-xl bg-zinc-50 hover:bg-zinc-100 border border-zinc-200/80 text-xs font-semibold text-zinc-700 flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+                            >
+                              {copiedKey === `hash_${turn.id}` ? (
+                                <>
+                                  <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                  <span>Hashtags Copied</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Copy className="w-3.5 h-3.5 text-blue-600" />
                                   <span>Copy Hashtags</span>
                                 </>
                               )}
                             </button>
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Fallback Clean Formatted Output */}
-                    {res.cleanFormattedOutput &&
-                      res.titles.length === 0 &&
-                      res.seoTags.length === 0 &&
-                      res.videoConcepts.length === 0 &&
-                      !res.openingHook &&
-                      !res.descriptionText && (
-                        <div className="p-4 rounded-2xl bg-zinc-50 border border-zinc-200/80 text-sm text-zinc-800 whitespace-pre-line leading-relaxed">
-                          {res.cleanFormattedOutput}
+                          )}
                         </div>
                       )}
+                    </div>
                   </div>
                 </div>
               );
             })}
 
+            {/* Pending User Message + AI Thinking Bubble During Generation */}
             {isGenerating && (
-              <div className="bg-white rounded-3xl border border-zinc-200 p-6 sm:p-8 flex items-center gap-4 shadow-xs">
-                <div className="w-8 h-8 border-3 border-blue-600 border-t-transparent rounded-full animate-spin shrink-0" />
-                <div>
-                  <h3 className="text-sm sm:text-base font-bold text-zinc-900">
-                    Generating High-CTR Creator Output...
-                  </h3>
-                  <p className="text-xs text-zinc-500 mt-0.5">
-                    Crafting {activeTaskMeta ? activeTaskMeta.shortLabel : 'AtoPlay Growth Pack'} in{' '}
-                    {activeLanguageMeta.label}
-                  </p>
+              <div className="space-y-3">
+                {pendingPrompt && (
+                  <div className="flex justify-end">
+                    <div className="max-w-[85%] sm:max-w-[75%] rounded-3xl rounded-tr-lg bg-zinc-900 text-white px-4 py-3 shadow-xs">
+                      <p className="text-sm sm:text-base leading-relaxed break-words">
+                        {pendingPrompt}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex justify-start">
+                  <div className="bg-white rounded-3xl rounded-tl-lg border border-zinc-200 px-5 py-4 flex items-center gap-3.5 shadow-xs">
+                    <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin shrink-0" />
+                    <div>
+                      <p className="text-sm font-bold text-zinc-900">AtoPlay AI is thinking...</p>
+                      <p className="text-xs text-zinc-500">
+                        Writing response in {activeLanguageMeta.label}
+                      </p>
+                    </div>
+                  </div>
                 </div>
               </div>
             )}

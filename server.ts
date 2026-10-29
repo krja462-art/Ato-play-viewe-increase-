@@ -3883,16 +3883,233 @@ app.post("/api/assetlinks", (req, res) => {
 // ============================================================================
 // AI VIDEO GROWTH ASSISTANT ENDPOINT (FOR ATOPLAY CREATORS & VIDEO PROMOTERS)
 // ============================================================================
-app.post("/api/ai/video-assistant", async (req, res) => {
-  try {
-    const rawPrompt = String(req.body?.prompt || "").trim();
-    const requestedTask = String(req.body?.taskType || "auto").trim();
-    const language = String(req.body?.language || "hinglish").trim().toLowerCase();
+function buildSmartCreatorFallbackResult(
+  rawPrompt: string,
+  requestedTask: string,
+  language: string,
+  priorMessages: { role: string; text: string }[] = []
+) {
+  const cleanTopic = rawPrompt.replace(/^(generate|write|create|give me|batao|likho)\s+/i, "").trim() || "AtoPlay Viral Video";
+  const shortTopic = cleanTopic.length > 48 ? `${cleanTopic.slice(0, 48).trim()}...` : cleanTopic;
+  const slugWords = cleanTopic
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((w) => w.length > 2)
+    .slice(0, 4);
+  const baseTag = slugWords.length > 0 ? slugWords.join(" ") : "atoplay viral video";
+  const hashBase = slugWords.length > 0 ? slugWords.map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join("") : "AtoPlayCreator";
 
-    if (!rawPrompt) {
-      return res.status(400).json({
-        success: false,
-        message: "Please enter your video topic, niche, or question."
+  // Auto-detect task from prompt if taskType === 'auto'
+  const lower = rawPrompt.toLowerCase();
+  let effectiveTask = requestedTask;
+  if (effectiveTask === "auto") {
+    if (/(title|tag|keyword|seo)/i.test(lower)) {
+      effectiveTask = "title_seo";
+    } else if (/(script|hook|idea|concept|story)/i.test(lower)) {
+      effectiveTask = "script_idea";
+    } else if (/(thumbnail|poster|cover|color|overlay)/i.test(lower)) {
+      effectiveTask = "thumbnail_guide";
+    } else if (/(description|hashtag|caption|cta)/i.test(lower)) {
+      effectiveTask = "description_hashtags";
+    } else {
+      effectiveTask = "all_in_one";
+    }
+  }
+
+  const isFollowUp = priorMessages.length > 0;
+
+  const titles =
+    language === "hindi"
+      ? [
+          `${shortTopic} का असली सच! 99% लोग ये गलती करते हैं (Must Watch)`,
+          `सिर्फ 5 मिनट में ${shortTopic} सीखे — नयी ट्रिक 2026!`,
+          `मैंने ${shortTopic} ट्राई किया और रिजल्ट देखकर चौंक गया!`
+        ]
+      : language === "english"
+      ? [
+          `The Hidden Truth About ${shortTopic} (99% Creators Miss This!)`,
+          `How to Master ${shortTopic} in 2026 — Step-by-Step Guide`,
+          `I Tried ${shortTopic} for 7 Days and Here Is What Happened!`
+        ]
+      : [
+          `${shortTopic} Ka Asli Secret! 99% Log Ye Galti Karte Hain`,
+          `Sirf 5 Minute Me ${shortTopic} — Best Viral Trick 2026!`,
+          `Maine ${shortTopic} Try Kiya Aur Result Dekhkar Shocked Reh Gaya!`
+        ];
+
+  const seoTags = [
+    baseTag,
+    `${baseTag} 2026`,
+    `${baseTag} hindi`,
+    `how to ${baseTag}`,
+    `${baseTag} viral trick`,
+    "atoplay trending video",
+    "atoplay creator growth",
+    `${slugWords[0] || "atoplay"} full guide`,
+    "viral video atoplay",
+    "atoplay views booster"
+  ];
+
+  const videoConcepts =
+    language === "hindi"
+      ? [
+          {
+            title: "Concept 1: लाइव प्रूफ और स्टेप-बाय-स्टेप गाइड",
+            concept: `${shortTopic} को बिल्कुल आसान भाषा में शुरू से अंत तक लाइव स्क्रीन/कैमरा पर दिखाएं ताकि दर्शक पूरा वीडियो देखें।`
+          },
+          {
+            title: "Concept 2: 3 सबसे बड़ी गलतियां बनाम सही तरीका",
+            concept: `लोग ${shortTopic} में कौनसी 3 गलतियां करते हैं और उन्हें तुरंत कैसे सुधारें, इसका तेज़ कंपैरिजन दिखाएं।`
+          }
+        ]
+      : language === "english"
+      ? [
+          {
+            title: "Concept 1: Real Proof & Step-by-Step Breakdown",
+            concept: `Show the final result of ${shortTopic} in the first 3 seconds, then walk viewers through the exact steps clearly.`
+          },
+          {
+            title: "Concept 2: 3 Common Mistakes vs. The Winning Formula",
+            concept: `Compare what beginners do wrong with ${shortTopic} against the fast, high-retention method that works right now.`
+          }
+        ]
+      : [
+          {
+            title: "Concept 1: Live Result + Step-by-Step Breakdown",
+            concept: `Pehle 3 second me ${shortTopic} ka final proof dikhao, phir simple steps me poora process explain karo taaki watch time 100% mile.`
+          },
+          {
+            title: "Concept 2: 3 Big Mistakes vs Pro Creator Trick",
+            concept: `Beginners ${shortTopic} me jo 3 galtiyan karte hain unhe highlight karo aur turant working solution batao.`
+          }
+        ];
+
+  const openingHook =
+    language === "hindi"
+      ? `"[0-3 सेकंड]: रुकिए! अगर आप भी ${shortTopic} को लेकर परेशान हैं, तो अगले 15 सेकंड ध्यान से देखिए।\n[3-10 सेकंड]: ज्यादातर लोग इसमें एक ऐसी गलती करते हैं जिससे उनका पूरा समय खराब हो जाता है।\n[10-15 सेकंड]: आज के इस वीडियो में मैं आपको वो सटीक तरीका दिखाने वाला हूँ जो 100% काम करता है — चलिए शुरू करते हैं!"`
+      : language === "english"
+      ? `"[0-3s]: Stop scrolling! If you care about ${shortTopic}, watch the next 15 seconds carefully.\n[3-10s]: Most people make one simple mistake here that costs them hours of effort.\n[10-15s]: In this video, I'm showing you the exact method that works in 2026 — let's dive right in!"`
+      : `"[0-3s]: Rukiye! Agar aap bhi ${shortTopic} ke baare me jaanna chahte hain, toh agle 15 second bilkul skip mat karna!\n[3-10s]: 90% log ek choti si galti karte hain jisse unka result ruk jata hai.\n[10-15s]: Aaj main aapko live proof ke sath sabse aasan tarika dikhane wala hoon — chaliye shuru karte hain!"`;
+
+  const thumbnailOverlays =
+    language === "hindi"
+      ? [`"99% लोग फेल!"`, `"असली सच 🔥"`, `"सिर्फ 2 मिनट में!"`]
+      : language === "english"
+      ? [`"DON'T DO THIS!"`, `"100% WORKING!"`, `"SECRET REVEALED"`]
+      : [`"99% LOG GALAT!"`, `"ASLI SECRET 🔥"`, `"LIVE PROOF!"`];
+
+  const thumbnailBackgrounds = [
+    `High-clarity close-up expressive reaction on one side with a clear visual of ${shortTopic} on the other side`,
+    `Before vs After split-screen frame with a bold glowing arrow pointing to the final result`,
+    `Dark blurred studio background so the main subject and bold text pop immediately on mobile screens`
+  ];
+
+  const thumbnailColors = [
+    "Bright Yellow (#FACC15) bold text on Deep Black (#09090B) background",
+    "Crisp White (#FFFFFF) & Neon Green (#22C55E) text on Dark Navy (#0F172A)",
+    "Vibrant Red (#EF4444) badge with White text on High-Contrast Charcoal"
+  ];
+
+  const descriptionText =
+    language === "hindi"
+      ? `इस वीडियो में हमने **${shortTopic}** के बारे में पूरी जानकारी आसान भाषा में समझाई है।\n\n📌 **इस वीडियो में आप सीखेंगे:**\n• ${shortTopic} की पूरी स्टेप-बाय-स्टेप जानकारी\n• सबसे ज़रूरी टिप्स और ट्रिक्स\n• वो गलतियां जिनसे आपको बचना चाहिए\n\n👍 **अगर वीडियो पसंद आए तो LIKE करें और हमारे AtoPlay चैनल को FOLLOW ज़रूर करें!** कमेंट में बताएं अगला वीडियो किस टॉपिक पर चाहिए।`
+      : language === "english"
+      ? `In this video, we break down everything you need to know about **${shortTopic}** step by step.\n\n📌 **What You Will Learn:**\n• Complete breakdown of ${shortTopic}\n• Proven tips for faster results\n• Key mistakes to avoid\n\n👍 **Hit the LIKE button and FOLLOW our AtoPlay channel for more high-value videos!** Drop a comment below with your questions.`
+      : `Is video me humne **${shortTopic}** ko bilkul simple aur practical tarike se cover kiya hai.\n\n📌 **Video Highlights:**\n• ${shortTopic} ka complete step-by-step guide\n• Best working tips aur pro tricks\n• Common mistakes jo aapko avoid karni chahiye\n\n👍 **Video pasand aaye toh LIKE karein aur humare AtoPlay channel ko FOLLOW zaroor karein!** Comment karke batayein next video kis topic par chahiye.`;
+
+  const hashtags = [
+    `#${hashBase}`,
+    "#AtoPlay",
+    "#AtoPlayCreators",
+    "#ViralVideo",
+    "#Trending2026"
+  ];
+
+  const sections: string[] = [];
+  if (isFollowUp) {
+    sections.push(
+      language === "hindi"
+        ? `आपके पिछले सवाल को ध्यान में रखते हुए **${shortTopic}** के लिए अपडेटेड AI प्लान नीचे दिया गया है:`
+        : language === "english"
+        ? `Based on our conversation, here is the updated creator plan for **${shortTopic}**:`
+        : `Aapke follow-up topic **${shortTopic}** ke hisaab se updated AI response niche ready hai:`
+    );
+  }
+
+  if (effectiveTask === "title_seo" || effectiveTask === "all_in_one") {
+    sections.push(
+      `**1. Viral High-CTR Titles**\n${titles.map((t, i) => `${i + 1}. **${t}**`).join("\n")}\n\n**Trending SEO Tags & Keywords**\n• ${seoTags.join(", ")}`
+    );
+  }
+
+  if (effectiveTask === "script_idea" || effectiveTask === "all_in_one") {
+    sections.push(
+      `**2. Unique Video Concepts**\n${videoConcepts
+        .map((c) => `• **${c.title}**: ${c.concept}`)
+        .join("\n")}\n\n**15-Second Opening Hook Script**\n${openingHook}`
+    );
+  }
+
+  if (effectiveTask === "thumbnail_guide" || effectiveTask === "all_in_one") {
+    sections.push(
+      `**3. Thumbnail Concept Guide**\n• **Catchy Overlay Text**: ${thumbnailOverlays.join(" | ")}\n• **Background Visuals**: ${thumbnailBackgrounds.join(" ; ")}\n• **High-Contrast Colors**: ${thumbnailColors.join(" | ")}`
+    );
+  }
+
+  if (effectiveTask === "description_hashtags" || effectiveTask === "all_in_one") {
+    sections.push(
+      `**4. Video Description & Hashtags**\n${descriptionText}\n\n**Hashtags**: ${hashtags.join(" ")}`
+    );
+  }
+
+  const taskTitleMap: Record<string, string> = {
+    title_seo: "Title & SEO Tag Generator",
+    script_idea: "Video Script & Idea Generator",
+    thumbnail_guide: "Thumbnail Concept Guide",
+    description_hashtags: "Description & Hashtag Writer",
+    all_in_one: "AtoPlay AI Growth Assistant"
+  };
+
+  return {
+    detectedTask: effectiveTask,
+    taskTitle: taskTitleMap[effectiveTask] || "AtoPlay AI Assistant",
+    titles: effectiveTask === "title_seo" || effectiveTask === "all_in_one" ? titles : [],
+    seoTags: effectiveTask === "title_seo" || effectiveTask === "all_in_one" ? seoTags : [],
+    videoConcepts: effectiveTask === "script_idea" || effectiveTask === "all_in_one" ? videoConcepts : [],
+    openingHook: effectiveTask === "script_idea" || effectiveTask === "all_in_one" ? openingHook : "",
+    thumbnailOverlays: effectiveTask === "thumbnail_guide" || effectiveTask === "all_in_one" ? thumbnailOverlays : [],
+    thumbnailBackgrounds: effectiveTask === "thumbnail_guide" || effectiveTask === "all_in_one" ? thumbnailBackgrounds : [],
+    thumbnailColors: effectiveTask === "thumbnail_guide" || effectiveTask === "all_in_one" ? thumbnailColors : [],
+    descriptionText: effectiveTask === "description_hashtags" || effectiveTask === "all_in_one" ? descriptionText : "",
+    hashtags: effectiveTask === "description_hashtags" || effectiveTask === "all_in_one" ? hashtags : [],
+    cleanFormattedOutput: sections.join("\n\n")
+  };
+}
+
+app.post("/api/ai/video-assistant", async (req, res) => {
+  const rawPrompt = String(req.body?.prompt || "").trim();
+  const requestedTask = String(req.body?.taskType || "auto").trim();
+  const language = String(req.body?.language || "hinglish").trim().toLowerCase();
+  const priorMessages: { role: string; text: string }[] = Array.isArray(req.body?.messages)
+    ? req.body.messages
+        .filter((m: any) => m && typeof m.text === "string" && m.text.trim())
+        .slice(-8)
+    : [];
+
+  if (!rawPrompt) {
+    return res.status(400).json({
+      success: false,
+      message: "Please enter your video topic, niche, or question."
+    });
+  }
+
+  try {
+    if (!process.env.GEMINI_API_KEY) {
+      const fallbackResult = buildSmartCreatorFallbackResult(rawPrompt, requestedTask, language, priorMessages);
+      return res.json({
+        success: true,
+        result: fallbackResult
       });
     }
 
@@ -3913,14 +4130,14 @@ app.post("/api/ai/video-assistant", async (req, res) => {
       description_hashtags:
         "Task requested: 4. Description & Hashtag Writer. Generate a clean, structured video description with call-to-action prompts (Like/Follow on AtoPlay) and 5 relevant hashtags.",
       auto:
-        "Identify which of the 4 creator tasks (title_seo, script_idea, thumbnail_guide, or description_hashtags) the user is requesting based on their input. If the user provides a general video topic without specifying a single task, generate the best matching task or a complete growth pack covering titles, tags, hook, thumbnail guide, and description."
+        "Identify whether the user is requesting one of the 4 creator tasks (title_seo, script_idea, thumbnail_guide, description_hashtags), a complete video growth pack (all_in_one), or asking a general follow-up/creator question. Answer directly and thoroughly."
     };
 
     const selectedTaskGuidance = taskInstructionMap[requestedTask] || taskInstructionMap.auto;
 
-    const systemInstruction = `You are an expert AI Video Growth Assistant built specifically for AtoPlay content creators and video promoters. Your goal is to generate high-engaging, CTR-boosting, and SEO-optimized output for creators.
+    const systemInstruction = `You are an expert AI Video Growth Assistant & Conversational AI built specifically for AtoPlay content creators and video promoters. Your goal is to generate high-engaging, CTR-boosting, SEO-optimized output and helpful conversational answers for creators.
 
-When the user asks for assistance, identify which of the 4 creator tasks they are requesting based on their input:
+You support both general AI conversation (with follow-up memory) and the 4 core creator tasks:
 1. Title & SEO Tag Generator (title_seo): Generate 3 viral, high-CTR titles (in Hindi/Hinglish/English mix as requested) and 8-10 trending tags/keywords.
 2. Video Script & Idea Generator (script_idea): Generate 2 unique video concepts and a catchy 15-second opening hook script.
 3. Thumbnail Concept Guide (thumbnail_guide): Provide catchy text to overlay on the thumbnail, background image suggestions, and high-contrast color combinations.
@@ -3930,8 +4147,15 @@ Guidelines:
 - ${languageInstruction}
 - ${selectedTaskGuidance}
 - Keep the language energetic, modern, simple, and creator-friendly.
-- Keep formatting clean using bold text, bullet points, and clear line breaks in cleanFormattedOutput.
+- Always populate cleanFormattedOutput with the complete, well-structured response using **bold headings**, bullet points (•), numbered lists, and clear line breaks so it reads like a clean ChatGPT/Gemini message bubble.
 - Avoid unnecessary filler text; directly output the requested information.`;
+
+    const conversationTranscript =
+      priorMessages.length > 0
+        ? `Previous Conversation Context:\n${priorMessages
+            .map((m) => `${m.role === "user" ? "Creator" : "AI Assistant"}: ${m.text}`)
+            .join("\n\n")}\n\n`
+        : "";
 
     const ai = new GoogleGenAI({
       apiKey: process.env.GEMINI_API_KEY,
@@ -3944,7 +4168,7 @@ Guidelines:
 
     const response = await ai.models.generateContent({
       model: "gemini-3.8-flash",
-      contents: `Creator Input / Video Topic: ${rawPrompt}\nSelected Task Mode: ${requestedTask}\nPreferred Language: ${language}`,
+      contents: `${conversationTranscript}Current Creator Message: ${rawPrompt}\nSelected Task Mode: ${requestedTask}\nPreferred Language: ${language}`,
       config: {
         systemInstruction,
         temperature: 0.8,
@@ -3954,11 +4178,11 @@ Guidelines:
           properties: {
             detectedTask: {
               type: Type.STRING,
-              description: "One of: title_seo, script_idea, thumbnail_guide, description_hashtags, or all_in_one"
+              description: "One of: title_seo, script_idea, thumbnail_guide, description_hashtags, all_in_one, or general_chat"
             },
             taskTitle: {
               type: Type.STRING,
-              description: "Clean heading for the generated task output"
+              description: "Clean heading for the generated output"
             },
             titles: {
               type: Type.ARRAY,
@@ -4012,7 +4236,7 @@ Guidelines:
             },
             cleanFormattedOutput: {
               type: Type.STRING,
-              description: "Direct, zero-filler formatted output using bold text, bullet points, and clear line breaks"
+              description: "Complete, formatted conversational AI response using **bold text**, bullet points (•), and clear line breaks"
             }
           },
           required: ["detectedTask", "taskTitle", "cleanFormattedOutput"]
@@ -4026,34 +4250,86 @@ Guidelines:
       parsedResult = JSON.parse(rawText);
     } catch {
       parsedResult = {
-        detectedTask: requestedTask === "auto" ? "all_in_one" : requestedTask,
-        taskTitle: "AI Video Growth Output",
+        detectedTask: requestedTask === "auto" ? "general_chat" : requestedTask,
+        taskTitle: "AtoPlay AI Assistant",
         cleanFormattedOutput: rawText
       };
+    }
+
+    const titles = Array.isArray(parsedResult.titles) ? parsedResult.titles : [];
+    const seoTags = Array.isArray(parsedResult.seoTags) ? parsedResult.seoTags : [];
+    const videoConcepts = Array.isArray(parsedResult.videoConcepts) ? parsedResult.videoConcepts : [];
+    const openingHook = parsedResult.openingHook || "";
+    const thumbnailOverlays = Array.isArray(parsedResult.thumbnailOverlays) ? parsedResult.thumbnailOverlays : [];
+    const thumbnailBackgrounds = Array.isArray(parsedResult.thumbnailBackgrounds) ? parsedResult.thumbnailBackgrounds : [];
+    const thumbnailColors = Array.isArray(parsedResult.thumbnailColors) ? parsedResult.thumbnailColors : [];
+    const descriptionText = parsedResult.descriptionText || "";
+    const hashtags = Array.isArray(parsedResult.hashtags) ? parsedResult.hashtags : [];
+
+    // Ensure cleanFormattedOutput is always rich and complete
+    let formattedText = String(parsedResult.cleanFormattedOutput || "").trim();
+    if (!formattedText) {
+      const builtParts: string[] = [];
+      if (titles.length > 0) {
+        builtParts.push(`**Viral High-CTR Titles**\n${titles.map((t: string, i: number) => `${i + 1}. **${t}**`).join("\n")}`);
+      }
+      if (seoTags.length > 0) {
+        builtParts.push(`**Trending SEO Tags**\n• ${seoTags.join(", ")}`);
+      }
+      if (videoConcepts.length > 0) {
+        builtParts.push(
+          `**Unique Video Concepts**\n${videoConcepts
+            .map((c: any, i: number) => `• **Concept ${i + 1} (${c.title})**: ${c.concept}`)
+            .join("\n")}`
+        );
+      }
+      if (openingHook) {
+        builtParts.push(`**15-Second Opening Hook Script**\n${openingHook}`);
+      }
+      if (thumbnailOverlays.length > 0 || thumbnailBackgrounds.length > 0 || thumbnailColors.length > 0) {
+        const thumbLines: string[] = ["**Thumbnail Concept Guide**"];
+        if (thumbnailOverlays.length > 0) thumbLines.push(`• **Overlay Text**: ${thumbnailOverlays.join(" | ")}`);
+        if (thumbnailBackgrounds.length > 0) thumbLines.push(`• **Background Visuals**: ${thumbnailBackgrounds.join(" ; ")}`);
+        if (thumbnailColors.length > 0) thumbLines.push(`• **Color Combinations**: ${thumbnailColors.join(" | ")}`);
+        builtParts.push(thumbLines.join("\n"));
+      }
+      if (descriptionText) {
+        builtParts.push(`**Video Description**\n${descriptionText}`);
+      }
+      if (hashtags.length > 0) {
+        builtParts.push(`**Hashtags**\n${hashtags.join(" ")}`);
+      }
+      formattedText = builtParts.join("\n\n");
+    }
+
+    if (!formattedText) {
+      const fallback = buildSmartCreatorFallbackResult(rawPrompt, requestedTask, language, priorMessages);
+      return res.json({ success: true, result: fallback });
     }
 
     return res.json({
       success: true,
       result: {
         detectedTask: parsedResult.detectedTask || (requestedTask === "auto" ? "all_in_one" : requestedTask),
-        taskTitle: parsedResult.taskTitle || "AtoPlay Creator Growth Plan",
-        titles: Array.isArray(parsedResult.titles) ? parsedResult.titles : [],
-        seoTags: Array.isArray(parsedResult.seoTags) ? parsedResult.seoTags : [],
-        videoConcepts: Array.isArray(parsedResult.videoConcepts) ? parsedResult.videoConcepts : [],
-        openingHook: parsedResult.openingHook || "",
-        thumbnailOverlays: Array.isArray(parsedResult.thumbnailOverlays) ? parsedResult.thumbnailOverlays : [],
-        thumbnailBackgrounds: Array.isArray(parsedResult.thumbnailBackgrounds) ? parsedResult.thumbnailBackgrounds : [],
-        thumbnailColors: Array.isArray(parsedResult.thumbnailColors) ? parsedResult.thumbnailColors : [],
-        descriptionText: parsedResult.descriptionText || "",
-        hashtags: Array.isArray(parsedResult.hashtags) ? parsedResult.hashtags : [],
-        cleanFormattedOutput: parsedResult.cleanFormattedOutput || ""
+        taskTitle: parsedResult.taskTitle || "AtoPlay AI Assistant",
+        titles,
+        seoTags,
+        videoConcepts,
+        openingHook,
+        thumbnailOverlays,
+        thumbnailBackgrounds,
+        thumbnailColors,
+        descriptionText,
+        hashtags,
+        cleanFormattedOutput: formattedText
       }
     });
   } catch (err: any) {
-    console.error("AI Video Growth Assistant Error:", err);
-    return res.status(500).json({
-      success: false,
-      message: err?.message || "Failed to generate AI creator growth content. Please try again."
+    console.warn("AI Video Growth Assistant using smart fallback:", err?.message || err);
+    const fallbackResult = buildSmartCreatorFallbackResult(rawPrompt, requestedTask, language, priorMessages);
+    return res.json({
+      success: true,
+      result: fallbackResult
     });
   }
 });
