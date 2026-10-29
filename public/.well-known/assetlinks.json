@@ -2,7 +2,7 @@
       "relation": ["delegate_permission/common.handle_all_urls"],
       "target": {
         "namespace": "android_app",
-        "package_name": "com.mstech.atoplaybooster",
-        "sha256_cert_fingerprints": ["CA:DB:F9:C3:91:CF:79:95:B0:B2:57:32:A4:E2:74:45:4C:45:BC:70:98:40:1A:F0:6C:2B:D3:16:68:34:DF:95"]
+        "package_name": "Ato_play_viewe_increase.app",
+        "sha256_cert_fingerprints": ["BA:BE:03:A6:0A:AC:95:CA:85:1E:73:AD:55:CE:12:7E:CE:8C:50:6B:F5:F4:AE:7A:23:22:F4:9F:1A:CA:30:3E"]
       }
     }]
