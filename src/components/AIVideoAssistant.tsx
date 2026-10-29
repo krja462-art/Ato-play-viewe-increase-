@@ -646,43 +646,8 @@ export const AIVideoAssistant: React.FC<AIVideoAssistantProps> = ({ user }) => {
                 Where should we start?
               </h1>
               <p className="text-xs sm:text-sm text-zinc-500 mt-2 max-w-md">
-                Tap <span className="font-semibold text-zinc-700">+</span> below to choose a Creator Task & Language, or use the mic to speak your video topic.
+                Swipe the quick task chips below, tap <span className="font-semibold text-zinc-700">+</span> to switch language, or use the mic to speak your video topic.
               </p>
-            </div>
-
-            {/* Bottom-Aligned Starter Prompt List (Matches Gemini mobile screenshot rows) */}
-            <div className="w-full max-w-lg mx-auto space-y-2 pt-4">
-              {TASK_CARDS.map((task) => {
-                const Icon = task.icon;
-                const isSelected = selectedTask === task.id;
-                return (
-                  <button
-                    key={task.id}
-                    type="button"
-                    onClick={() => handleSelectStarterTask(task)}
-                    className={`w-full flex items-center gap-3.5 px-3.5 py-2.5 rounded-2xl text-left transition-all cursor-pointer ${
-                      isSelected
-                        ? 'bg-white/95 shadow-xs border border-blue-200 text-blue-700'
-                        : 'hover:bg-white/70 text-zinc-800'
-                    }`}
-                  >
-                    <div
-                      className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
-                        isSelected
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-white/90 text-zinc-700 border border-zinc-200/80'
-                      }`}
-                    >
-                      <Icon className="w-4 h-4" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm sm:text-base font-medium truncate">
-                        {task.starterPrompt}
-                      </p>
-                    </div>
-                  </button>
-                );
-              })}
             </div>
           </>
         ) : (
@@ -1284,6 +1249,33 @@ export const AIVideoAssistant: React.FC<AIVideoAssistantProps> = ({ user }) => {
               </button>
             </div>
           )}
+
+          {/* Horizontal Scrollable Quick Task Chip List Above Chat Input (Gemini Mobile Style) */}
+          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1 px-0.5">
+            {TASK_CARDS.map((task) => {
+              const Icon = task.icon;
+              const isSelected = selectedTask === task.id;
+              return (
+                <button
+                  key={task.id}
+                  type="button"
+                  onClick={() => handleSelectStarterTask(task)}
+                  className={`flex items-center gap-2 px-3.5 py-2 rounded-2xl border text-xs sm:text-sm font-medium whitespace-nowrap shrink-0 transition-all cursor-pointer shadow-2xs ${
+                    isSelected
+                      ? 'bg-blue-600 border-blue-600 text-white shadow-blue-600/15'
+                      : 'bg-white/95 hover:bg-white border-zinc-200/90 text-zinc-800'
+                  }`}
+                >
+                  <Icon
+                    className={`w-4 h-4 shrink-0 ${
+                      isSelected ? 'text-white' : 'text-blue-600'
+                    }`}
+                  />
+                  <span>{task.title}</span>
+                </button>
+              );
+            })}
+          </div>
 
           {/* Gemini-Style Rounded Pill Input Bar */}
           <form
