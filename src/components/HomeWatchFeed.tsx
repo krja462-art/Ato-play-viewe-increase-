@@ -1241,7 +1241,7 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
 
   // Main Home Feed Listing
   return (
-    <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6 mb-20 bg-white min-h-screen relative">
+    <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 pb-6 mb-20 bg-white min-h-screen relative scroll-smooth">
       
       {/* Animated On-Screen +30 Coin Add / +60 Coin Add Overlay (Auto-dismissing with 3D Real Coin) */}
       {videoCoinToast && (
@@ -1270,66 +1270,72 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
         </div>
       )}
       
-      {/* Collapsible Daily Missions Tracker Card at Top of Home Feed */}
-      <DailyMissionsCard
-        userId={user.id}
-        onNavigateAction={(target) => {
-          if (target === 'video') {
-            setHomeSection('video');
-          } else if (target === 'follower') {
-            setHomeSection('follower');
-          } else if (target === 'ai-assistant') {
-            setActiveTab('ai-assistant');
-          }
-        }}
-      />
+      {/* Fixed/Sticky Top Header on Home Feed: Daily Missions Card + Video/Follower Toggle Buttons */}
+      <div className="sticky top-16 z-30 -mx-4 px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 pt-3 pb-3 bg-white/95 backdrop-blur-md border-b border-zinc-200/80 shadow-[0_4px_12px_-4px_rgba(0,0,0,0.05)] space-y-2.5">
+        {/* Collapsible Daily Missions Tracker Card at Top of Home Feed */}
+        <DailyMissionsCard
+          userId={user.id}
+          onNavigateAction={(target) => {
+            if (target === 'video') {
+              setHomeSection('video');
+            } else if (target === 'follower') {
+              setHomeSection('follower');
+            } else if (target === 'ai-assistant') {
+              setActiveTab('ai-assistant');
+            }
+          }}
+        />
 
-      {/* Home Section Segmented Control: Video Views vs Followers */}
-      <div className="flex rounded-xl bg-zinc-100 p-1 border border-zinc-200/80">
-        <button
-          onClick={() => setHomeSection('video')}
-          className={`flex-1 py-2 px-3 rounded-lg text-xs sm:text-sm font-semibold flex items-center justify-center space-x-2 transition-all cursor-pointer ${
-            homeSection === 'video'
-              ? 'bg-white text-zinc-900 shadow-xs'
-              : 'text-zinc-600 hover:text-zinc-900'
-          }`}
-        >
-          <Video className="w-4 h-4 text-blue-600" />
-          <span>Video Views</span>
-        </button>
+        {/* Home Section Segmented Control: Video Views vs Followers */}
+        <div className="flex rounded-xl bg-zinc-100 p-1 border border-zinc-200/80">
+          <button
+            onClick={() => setHomeSection('video')}
+            className={`flex-1 py-2 px-3 rounded-lg text-xs sm:text-sm font-semibold flex items-center justify-center space-x-2 transition-all cursor-pointer ${
+              homeSection === 'video'
+                ? 'bg-white text-zinc-900 shadow-xs'
+                : 'text-zinc-600 hover:text-zinc-900'
+            }`}
+          >
+            <Video className="w-4 h-4 text-blue-600" />
+            <span>Video Views</span>
+          </button>
 
-        <button
-          onClick={() => setHomeSection('follower')}
-          className={`flex-1 py-2 px-3 rounded-lg text-xs sm:text-sm font-semibold flex items-center justify-center space-x-2 transition-all cursor-pointer ${
-            homeSection === 'follower'
-              ? 'bg-white text-zinc-900 shadow-xs'
-              : 'text-zinc-600 hover:text-zinc-900'
-          }`}
-        >
-          <Users className="w-4 h-4 text-emerald-600" />
-          <span>Follower Campaigns</span>
-        </button>
-      </div>
-
-      {/* Section Header */}
-      <div className="flex items-center justify-between px-1 pt-1">
-        <div>
-          <h2 className="text-base sm:text-lg font-bold text-zinc-900 tracking-tight">
-            {homeSection === 'video' ? "Available Videos" : "AtoPlay Channels to Follow"}
-          </h2>
-          <p className="text-xs text-zinc-500">
-            {homeSection === 'video' 
-              ? "Watch for 60 seconds to earn coins for your channel campaigns" 
-              : "Open channel, follow on AtoPlay & earn coins"}
-          </p>
+          <button
+            onClick={() => setHomeSection('follower')}
+            className={`flex-1 py-2 px-3 rounded-lg text-xs sm:text-sm font-semibold flex items-center justify-center space-x-2 transition-all cursor-pointer ${
+              homeSection === 'follower'
+                ? 'bg-white text-zinc-900 shadow-xs'
+                : 'text-zinc-600 hover:text-zinc-900'
+            }`}
+          >
+            <Users className="w-4 h-4 text-emerald-600" />
+            <span>Follower Campaigns</span>
+          </button>
         </div>
-        <button
-          onClick={() => setActiveTab('campaigns')}
-          className="px-3 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-600 font-semibold text-xs transition-colors cursor-pointer"
-        >
-          + Promote
-        </button>
+
+        {/* Section Header */}
+        <div className="flex items-center justify-between px-1 pt-0.5">
+          <div>
+            <h2 className="text-sm sm:text-base font-bold text-zinc-900 tracking-tight">
+              {homeSection === 'video' ? "Available Videos" : "AtoPlay Channels to Follow"}
+            </h2>
+            <p className="text-[11px] sm:text-xs text-zinc-500">
+              {homeSection === 'video' 
+                ? "Watch for 60 seconds to earn coins for your channel campaigns" 
+                : "Open channel, follow on AtoPlay & earn coins"}
+            </p>
+          </div>
+          <button
+            onClick={() => setActiveTab('campaigns')}
+            className="px-3 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-600 font-semibold text-xs transition-colors cursor-pointer shrink-0"
+          >
+            + Promote
+          </button>
+        </div>
       </div>
+
+      {/* Smoothly Scrollable Video & Follower Campaigns List Below Fixed Top Header */}
+      <div className="pt-4">
 
       {homeSection === 'follower' ? (
         <div className="space-y-3">
@@ -1536,6 +1542,7 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
           })}
         </div>
       )}
+      </div>
 
       {/* 4-Second Rule Warning Notice Modal */}
       {showWarning4SecModal && (
