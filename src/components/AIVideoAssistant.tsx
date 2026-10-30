@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { User } from '../types';
 import { apiFetch } from '../lib/api';
+import { recordDailyMissionAction } from '../utils/dailyMissions';
 
 export type CreatorTaskType =
   | 'auto'
@@ -539,6 +540,7 @@ export const AIVideoAssistant: React.FC<AIVideoAssistantProps> = ({ user }) => {
       };
 
       setChatTurns((prev) => [...prev, newTurn]);
+      recordDailyMissionAction(user.id, 'studio');
 
       const newHistoryItem: SavedAIHistoryItem = {
         id: turnId,

@@ -1,84 +1,89 @@
-# Full Conversational AI Video Growth Assistant & Generation Fix
+# Daily Missions & Bonus Coin Rewards on Home Feed
 
-This update fixes the `"Action completed"` generation failure so AI responses render reliably on the page, removes the Gemini logo above `"Where should we start?"`, and upgrades the assistant into a full conversational AI system with multi-turn chat memory and clean ChatGPT/Gemini-style formatted message bubbles.
+Introduce an interactive, collapsible **Daily Missions** tracker card at the top of the Home feed where creators can track daily goals (`Watch 5 Videos`, `Follow 3 Creator Channels`, `Create 1 Campaign or Use AI Assistant`, and `Complete All Daily Tasks Mega Bonus`) with real-time visual progress bars and instant automatic bonus coin rewards upon completion.
 
 ## User Review & Critical Decisions
 
 > [!IMPORTANT]
-> The following product and design choices have been confirmed from your answers:
+> The following product and UX decisions incorporate your confirmed answers and govern how Daily Missions behave across the app:
 
-- **Confirmed Decision 1 — Zero-State Welcome Heading**: Display **clean text only (`"Where should we start?"`) without any Gemini sparkle logo** above it.
-- **Confirmed Decision 2 — Full Conversational AI with Follow-Up Memory**: Upgrade the assistant to a **full conversational AI system** that remembers previous messages in the active chat thread, handles follow-up prompts naturally, answers general creator questions, and executes all 4 AtoPlay Creator Tasks (*Title & SEO Tags*, *Video Script & 15s Hook*, *Thumbnail Concept Guide*, *Description & Hashtags*).
-- **Confirmed Decision 3 — Clean Formatted AI Chat Bubbles**: Render generated outputs as **clean ChatGPT/Gemini-style formatted text bubbles** (with bold headings, bullet points, and clear line breaks) accompanied by a one-click **Copy** button and **Regenerate** action.
+- **Confirmed Placement & Style**: Rendered as a **collapsible card at the top of the Home feed** (above the Video Views / Follower Campaigns segmented toggle), showing an overall daily progress bar even when collapsed so creators can expand or collapse it anytime.
+- **Confirmed Mission Tasks**: Includes all 4 selected daily tasks:
+  1. **Watch 5 Videos** (`+150 Bonus Coins`)
+  2. **Follow 3 Creator Channels** (`+100 Bonus Coins`)
+  3. **Create 1 Campaign or Use AI Assistant** (`+80 Bonus Coins`)
+  4. **Complete All Daily Tasks Mega Bonus** (`+200 Mega Bonus Coins` when all 3 core tasks reach 100%)
+- **Confirmed Reward Mechanism**: **Auto-credits bonus coins immediately** as soon as a mission reaches 100% completion, triggering the celebratory 3D coin toast, sound, confetti, and syncing the updated coin balance to Cloud Firestore and local storage.
 
 ---
 
 ## 1. Overview & Core Concept
 
-- **What It Does**: Provides AtoPlay creators and video promoters with a real-time conversational AI assistant that generates high-CTR titles, SEO tags, 15-second hooks, thumbnail concepts, descriptions, hashtags, and answers any follow-up question in **Hinglish**, **Hindi**, or **English**.
-- **Root Cause Fixed**: Previously, when `/api/ai/video-assistant` fell back to the client API helper (or before a server restart), it hit a generic `{ success: true, message: "Action completed" }` fallback with no `result` payload, causing the UI to show `"Action completed"` as an error banner without rendering any output. Both the live backend endpoint and a topic-aware client fallback engine will now return complete, formatted AI responses.
-- **Key Value**: Creators get an authentic, uninterrupted conversational AI experience with voice-to-text dictation, horizontal quick-task chips, `+` task/language selector, and one-click copyable AI message bubbles.
+- **What It Does**: Tracks a creator's daily engagement across video watching, channel following, and creator studio tools (Campaign creation or AI Assistant generation). Each action increments the corresponding daily counter for the current calendar date (`YYYY-MM-DD`), animates the task's progress bar, and automatically credits bonus coins the moment a threshold is reached.
+- **Target Audience / Persona**: Content creators on mobile and desktop who want structured daily goals and extra virtual coins to promote their own videos and channels faster.
+- **Key Value**: Boosts daily retention and gives creators a clear, rewarding path to earn up to **+530 extra bonus coins every day** through organic platform participation.
 
 ---
 
 ## 2. User Experience & Visual Design
 
 - **Key User Flows**:
-  1. **Clean Zero-State Welcome**: When opening the AI Assistant (or tapping **New Chat**), the screen displays the centered `"Where should we start?"` heading in clean typography with **no Gemini icon above it**.
-  2. **Quick Task Chips & `+` Selector**: Directly above the bottom rounded input bar, creators can swipe the 4 horizontal quick-task chips or tap `+` to pick a Creator Task and Language (*Hinglish*, *Hindi*, *English*).
-  3. **Voice or Text Prompting**: Creators speak via the Web Speech API mic button (which fills the input box for editing) or type any video topic or follow-up instruction, then tap **Send**.
-  4. **Conversational Thread with Memory**: The user's message appears on the right, followed by a clean AI response bubble on the left with formatted bold sections, bullet points, a one-click **Copy** button, and a **Regenerate** button. Follow-up messages in the same chat automatically include prior conversation context.
+  1. **Zero-State / Morning Launch**: When a creator opens the Home feed, the **Daily Missions** card sits at the top showing `0 / 3 Missions Completed · Up to +530 Bonus Coins` with a sleek overall progress bar and a collapse/expand chevron (`min-h-[44px]` touch target).
+  2. **Live Progress & Deep-Link Shortcuts**: Expanding the card reveals the 4 mission rows. Each incomplete mission displays its icon, title, tabular numeric progress (`2 / 5` or `1 / 3`), smooth animated fill bar, reward amount (`+150 Coins`), and a quick-action button (`Watch`, `Follow`, `Open AI`) that switches to the relevant tab or section.
+  3. **Instant Auto-Credit Celebration**: The moment a user finishes their 5th video watch, 3rd channel follow, or 1st campaign/AI prompt of the day, the mission marks itself `Completed`, plays the coin celebration sound + confetti, displays an on-screen `+150 Bonus Coins Auto-Credited!` banner, and updates the user's wallet balance immediately.
+  4. **Mega Bonus Cascade**: Completing the 3rd daily mission automatically triggers the 4th mission (**Complete All Daily Tasks Mega Bonus**), awarding an additional `+200 Coins` automatically.
 - **Visual Identity & Theme**:
-  - *Aesthetic Direction*: Clean, modern conversational AI workspace optimized for mobile thumb ergonomics ($44 \times 44\text{px}$ minimum hitboxes) and desktop clarity.
-  - *Color Palette & Mood*: Crisp light surface (`bg-white` / `bg-zinc-50`), deep slate user bubbles (`bg-zinc-900 text-white`), clean bordered AI response bubbles (`bg-white border-zinc-200`), and primary blue accents (`#2563EB`) for active controls.
-  - *Typography & Hierarchy*: High-contrast headings, readable formatted markdown-style blocks (`font-semibold` section headers, bullet lists, and clean line spacing), and zero decorative logos above the welcome text.
+  - *Aesthetic Direction*: Tactile mobile-first tracker card adhering to the **Mobile & Touch-First Applications** design constitution (`rounded-2xl` outer container, clean unboxed metadata with `·` separators, `tabular-nums` counters, and $\ge 44\text{px}$ touch targets).
+  - *Color Palette & Mood*: Crisp `bg-white` card surface with subtle `border-zinc-200/80` framing, vibrant `bg-blue-600` and `bg-emerald-600` progress bar fills, and warm amber accents (`text-amber-900`) paired with the 3D `RealCoin` icon for rewards.
+  - *Typography & Hierarchy*: Bold `Plus Jakarta Sans` section headers paired with `JetBrains Mono` / `tabular-nums` progress counters (`3/5`) so numbers never jitter when updating.
+- **Interactive Feedback & Motion**: Smooth `transition-all duration-500` width transitions on progress bars, instant completed checkmarks, and auto-dismissing celebration toasts.
 
 ---
 
 ## 3. Key Product Decisions & Trade-Offs
 
-- **Decision 1 — Multi-Turn Conversational Context (`history` in API Request)**
-  - *Chosen Approach*: Send the active conversation thread (`history: [{ role: 'user' | 'model', text: string }]`) along with `prompt`, `taskType`, and `language` to `/api/ai/video-assistant`.
-  - *Why*: Enables true follow-up prompts (e.g., *"Iske 3 aur funny titles do"* or *"Ab iska description Hindi me likho"*) just like a complete AI chat system.
-- **Decision 2 — Dual-Layer Reliability (Live Server + Smart Client Fallback)**
-  - *Chosen Approach*: Use the Express `/api/ai/video-assistant` route powered by `@google/genai` (`gemini-3.8-flash`) as the primary engine, and implement a comprehensive topic-aware conversational generator inside the client API fallback for `/api/ai/video-assistant` instead of returning `"Action completed"`.
-  - *Why*: Guarantees that whether the app runs on the full-stack server or a static preview/deployment, creators always receive a complete, well-formatted AI response on the page.
+- **Decision 1: Daily Reset & Cross-Component Event Tracking**
+  - *Chosen Approach*: Store daily mission progress keyed by user ID and current local date (`atoplay_daily_missions_${userId}_${YYYY-MM-DD}`) with a custom window event (`atoplay-mission-progress`) and helper utility so actions in `HomeWatchFeed` (watching videos, following channels), `Campaigns` (creating a campaign), and `AIVideoAssistant` (generating AI SEO content) all update mission progress seamlessly and auto-credit coins without duplicate payouts.
+  - *Why*: Guarantees zero-latency progress updates across tabs and automatic midnight resets without requiring manual refreshes.
+- **Decision 2: Dual Persistence (Local + Cloud Firestore Wallet Sync)**
+  - *Chosen Approach*: Persist mission completion flags per day so a completed mission can never be double-credited on the same day, while immediately syncing the auto-credited coin balance to both the backend wallet endpoint and Cloud Firestore (`saveUserCoinsToFirestore`).
+  - *Why*: Ensures total coin integrity across page reloads and devices.
 
 ---
 
 ## 4. Technical Architecture & Data Strategy *(Technical Reference)*
 
 - **Architecture & Component Diagram**:
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                    AtoPlay AI Assistant Workspace                       │
-│  ┌───────────────────────────────────────────────────────────────────┐  │
-│  │ Top Bar: AtoPlay AI (Task Mode) · Language · History · [New Chat] │  │
-│  └───────────────────────────────────────────────────────────────────┘  │
-│  ┌───────────────────────────────────────────────────────────────────┐  │
-│  │ Main Conversation Viewport                                        │  │
-│  │  • Zero-State: Clean "Where should we start?" (No Gemini Logo)    │  │
-│  │  • Active Chat: User Prompt Bubbles + Formatted AI Text Bubbles   │  │
-│  │    with [Copy Response] and [Regenerate] buttons                  │  │
-│  └───────────────────────────────────────────────────────────────────┘  │
-│  ┌───────────────────────────────────────────────────────────────────┐  │
-│  │ Fixed Bottom Dock                                                 │  │
-│  │  • Horizontal Scrollable 4 Creator Task Chips                     │  │
-│  │  • (+) Task & Language Drawer  |  Editable Input  |  Mic  |  Send │  │
-│  └────────────────────────────────┬──────────────────────────────────┘  │
-└───────────────────────────────────┼─────────────────────────────────────┘
-                                    │ POST /api/ai/video-assistant
-                                    ▼ (prompt, taskType, language, messages)
+│                       Daily Missions Tracker Utility                    │
+│  • Date-keyed state (YYYY-MM-DD) per User ID                            │
+│  • Tracks: videosWatched (0..5), channelsFollowed (0..3),               │
+│            studioActionUsed (0..1), megaBonusClaimed (boolean)          │
+└───────────────┬─────────────────────────┬───────────────────────────────┘
+                │                         │
+                ▼                         ▼
+┌───────────────────────────────┐ ┌───────────────────────────────────────┐
+│   Activity Producers          │ │   Collapsible DailyMissionsCard       │
+│  • Video Watch Verified (+1)  │ │  • Header: Summary + Overall Bar      │
+│  • Channel Follow Verified(+1)│ │  • 4 Mission Rows with Progress Bars  │
+│  • Campaign / AI Used (+1)    │ │  • Quick Action Navigation Buttons    │
+└───────────────┬───────────────┘ └───────────────────┬───────────────────┘
+                │                                     │
+                └─────────────────┬───────────────────┘
+                                  ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
-│  Backend AI Route (@google/genai `gemini-3.8-flash`) + Smart Fallback   │
-│  • Multi-turn chat context + 4 Creator Tasks + General AI Q&A           │
-│  • Returns formatted conversational markdown text + structured fields   │
+│                    Auto-Credit Reward & Wallet Sync                     │
+│  • Detects threshold reached -> Marks mission rewarded                  │
+│  • Triggers Coin Toast + Confetti + Audio                               │
+│  • Updates User Wallet State + Cloud Firestore + Server Session         │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
 - **Data Model & State**:
-  - `chatTurns`: Array of conversation turns (`id`, `prompt`, `responseText`, `taskTitle`, `taskType`, `language`, `createdAt`, `result`).
-  - `history`: Saved recent conversations persisted in `localStorage` so creators can reload or copy previous AI outputs anytime.
+  - `DailyMissionProgress`: `{ date: string; videosWatched: number; channelsFollowed: number; studioUsed: number; rewardedIds: string[] }`
+  - 4 defined mission descriptors with target count, current count, coin reward, and completion status.
 - **Interactive Component & State Mapping**:
-  - Submitting a prompt appends the user turn immediately or shows a live thinking indicator, sends the full conversation context to `/api/ai/video-assistant`, renders the formatted AI text bubble with bold/bullet formatting, and scrolls smoothly to the bottom of the thread.
-  - Clicking **Copy** copies the full clean AI response text to the clipboard with instant `"Copied"` confirmation.
+  - **Collapse/Expand Toggle**: Toggles card body visibility while keeping the summary progress bar visible in the header.
+  - **Task Action Buttons**: Clicking `Watch` switches `homeSection` to `'video'`; clicking `Follow` switches `homeSection` to `'follower'`; clicking `Use AI / Create` navigates to `'ai-assistant'` or `'campaigns'`.
+  - **Auto-Credit Handler**: Evaluates mission thresholds on every progress increment; if newly completed, adds the mission's reward (plus the Mega Bonus if all 3 core tasks are now complete) to `user.coins` and calls `onCoinEarned` + `saveUserCoinsToFirestore`.

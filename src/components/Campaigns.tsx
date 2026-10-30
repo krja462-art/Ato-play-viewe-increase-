@@ -7,6 +7,7 @@ import { CreateFollowerCampaignModal } from './CreateFollowerCampaignModal';
 import { apiFetch, extractVideoMetadataClient, cleanVideoUrl, fetchLiveAtoPlayFollowerCount, resolveCampaignType, getDeletedCampaignIds, addDeletedCampaignId } from '../lib/api';
 import { saveCampaignToFirestore, deleteCampaignInFirestore, saveUserCoinsToFirestore, getMyCampaignsFromFirestore, getFollowLogsFromFirestore, reportFakeFollowInFirestore } from '../lib/firebase';
 import { triggerCampaignGoalCelebration, triggerWatchCompleteCelebration } from '../utils/confetti';
+import { recordDailyMissionAction } from '../utils/dailyMissions';
 
 interface CampaignsProps {
   user: User;
@@ -516,6 +517,7 @@ export const Campaigns: React.FC<CampaignsProps> = ({
           saveUserCoinsToFirestore(data.user.id, data.user.coins).catch(e => console.warn('Firestore user coins error:', e));
           onCampaignCreated(data.user);
         }
+        recordDailyMissionAction(user.id, 'studio');
 
         fetchMyCampaigns();
       } else {
@@ -926,7 +928,10 @@ export const Campaigns: React.FC<CampaignsProps> = ({
           isOpen={isModalOpen && newCampaignType === 'follower'}
           onClose={handleCloseModal}
           user={user}
-          onCampaignCreated={onCampaignCreated}
+          onCampaignCreated={(updatedUser) => {
+            onCampaignCreated(updatedUser);
+            recordDailyMissionAction(user.id, 'studio');
+          }}
           fetchMyCampaigns={fetchMyCampaigns}
         />
       )}

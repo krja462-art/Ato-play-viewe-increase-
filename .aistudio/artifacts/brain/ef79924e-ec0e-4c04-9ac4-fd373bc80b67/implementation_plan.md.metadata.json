@@ -1,6 +1,6 @@
 {
-  "summary":  "Implementation plan to fix the \"Action completed\" error in the AtoPlay AI Assistant, remove the Gemini logo above \"Where should we start?\", and upgrade the assistant to a full conversational AI system with follow-up chat memory and clean ChatGPT/Gemini-style formatted response bubbles with one-click copy.",
-  "updatedAt":  "2026-10-29T11:41:20.814335652Z",
+  "summary":  "Implementation plan for the Daily Missions collapsible tracker at the top of the Home feed with visual progress bars, 4 daily creator tasks, and automatic bonus coin crediting upon completion.",
+  "updatedAt":  "2026-10-30T05:07:28.492280101Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

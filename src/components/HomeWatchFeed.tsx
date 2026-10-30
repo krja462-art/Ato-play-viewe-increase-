@@ -5,6 +5,8 @@ import { SessionExpiredModal } from './SessionExpiredModal';
 import { Warning4SecModal } from './Warning4SecModal';
 import { AtoPlayBadge } from './AtoPlayBadge';
 import { RealCoin } from './RealCoin';
+import { DailyMissionsCard } from './DailyMissionsCard';
+import { recordDailyMissionAction } from '../utils/dailyMissions';
 import { playCoinCelebrationSound } from '../utils/audio';
 import { triggerWatchCompleteCelebration } from '../utils/confetti';
 import { apiFetch, getWatchedIds, addWatchedId, addFollowedId, cleanVideoUrl, openAtoPlayUrl, fetchLiveAtoPlayFollowerCount, resolveCampaignType, getDeletedCampaignIds, isRealAtoPlayAvatarUrl } from '../lib/api';
@@ -177,7 +179,13 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
         } catch {}
         triggerWatchCompleteCelebration();
 
-        const updatedUser: User = res.user || { ...user, coins: newCoins };
+        const missionUpdate = recordDailyMissionAction(user.id, 'follow');
+        const missionBonus = missionUpdate.newlyEarnedBonusCoins || 0;
+        const baseUser: User = res.user || { ...user, coins: newCoins };
+        const updatedUser: User = {
+          ...baseUser,
+          coins: (baseUser.coins || 0) + missionBonus
+        };
         onCoinEarned(updatedUser);
         saveUserCoinsToFirestore(updatedUser.id, updatedUser.coins, updatedUser.email).catch(() => {});
 
@@ -203,8 +211,8 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
         addWatchedId(user.id, camp.id);
         setCampaigns(prev => prev.filter(c => c.id !== camp.id));
 
-        // Show +30 Coins Added on-screen celebration instead of popup modal
-        showCoinAddedScreen(bonus);
+        // Show +30 Coins Added (+ mission bonus if completed) on-screen celebration
+        showCoinAddedScreen(bonus + missionBonus);
       } else if (res?.alreadyFollowed) {
         setFollowedCampaignIds(prev => new Set([...prev, camp.id]));
         addFollowedId(user.id, camp.id);
@@ -659,13 +667,16 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
           playCoinCelebrationSound();
         } catch {}
         triggerWatchCompleteCelebration();
-        showCoinAddedScreen(30);
+        const missionUpdate = recordDailyMissionAction(user.id, 'follow');
+        const missionBonus = missionUpdate.newlyEarnedBonusCoins || 0;
+        showCoinAddedScreen(30 + missionBonus);
 
         if (res.user) {
-          saveUserCoinsToFirestore(res.user.id, res.user.coins, res.user.email).catch(() => {});
-          onCoinEarned(res.user);
+          const updatedWithBonus = { ...res.user, coins: (res.user.coins || 0) + missionBonus };
+          saveUserCoinsToFirestore(updatedWithBonus.id, updatedWithBonus.coins, updatedWithBonus.email).catch(() => {});
+          onCoinEarned(updatedWithBonus);
         } else {
-          const updated = { ...user, coins: user.coins + 30 };
+          const updated = { ...user, coins: user.coins + 30 + missionBonus };
           saveUserCoinsToFirestore(updated.id, updated.coins, updated.email).catch(() => {});
           onCoinEarned(updated);
         }
@@ -785,9 +796,19 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
         } catch {}
         triggerWatchCompleteCelebration();
         const earned = data.earnedCoins || (data.followed ? 90 : 60);
+        const missionUpdate = recordDailyMissionAction(user.id, 'watch');
+        const missionBonus = missionUpdate.newlyEarnedBonusCoins || 0;
         if (data.user) {
-          saveUserCoinsToFirestore(data.user.id, data.user.coins, data.user.email).catch(e => console.warn('Firestore user coins sync error:', e));
-          onCoinEarned(data.user);
+          const updatedWithBonus = {
+            ...data.user,
+            coins: (data.user.coins || 0) + missionBonus
+          };
+          saveUserCoinsToFirestore(updatedWithBonus.id, updatedWithBonus.coins, updatedWithBonus.email).catch(e => console.warn('Firestore user coins sync error:', e));
+          onCoinEarned(updatedWithBonus);
+        } else if (missionBonus > 0) {
+          const fallbackUser = { ...user, coins: (user.coins || 0) + earned + missionBonus };
+          saveUserCoinsToFirestore(fallbackUser.id, fallbackUser.coins, fallbackUser.email).catch(() => {});
+          onCoinEarned(fallbackUser);
         }
         updateCampaignViewsInFirestore(cId, user.id, data.campaign?.viewsCompleted, data.campaign?.status === 'completed')
           .catch(e => console.warn('Firestore campaign view sync error:', e));
@@ -809,16 +830,16 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
         setCampaigns(prev => prev.filter(c => c.id !== cId));
         
         // Restore document title
-        document.title = 'AtoPlay Booster - Video Promotion Exchange';
+        document.title = 'AtoPlay Booster - Creator Community & AI Growth Studio';
 
         // Trigger animated on-screen "+60 Coins Added" toast that automatically fades out
         if (coinToastTimerRef.current) {
           clearTimeout(coinToastTimerRef.current);
         }
-        setVideoCoinToast({ coins: earned, key: Date.now() });
+        setVideoCoinToast({ coins: earned + missionBonus, key: Date.now() });
         coinToastTimerRef.current = setTimeout(() => {
           setVideoCoinToast(null);
-        }, 2600);
+        }, 2800);
       } else {
         // If server expired session due to < 60s or anti-cheat
         if (data.expired) {
@@ -1249,6 +1270,20 @@ export const HomeWatchFeed: React.FC<HomeWatchFeedProps> = ({
         </div>
       )}
       
+      {/* Collapsible Daily Missions Tracker Card at Top of Home Feed */}
+      <DailyMissionsCard
+        userId={user.id}
+        onNavigateAction={(target) => {
+          if (target === 'video') {
+            setHomeSection('video');
+          } else if (target === 'follower') {
+            setHomeSection('follower');
+          } else if (target === 'ai-assistant') {
+            setActiveTab('ai-assistant');
+          }
+        }}
+      />
+
       {/* Home Section Segmented Control: Video Views vs Followers */}
       <div className="flex rounded-xl bg-zinc-100 p-1 border border-zinc-200/80">
         <button

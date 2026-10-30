@@ -27,6 +27,9 @@ import {
 } from './lib/firebase';
 import { apiFetch, isRealAtoPlayAvatarUrl } from './lib/api';
 import { FollowReportWarningModal, UserWarningNotification } from './components/FollowReportWarningModal';
+import { RealCoin } from './components/RealCoin';
+import { playCoinCelebrationSound } from './utils/audio';
+import { triggerWatchCompleteCelebration } from './utils/confetti';
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -37,6 +40,11 @@ export default function App() {
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [activeWarningNotif, setActiveWarningNotif] = useState<UserWarningNotification | null>(null);
   const [showInstallScreen, setShowInstallScreen] = useState(false);
+  const [missionBonusToast, setMissionBonusToast] = useState<{
+    coins: number;
+    titles: string[];
+    key: number;
+  } | null>(null);
 
   const { isOnline, isReconnected } = useOnlineStatus();
   useTheme(); // Initialize and apply documentElement dark class
@@ -358,6 +366,64 @@ export default function App() {
     }
   };
 
+  // Global listener for Daily Mission completions (auto-credits studio missions & shows celebration banner)
+  useEffect(() => {
+    const onMissionUpdated = (e: Event) => {
+      const customEvt = e as CustomEvent;
+      const detail = customEvt.detail;
+      if (!detail || !detail.newlyEarnedBonusCoins || detail.newlyEarnedBonusCoins <= 0) {
+        return;
+      }
+
+      const bonusCoins: number = detail.newlyEarnedBonusCoins;
+      const completedTitles: string[] = Array.isArray(detail.newlyCompletedTitles)
+        ? detail.newlyCompletedTitles
+        : ['Daily Mission Completed!'];
+
+      // If triggered from AI Assistant or Campaigns tab (not HomeWatchFeed which already adds watch/follow mission bonus), credit user wallet here
+      const isStudioCompletion = completedTitles.some((t) => t.includes('Creator Studio Task'));
+      if (isStudioCompletion) {
+        try {
+          playCoinCelebrationSound();
+        } catch {}
+        triggerWatchCompleteCelebration();
+
+        setUser((prev) => {
+          if (!prev) return null;
+          const nextCoins = prev.isAdmin ? 999999999 : (prev.coins || 0) + bonusCoins;
+          const updated: User = { ...prev, coins: nextCoins };
+          localStorage.setItem('atoviewer_user', JSON.stringify(updated));
+          if (updated.id && !updated.id.startsWith('guest_')) {
+            saveUserCoinsToFirestore(updated.id, updated.coins, updated.email);
+            apiFetch('/api/user/sync-wallet', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ coins: updated.coins })
+            }).catch(() => {});
+          }
+          return updated;
+        });
+      }
+
+      setMissionBonusToast({
+        coins: bonusCoins,
+        titles: completedTitles,
+        key: Date.now()
+      });
+    };
+
+    window.addEventListener('atoplay-mission-updated', onMissionUpdated);
+    return () => window.removeEventListener('atoplay-mission-updated', onMissionUpdated);
+  }, []);
+
+  useEffect(() => {
+    if (!missionBonusToast) return;
+    const t = setTimeout(() => {
+      setMissionBonusToast(null);
+    }, 3600);
+    return () => clearTimeout(t);
+  }, [missionBonusToast]);
+
   const handleLogout = async () => {
     try {
       localStorage.removeItem('atoviewer_user');
@@ -540,6 +606,26 @@ export default function App() {
         isRefreshing={isRefreshing}
         onUserUpdate={handleUpdateUser}
       />
+
+      {/* Daily Mission Auto-Credited Bonus Toast Banner */}
+      {missionBonusToast && (
+        <div
+          key={missionBonusToast.key}
+          className="fixed inset-x-0 top-16 z-50 flex justify-center pointer-events-none px-4 animate-in fade-in slide-in-from-top-3 duration-200"
+        >
+          <div className="inline-flex items-center space-x-3 px-4 py-3 rounded-2xl bg-zinc-900/95 text-white shadow-2xl border border-amber-400/50 max-w-md">
+            <RealCoin size="md" />
+            <div className="text-left">
+              <p className="text-xs font-extrabold text-amber-300 uppercase tracking-wide">
+                Daily Mission Auto-Credited!
+              </p>
+              <p className="text-xs sm:text-sm font-bold text-white">
+                {missionBonusToast.titles.join(' • ')}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Main Content Area (Home Feed or Campaign Page) */}
       <main className="flex-1 pb-24">
