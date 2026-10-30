@@ -3,6 +3,7 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronUp,
+  ChevronRight,
   Play,
   Users,
   Sparkles,
@@ -25,7 +26,10 @@ export const DailyMissionsCard: React.FC<DailyMissionsCardProps> = ({
   userId,
   onNavigateAction
 }) => {
-  const [isExpanded, setIsExpanded] = useState<boolean>(true);
+  // Collapsed by default so Video Campaigns take center stage on the Home feed
+  const [isExpanded, setIsExpanded] = useState<boolean>(false);
+  const [activeIndex, setActiveIndex] = useState<number>(0);
+  const [isPaused, setIsPaused] = useState<boolean>(false);
   const [missions, setMissions] = useState<DailyMissionItem[]>(() =>
     buildDailyMissionsList(loadDailyMissionProgress(userId))
   );
@@ -50,9 +54,19 @@ export const DailyMissionsCard: React.FC<DailyMissionsCardProps> = ({
     };
   }, [userId]);
 
+  // Auto-cycle missions one by one every 3.2 seconds when in compact mode
+  useEffect(() => {
+    if (isExpanded || isPaused || missions.length <= 1) return;
+
+    const timer = setInterval(() => {
+      setActiveIndex((prev) => (prev + 1) % missions.length);
+    }, 3200);
+
+    return () => clearInterval(timer);
+  }, [isExpanded, isPaused, missions.length]);
+
   const completedCount = missions.filter((m) => m.completed).length;
   const totalMissions = missions.length;
-  const overallPercent = Math.round((completedCount / totalMissions) * 100);
   const totalEarnedToday = missions
     .filter((m) => m.completed)
     .reduce((sum, m) => sum + m.rewardCoins, 0);
@@ -64,68 +78,166 @@ export const DailyMissionsCard: React.FC<DailyMissionsCardProps> = ({
     }
     switch (id) {
       case 'watch_5_videos':
-        return <Play className="w-4 h-4 text-blue-600 fill-current shrink-0" />;
+        return <Play className="w-3.5 h-3.5 text-blue-600 fill-current shrink-0" />;
       case 'follow_3_channels':
-        return <Users className="w-4 h-4 text-emerald-600 shrink-0" />;
+        return <Users className="w-3.5 h-3.5 text-emerald-600 shrink-0" />;
       case 'studio_action_1':
-        return <Sparkles className="w-4 h-4 text-indigo-600 shrink-0" />;
+        return <Sparkles className="w-3.5 h-3.5 text-indigo-600 shrink-0" />;
       case 'mega_bonus_all':
-        return <Trophy className="w-4 h-4 text-amber-600 shrink-0" />;
+        return <Trophy className="w-3.5 h-3.5 text-amber-600 shrink-0" />;
     }
   };
+
+  const activeMission = missions[activeIndex] || missions[0];
 
   return (
     <section
       aria-label="Daily Missions"
-      className="bg-white rounded-2xl border border-zinc-200/90 shadow-2xs overflow-hidden transition-all"
+      onMouseEnter={() => setIsPaused(true)}
+      onMouseLeave={() => setIsPaused(false)}
+      onTouchStart={() => setIsPaused(true)}
+      onTouchEnd={() => setIsPaused(false)}
+      className="bg-white rounded-2xl border border-zinc-200/90 shadow-2xs overflow-hidden transition-all duration-300"
     >
-      {/* Collapsible Card Header */}
-      <button
-        type="button"
-        onClick={() => setIsExpanded((prev) => !prev)}
-        className="w-full min-h-[56px] px-4 py-3.5 flex items-center justify-between gap-3 text-left hover:bg-zinc-50/80 transition-colors cursor-pointer"
-      >
-        <div className="flex items-center space-x-3 min-w-0 flex-1">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white flex items-center justify-center shrink-0 shadow-xs">
-            <Trophy className="w-5 h-5 text-amber-300" />
+      {/* Top Compact Bar: Shows Title, Overall Count, Dots, and Expand Toggle */}
+      <div className="px-3.5 pt-2.5 pb-1.5 flex items-center justify-between gap-2 border-b border-zinc-100/80 bg-zinc-50/60">
+        <div className="flex items-center space-x-2 min-w-0">
+          <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-blue-600 to-indigo-600 text-white flex items-center justify-center shrink-0">
+            <Trophy className="w-3.5 h-3.5 text-amber-300" />
           </div>
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center justify-between gap-2">
-              <h2 className="text-sm sm:text-base font-bold text-zinc-900 truncate">
-                Daily Missions
-              </h2>
-              <span className="text-xs font-semibold text-zinc-500 tabular-nums shrink-0">
-                {completedCount}/{totalMissions} Done · +{totalEarnedToday}/{maxDailyCoins} Coins
-              </span>
-            </div>
+          <span className="text-xs font-extrabold text-zinc-900 truncate">
+            Daily Missions
+          </span>
+          <span className="text-[11px] font-semibold text-zinc-500 tabular-nums shrink-0">
+            · {completedCount}/{totalMissions} (+{totalEarnedToday}/{maxDailyCoins})
+          </span>
+        </div>
 
-            {/* Overall Visual Progress Bar */}
-            <div className="mt-1.5 flex items-center gap-2.5">
-              <div className="flex-1 h-2 rounded-full bg-zinc-100 overflow-hidden border border-zinc-200/60">
-                <div
-                  className="h-full rounded-full bg-gradient-to-r from-blue-600 via-indigo-600 to-emerald-500 transition-all duration-500"
-                  style={{ width: `${overallPercent}%` }}
+        <div className="flex items-center space-x-2 shrink-0">
+          {/* Animated Slide Dots when collapsed */}
+          {!isExpanded && (
+            <div className="flex items-center space-x-1">
+              {missions.map((m, idx) => (
+                <button
+                  key={m.id}
+                  type="button"
+                  onClick={() => setActiveIndex(idx)}
+                  aria-label={`Show mission ${idx + 1}`}
+                  className={`h-1.5 rounded-full transition-all duration-300 cursor-pointer ${
+                    idx === activeIndex
+                      ? 'w-4 bg-blue-600'
+                      : m.completed
+                      ? 'w-1.5 bg-emerald-400'
+                      : 'w-1.5 bg-zinc-300 hover:bg-zinc-400'
+                  }`}
                 />
-              </div>
-              <span className="text-[11px] font-bold text-blue-600 tabular-nums shrink-0">
-                {overallPercent}%
-              </span>
+              ))}
             </div>
+          )}
+
+          {/* Expand / Collapse Button */}
+          <button
+            type="button"
+            onClick={() => setIsExpanded((prev) => !prev)}
+            className="px-2 py-1 rounded-lg bg-white hover:bg-zinc-100 border border-zinc-200/80 text-zinc-600 text-[11px] font-bold inline-flex items-center space-x-1 transition-colors cursor-pointer"
+          >
+            <span>{isExpanded ? 'Hide' : 'All 4'}</span>
+            {isExpanded ? (
+              <ChevronUp className="w-3.5 h-3.5" />
+            ) : (
+              <ChevronDown className="w-3.5 h-3.5" />
+            )}
+          </button>
+        </div>
+      </div>
+
+      {/* Mode 1 (Default): Single-Card Animated Carousel (Moves 1-by-1 smoothly) */}
+      {!isExpanded && activeMission && (
+        <div className="relative overflow-hidden px-3.5 py-2.5">
+          <div
+            className="flex transition-transform duration-500 ease-out"
+            style={{ transform: `translateX(-${activeIndex * 100}%)` }}
+          >
+            {missions.map((mission) => {
+              const pct = Math.min(100, Math.round((mission.current / mission.target) * 100));
+              const isMega = mission.id === 'mega_bonus_all';
+
+              return (
+                <div
+                  key={mission.id}
+                  className="w-full shrink-0 pr-0.5 flex flex-col gap-1.5"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center space-x-2 min-w-0">
+                      <div
+                        className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 border ${
+                          mission.completed
+                            ? 'bg-emerald-50 border-emerald-200'
+                            : isMega
+                            ? 'bg-amber-50 border-amber-200'
+                            : 'bg-blue-50/70 border-blue-200/70'
+                        }`}
+                      >
+                        {getMissionIcon(mission.id, mission.completed)}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-xs sm:text-sm font-bold text-zinc-900 truncate">
+                          {mission.title}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center space-x-2 shrink-0">
+                      <div className="inline-flex items-center space-x-1 text-xs font-bold text-amber-900 tabular-nums">
+                        <RealCoin size="sm" />
+                        <span>+{mission.rewardCoins}</span>
+                      </div>
+
+                      {mission.completed ? (
+                        <span className="text-[11px] font-bold text-emerald-700 whitespace-nowrap">
+                          Done ✓
+                        </span>
+                      ) : !isMega ? (
+                        <button
+                          type="button"
+                          onClick={() => onNavigateAction(mission.actionTarget)}
+                          className="px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-[11px] inline-flex items-center space-x-1 transition-colors cursor-pointer whitespace-nowrap shrink-0"
+                        >
+                          <span>{mission.actionLabel}</span>
+                          <ChevronRight className="w-3 h-3" />
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  {/* Compact Visual Progress Bar */}
+                  <div className="flex items-center gap-2 pl-9">
+                    <div className="flex-1 h-1.5 rounded-full bg-zinc-100 overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all duration-500 ${
+                          mission.completed
+                            ? 'bg-emerald-500'
+                            : isMega
+                            ? 'bg-amber-500'
+                            : 'bg-blue-600'
+                        }`}
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                    <span className="text-[11px] font-mono font-bold text-zinc-600 tabular-nums shrink-0">
+                      {mission.current}/{mission.target}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
+      )}
 
-        <div className="w-9 h-9 rounded-xl bg-zinc-100 text-zinc-600 flex items-center justify-center shrink-0">
-          {isExpanded ? (
-            <ChevronUp className="w-4 h-4" />
-          ) : (
-            <ChevronDown className="w-4 h-4" />
-          )}
-        </div>
-      </button>
-
-      {/* Expandable Missions List */}
+      {/* Mode 2 (When User Taps 'All 4'): Full Expanded List */}
       {isExpanded && (
-        <div className="px-4 pb-4 pt-1 border-t border-zinc-100 divide-y divide-zinc-100">
+        <div className="px-3.5 pb-3 pt-1 divide-y divide-zinc-100 animate-in fade-in duration-200">
           {missions.map((mission) => {
             const pct = Math.min(100, Math.round((mission.current / mission.target) * 100));
             const isMega = mission.id === 'mega_bonus_all';
@@ -133,14 +245,12 @@ export const DailyMissionsCard: React.FC<DailyMissionsCardProps> = ({
             return (
               <div
                 key={mission.id}
-                className={`py-3 first:pt-2.5 last:pb-0.5 flex flex-col gap-2 ${
-                  mission.completed ? 'opacity-95' : ''
-                }`}
+                className="py-2.5 first:pt-2 last:pb-0.5 flex flex-col gap-1.5"
               >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-start space-x-2.5 min-w-0">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center space-x-2.5 min-w-0">
                     <div
-                      className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 mt-0.5 border ${
+                      className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 border ${
                         mission.completed
                           ? 'bg-emerald-50 border-emerald-200'
                           : isMega
@@ -151,16 +261,15 @@ export const DailyMissionsCard: React.FC<DailyMissionsCardProps> = ({
                       {getMissionIcon(mission.id, mission.completed)}
                     </div>
                     <div className="min-w-0">
-                      <p className="text-xs sm:text-sm font-bold text-zinc-900 leading-snug">
+                      <p className="text-xs sm:text-sm font-bold text-zinc-900 truncate">
                         {mission.title}
                       </p>
-                      <p className="text-[11px] text-zinc-500 leading-tight mt-0.5">
+                      <p className="text-[11px] text-zinc-500 truncate">
                         {mission.subtitle}
                       </p>
                     </div>
                   </div>
 
-                  {/* Auto-Credit Reward Display & Quick Action */}
                   <div className="flex items-center space-x-2 shrink-0">
                     <div className="inline-flex items-center space-x-1 text-xs font-bold text-amber-900 tabular-nums">
                       <RealCoin size="sm" />
@@ -175,7 +284,7 @@ export const DailyMissionsCard: React.FC<DailyMissionsCardProps> = ({
                       <button
                         type="button"
                         onClick={() => onNavigateAction(mission.actionTarget)}
-                        className="min-h-[32px] px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-600 font-bold text-xs inline-flex items-center space-x-1 transition-colors cursor-pointer whitespace-nowrap shrink-0"
+                        className="px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-600 font-bold text-xs inline-flex items-center space-x-1 transition-colors cursor-pointer whitespace-nowrap shrink-0"
                       >
                         <span>{mission.actionLabel}</span>
                         <ArrowRight className="w-3 h-3" />
@@ -184,9 +293,8 @@ export const DailyMissionsCard: React.FC<DailyMissionsCardProps> = ({
                   </div>
                 </div>
 
-                {/* Task Individual Visual Progress Bar */}
-                <div className="flex items-center gap-2.5 pl-10">
-                  <div className="flex-1 h-2 rounded-full bg-zinc-100 overflow-hidden">
+                <div className="flex items-center gap-2 pl-9">
+                  <div className="flex-1 h-1.5 rounded-full bg-zinc-100 overflow-hidden">
                     <div
                       className={`h-full rounded-full transition-all duration-500 ${
                         mission.completed
@@ -198,7 +306,7 @@ export const DailyMissionsCard: React.FC<DailyMissionsCardProps> = ({
                       style={{ width: `${pct}%` }}
                     />
                   </div>
-                  <span className="text-[11px] font-mono font-bold text-zinc-600 tabular-nums shrink-0 w-10 text-right">
+                  <span className="text-[11px] font-mono font-bold text-zinc-600 tabular-nums shrink-0">
                     {mission.current}/{mission.target}
                   </span>
                 </div>
