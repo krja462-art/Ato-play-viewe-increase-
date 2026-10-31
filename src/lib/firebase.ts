@@ -96,14 +96,9 @@ export const shouldUseInAppGoogleAuth = (): boolean => {
 };
 
 /**
- * Real Google Account Sign-In via Firebase Popup (used only on desktop browsers where popups share opener state)
+ * Real Google Account Sign-In via Firebase Popup
  */
 export const signInWithGoogle = async (): Promise<FirebaseUser> => {
-  if (shouldUseInAppGoogleAuth()) {
-    const err: any = new Error('Use in-app Google sign-in for APK/mobile environment');
-    err.code = 'auth/use-in-app-google-chooser';
-    throw err;
-  }
   googleProvider.setCustomParameters({ prompt: 'select_account' });
   const result = await signInWithPopup(auth, googleProvider);
   try {
@@ -116,37 +111,44 @@ export const signInWithGoogle = async (): Promise<FirebaseUser> => {
 };
 
 /**
- * Deprecated redirect helper: Never call cross-domain signInWithRedirect as it fails in storage-partitioned WebViews.
+ * Real Google Account Sign-In via Firebase Redirect
  */
 export const signInWithGoogleRedirect = async (): Promise<void> => {
-  const err: any = new Error('Use in-app Google sign-in for APK/mobile environment');
-  err.code = 'auth/use-in-app-google-chooser';
-  throw err;
+  googleProvider.setCustomParameters({ prompt: 'select_account' });
+  await signInWithRedirect(auth, googleProvider);
 };
 
+// Single-flight promise so React StrictMode double-mounting never calls getRedirectResult twice concurrently
+// (which would clear sessionStorage on the first call and cause 'missing initial state' on the second call)
+let initialRedirectResultPromise: Promise<FirebaseUser | null> | null = null;
+
 /**
- * Check redirect sign-in result safely on page mount without throwing if sessionStorage is partitioned
+ * Check redirect sign-in result safely at the very start of app initialization lifecycle
  */
-export const checkRedirectResult = async (): Promise<FirebaseUser | null> => {
-  if (shouldUseInAppGoogleAuth()) {
-    return null;
-  }
-  try {
-    const result = await getRedirectResult(auth);
-    if (result) {
+export const checkRedirectResult = (): Promise<FirebaseUser | null> => {
+  if (!initialRedirectResultPromise) {
+    initialRedirectResultPromise = (async () => {
       try {
-        const credential = GoogleAuthProvider.credentialFromResult(result);
-        if (credential?.idToken) {
-          sessionStorage.setItem('atoplay_google_id_token', credential.idToken);
+        const result = await getRedirectResult(auth);
+        if (result) {
+          try {
+            const credential = GoogleAuthProvider.credentialFromResult(result);
+            if (credential?.idToken) {
+              sessionStorage.setItem('atoplay_google_id_token', credential.idToken);
+            }
+          } catch {}
         }
-      } catch {}
-    }
-    return result?.user || null;
-  } catch (err) {
-    console.warn('Firebase getRedirectResult:', err);
-    return null;
+        return result?.user || null;
+      } catch (err) {
+        console.warn('Firebase getRedirectResult:', err);
+        return null;
+      }
+    })();
   }
+  return initialRedirectResultPromise;
 };
+
+export { getRedirectResult };
 
 /**
  * Sign out from Firebase Auth

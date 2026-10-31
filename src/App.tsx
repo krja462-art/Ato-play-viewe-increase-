@@ -16,6 +16,7 @@ import {
   auth, 
   logOut, 
   onAuthStateChanged, 
+  getRedirectResult,
   checkRedirectResult, 
   syncFirebaseUserWithFirestore, 
   saveUserCoinsToFirestore,
@@ -101,191 +102,210 @@ export default function App() {
     }
   }, []);
 
-  // Check redirect login & cached session on initial load
+  // Unified Auth Initialization Lifecycle:
+  // 1. Explicitly await getRedirectResult(auth) FIRST before any UI rendering or onAuthStateChanged listeners
+  //    to prevent race conditions that lead to the 'missing initial state' error.
+  // 2. Only after getRedirectResult resolves, attach onAuthStateChanged and restore/sync session before setLoading(false).
   useEffect(() => {
     const ADMIN_EMAIL = 'krja462@gmail.com';
     const ADMIN_UNLIMITED_COINS = 999999999;
+    let isMounted = true;
+    let unsubscribeAuth: (() => void) | null = null;
 
-    // 1. Immediately restore local saved session so UI renders with zero lag
-    let restoredLocalSession = false;
-    const savedUserStr = localStorage.getItem('atoviewer_user');
-    if (savedUserStr) {
+    const syncAuthenticatedFirebaseUser = async (fbUser: any): Promise<User | null> => {
       try {
-        const parsed: User = JSON.parse(savedUserStr);
-        if (parsed && parsed.id) {
-          const isAdmin = parsed.email?.toLowerCase().trim() === ADMIN_EMAIL || parsed.id.includes('krja462') || parsed.isAdmin;
-          if (isAdmin) {
-            parsed.coins = ADMIN_UNLIMITED_COINS;
-            parsed.isAdmin = true;
-          }
-          setUser(parsed);
-          setLoading(false);
-          restoredLocalSession = true;
-
-          // Fetch true persistent coin balance directly from Cloud Firestore in background
-          if (!isAdmin && !parsed.id.startsWith('guest_')) {
-            getUserCoinsFromFirestore(parsed.id).then((fsCoins) => {
-              if (typeof fsCoins === 'number') {
-                const finalCoins = Math.max(parsed.coins || 100, fsCoins);
-                if (finalCoins !== parsed.coins) {
-                  parsed.coins = finalCoins;
-                  setUser({ ...parsed, coins: finalCoins });
-                  localStorage.setItem('atoviewer_user', JSON.stringify({ ...parsed, coins: finalCoins }));
-                }
-              }
-            }).catch(() => {});
-          }
-
-          // Verify & sync latest stats with server cache in background (without overwriting higher coins)
-          apiFetch('/api/user', {
-            headers: { 
-              'x-user-id': parsed.id,
-              'x-user-coins': String(parsed.coins || 100)
-            }
-          })
-            .then((data) => {
-              if (data?.success && data?.user) {
-                const updatedUser = data.user;
-                if (updatedUser.email?.toLowerCase().trim() === ADMIN_EMAIL || updatedUser.isAdmin) {
-                  updatedUser.coins = ADMIN_UNLIMITED_COINS;
-                  updatedUser.isAdmin = true;
-                } else {
-                  updatedUser.coins = Math.max(parsed.coins || 100, updatedUser.coins || 100);
-                }
-                setUser(updatedUser);
-                localStorage.setItem('atoviewer_user', JSON.stringify(updatedUser));
-                saveUserCoinsToFirestore(updatedUser.id, updatedUser.coins, updatedUser.email);
-              }
-            })
-            .catch(() => {});
+        let syncedUser = await syncFirebaseUserWithFirestore(fbUser);
+        if (syncedUser.email?.toLowerCase().trim() === ADMIN_EMAIL || syncedUser.id.includes('krja462')) {
+          syncedUser.coins = ADMIN_UNLIMITED_COINS;
+          syncedUser.isAdmin = true;
         }
-      } catch (err) {
-        console.warn('Failed to parse saved user:', err);
-      }
-    }
 
-    const initAuth = async () => {
-      // 2. Check if user just returned from Firebase Google Redirect
-      try {
-        const redirectUser = await checkRedirectResult();
-        if (redirectUser) {
-          const synced = await syncFirebaseUserWithFirestore(redirectUser);
-          if (synced.email?.toLowerCase().trim() === ADMIN_EMAIL || synced.id.includes('krja462')) {
-            synced.coins = ADMIN_UNLIMITED_COINS;
-            synced.isAdmin = true;
-          }
-          setUser(synced);
-          localStorage.setItem('atoviewer_user', JSON.stringify(synced));
-          setLoading(false);
-          return;
-        }
-      } catch (err) {
-        console.warn('Redirect check:', err);
-      }
-
-      if (!restoredLocalSession) {
-        // Auto-initialize a local Creator Studio profile on first launch so Android APK / Uptodown reviewers
-        // open directly into the full native app & offline toolkit without being blocked by a login wall
-        const defaultDeviceUser: User = {
-          id: `guest_device_${Math.random().toString(36).substring(2, 8)}`,
-          name: 'Creator Studio User',
-          email: 'creator@atoplaybooster.app',
-          avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=AtoPlayCreator',
-          coins: 500,
-          streak: 1,
-          isAdmin: false,
-          createdAt: new Date().toISOString()
-        };
-        localStorage.setItem('atoviewer_user', JSON.stringify(defaultDeviceUser));
-        setUser(defaultDeviceUser);
-        setLoading(false);
-      }
-    };
-
-    initAuth();
-  }, []);
-
-  // Sync Firebase Auth state when Firebase user is present
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
-      if (fbUser && fbUser.email) {
-        // If SplashScreen is already actively completing manual login, do not run a duplicate parallel sync
-        if (typeof window !== 'undefined' && (window as any).__atoplayLoginInFlight) {
-          setLoading(false);
-          return;
-        }
-        try {
-          let syncedUser = await syncFirebaseUserWithFirestore(fbUser);
+        if (isMounted) {
           setUser(syncedUser);
           localStorage.setItem('atoviewer_user', JSON.stringify(syncedUser));
+        }
 
-          // Also inform server API session with canonical ID and coin balance
-          const res = await apiFetch('/api/auth/firebase-login', {
-            method: 'POST',
-            headers: { 
-              'Content-Type': 'application/json',
-              'x-user-id': syncedUser.id,
-              'x-user-email': syncedUser.email
-            },
-            body: JSON.stringify({
-              uid: syncedUser.id,
-              email: syncedUser.email,
-              name: fbUser.displayName || syncedUser.name,
-              avatar: fbUser.photoURL || syncedUser.avatar,
-              coins: syncedUser.coins,
-              atoPlayUsername: syncedUser.atoPlayUsername,
-              channelName: syncedUser.channelName,
-              channelImage: syncedUser.channelImage
-            })
-          });
+        // Sync with server API session in background
+        const res = await apiFetch('/api/auth/firebase-login', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-user-id': syncedUser.id,
+            'x-user-email': syncedUser.email
+          },
+          body: JSON.stringify({
+            uid: syncedUser.id,
+            email: syncedUser.email,
+            name: fbUser.displayName || syncedUser.name,
+            avatar: fbUser.photoURL || syncedUser.avatar,
+            coins: syncedUser.coins,
+            atoPlayUsername: syncedUser.atoPlayUsername,
+            channelName: syncedUser.channelName,
+            channelImage: syncedUser.channelImage
+          })
+        });
 
-          if (res?.success && res?.user) {
-            const srvUser = res.user;
-            const candidateImage = syncedUser.channelImage || srvUser.channelImage || '';
-            const hasAtoPlay = isRealAtoPlayAvatarUrl(candidateImage) && Boolean(
-              syncedUser.atoPlayUsername || srvUser.atoPlayUsername || syncedUser.channelName || srvUser.channelName
-            );
-            const mergedAtoPlayUsername = hasAtoPlay ? (syncedUser.atoPlayUsername || srvUser.atoPlayUsername || '') : '';
-            const mergedChannelName = hasAtoPlay ? (syncedUser.channelName || srvUser.channelName || mergedAtoPlayUsername) : '';
-            const mergedChannelImage = hasAtoPlay ? candidateImage : '';
-            const mergedChannelBanner = hasAtoPlay ? (syncedUser.channelBanner || srvUser.channelBanner || '') : '';
-            const mergedCoins = syncedUser.isAdmin ? ADMIN_UNLIMITED_COINS : Math.max(syncedUser.coins || 0, srvUser.coins || 0);
+        if (res?.success && res?.user) {
+          const srvUser = res.user;
+          const candidateImage = syncedUser.channelImage || srvUser.channelImage || '';
+          const hasAtoPlay = isRealAtoPlayAvatarUrl(candidateImage) && Boolean(
+            syncedUser.atoPlayUsername || srvUser.atoPlayUsername || syncedUser.channelName || srvUser.channelName
+          );
+          const mergedAtoPlayUsername = hasAtoPlay ? (syncedUser.atoPlayUsername || srvUser.atoPlayUsername || '') : '';
+          const mergedChannelName = hasAtoPlay ? (syncedUser.channelName || srvUser.channelName || mergedAtoPlayUsername) : '';
+          const mergedChannelImage = hasAtoPlay ? candidateImage : '';
+          const mergedChannelBanner = hasAtoPlay ? (syncedUser.channelBanner || srvUser.channelBanner || '') : '';
+          const mergedCoins = syncedUser.isAdmin ? ADMIN_UNLIMITED_COINS : Math.max(syncedUser.coins || 0, srvUser.coins || 0);
 
-            syncedUser = {
-              ...syncedUser,
-              id: syncedUser.id,
-              coins: mergedCoins,
+          syncedUser = {
+            ...syncedUser,
+            id: syncedUser.id,
+            coins: mergedCoins,
+            atoPlayUsername: mergedAtoPlayUsername,
+            channelName: mergedChannelName,
+            channelImage: mergedChannelImage,
+            channelBanner: mergedChannelBanner,
+            name: hasAtoPlay ? (mergedChannelName || mergedAtoPlayUsername || syncedUser.name) : (fbUser.displayName || syncedUser.name),
+            avatar: hasAtoPlay ? mergedChannelImage : (fbUser.photoURL || syncedUser.avatar)
+          };
+
+          if (isMounted) {
+            setUser(syncedUser);
+            localStorage.setItem('atoviewer_user', JSON.stringify(syncedUser));
+          }
+
+          if (hasAtoPlay) {
+            saveUserAtoPlayProfileToFirestore(syncedUser.id, {
               atoPlayUsername: mergedAtoPlayUsername,
               channelName: mergedChannelName,
               channelImage: mergedChannelImage,
               channelBanner: mergedChannelBanner,
-              name: hasAtoPlay ? (mergedChannelName || mergedAtoPlayUsername || syncedUser.name) : (fbUser.displayName || syncedUser.name),
-              avatar: hasAtoPlay ? mergedChannelImage : (fbUser.photoURL || syncedUser.avatar)
-            };
-
-            setUser(syncedUser);
-            localStorage.setItem('atoviewer_user', JSON.stringify(syncedUser));
-
-            if (hasAtoPlay) {
-              saveUserAtoPlayProfileToFirestore(syncedUser.id, {
-                atoPlayUsername: mergedAtoPlayUsername,
-                channelName: mergedChannelName,
-                channelImage: mergedChannelImage,
-                channelBanner: mergedChannelBanner,
-                name: syncedUser.name,
-                avatar: syncedUser.avatar,
-                email: syncedUser.email
-              }).catch(() => {});
-            }
+              name: syncedUser.name,
+              avatar: syncedUser.avatar,
+              email: syncedUser.email
+            }).catch(() => {});
           }
-        } catch (err) {
-          console.error('Failed to sync Firebase user session:', err);
+        }
+        return syncedUser;
+      } catch (err) {
+        console.error('Failed to sync Firebase user session:', err);
+        return null;
+      }
+    };
+
+    const initAuth = async () => {
+      setLoading(true);
+
+      // STEP 1: Explicitly handle signInWithRedirect via getRedirectResult at the very start of initialization
+      // and wait for it to complete BEFORE proceeding to onAuthStateChanged or rendering the main interface.
+      let redirectUser: any = null;
+      try {
+        redirectUser = await checkRedirectResult();
+        if (!redirectUser) {
+          const directRedirect = await getRedirectResult(auth).catch(() => null);
+          redirectUser = directRedirect?.user || null;
+        }
+      } catch (err) {
+        console.warn('Redirect result check:', err);
+      }
+
+      if (redirectUser && redirectUser.email) {
+        await syncAuthenticatedFirebaseUser(redirectUser);
+        if (isMounted) {
+          setLoading(false);
         }
       }
-      setLoading(false);
-    });
 
-    return () => unsubscribe();
+      // STEP 2: Attach onAuthStateChanged listener only AFTER getRedirectResult has settled
+      unsubscribeAuth = onAuthStateChanged(auth, async (fbUser) => {
+        if (!isMounted) return;
+
+        if (fbUser && fbUser.email) {
+          // Avoid duplicate sync if manual login is actively in-flight or if redirectUser just synced this exact user
+          if (typeof window !== 'undefined' && (window as any).__atoplayLoginInFlight) {
+            setLoading(false);
+            return;
+          }
+          if (redirectUser && redirectUser.uid === fbUser.uid) {
+            redirectUser = null; // already synced in Step 1
+            setLoading(false);
+            return;
+          }
+          await syncAuthenticatedFirebaseUser(fbUser);
+          if (isMounted) {
+            setLoading(false);
+          }
+          return;
+        }
+
+        // STEP 3: No active Firebase Auth user after getRedirectResult & onAuthStateChanged — check localStorage session
+        const savedUserStr = localStorage.getItem('atoviewer_user');
+        if (savedUserStr) {
+          try {
+            const parsed: User = JSON.parse(savedUserStr);
+            if (parsed && parsed.id) {
+              const isAdmin = parsed.email?.toLowerCase().trim() === ADMIN_EMAIL || parsed.id.includes('krja462') || parsed.isAdmin;
+              if (isAdmin) {
+                parsed.coins = ADMIN_UNLIMITED_COINS;
+                parsed.isAdmin = true;
+              }
+              setUser(parsed);
+              setLoading(false);
+
+              if (!isAdmin && !parsed.id.startsWith('guest_')) {
+                getUserCoinsFromFirestore(parsed.id).then((fsCoins) => {
+                  if (typeof fsCoins === 'number' && isMounted) {
+                    const finalCoins = Math.max(parsed.coins || 100, fsCoins);
+                    if (finalCoins !== parsed.coins) {
+                      parsed.coins = finalCoins;
+                      setUser({ ...parsed, coins: finalCoins });
+                      localStorage.setItem('atoviewer_user', JSON.stringify({ ...parsed, coins: finalCoins }));
+                    }
+                  }
+                }).catch(() => {});
+              }
+
+              apiFetch('/api/user', {
+                headers: {
+                  'x-user-id': parsed.id,
+                  'x-user-coins': String(parsed.coins || 100)
+                }
+              })
+                .then((data) => {
+                  if (data?.success && data?.user && isMounted) {
+                    const updatedUser = data.user;
+                    if (updatedUser.email?.toLowerCase().trim() === ADMIN_EMAIL || updatedUser.isAdmin) {
+                      updatedUser.coins = ADMIN_UNLIMITED_COINS;
+                      updatedUser.isAdmin = true;
+                    } else {
+                      updatedUser.coins = Math.max(parsed.coins || 100, updatedUser.coins || 100);
+                    }
+                    setUser(updatedUser);
+                    localStorage.setItem('atoviewer_user', JSON.stringify(updatedUser));
+                    saveUserCoinsToFirestore(updatedUser.id, updatedUser.coins, updatedUser.email);
+                  }
+                })
+                .catch(() => {});
+              return;
+            }
+          } catch (err) {
+            console.warn('Failed to parse saved user:', err);
+          }
+        }
+
+        // STEP 4: No redirect user, no Firebase session, and no saved local session — render login / splash interface
+        setLoading(false);
+      });
+    };
+
+    initAuth();
+
+    return () => {
+      isMounted = false;
+      if (unsubscribeAuth) {
+        unsubscribeAuth();
+      }
+    };
   }, []);
 
   // Real-time Firestore wallet subscription to keep coins in sync across tabs and refreshes
