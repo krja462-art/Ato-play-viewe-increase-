@@ -243,8 +243,9 @@ export default function App() {
         if (savedUserStr) {
           try {
             const parsed: User = JSON.parse(savedUserStr);
-            if (parsed && parsed.id && !String(parsed.id).startsWith('guest_')) {
-              const isAdmin = parsed.email?.toLowerCase().trim() === ADMIN_EMAIL || parsed.id.includes('krja462') || parsed.isAdmin;
+            if (parsed && parsed.id) {
+              const isGuest = String(parsed.id).startsWith('guest_');
+              const isAdmin = !isGuest && (parsed.email?.toLowerCase().trim() === ADMIN_EMAIL || parsed.id.includes('krja462') || parsed.isAdmin);
               if (isAdmin) {
                 parsed.coins = ADMIN_UNLIMITED_COINS;
                 parsed.isAdmin = true;
@@ -252,7 +253,7 @@ export default function App() {
               setUser(parsed);
               setLoading(false);
 
-              if (!isAdmin && !parsed.id.startsWith('guest_')) {
+              if (!isAdmin && !isGuest) {
                 getUserCoinsFromFirestore(parsed.id).then((fsCoins) => {
                   if (typeof fsCoins === 'number' && isMounted) {
                     const finalCoins = Math.max(parsed.coins || 100, fsCoins);
@@ -263,29 +264,29 @@ export default function App() {
                     }
                   }
                 }).catch(() => {});
-              }
 
-              apiFetch('/api/user', {
-                headers: {
-                  'x-user-id': parsed.id,
-                  'x-user-coins': String(parsed.coins || 100)
-                }
-              })
-                .then((data) => {
-                  if (data?.success && data?.user && isMounted) {
-                    const updatedUser = data.user;
-                    if (updatedUser.email?.toLowerCase().trim() === ADMIN_EMAIL || updatedUser.isAdmin) {
-                      updatedUser.coins = ADMIN_UNLIMITED_COINS;
-                      updatedUser.isAdmin = true;
-                    } else {
-                      updatedUser.coins = Math.max(parsed.coins || 100, updatedUser.coins || 100);
-                    }
-                    setUser(updatedUser);
-                    localStorage.setItem('atoviewer_user', JSON.stringify(updatedUser));
-                    saveUserCoinsToFirestore(updatedUser.id, updatedUser.coins, updatedUser.email);
+                apiFetch('/api/user', {
+                  headers: {
+                    'x-user-id': parsed.id,
+                    'x-user-coins': String(parsed.coins || 100)
                   }
                 })
-                .catch(() => {});
+                  .then((data) => {
+                    if (data?.success && data?.user && isMounted) {
+                      const updatedUser = data.user;
+                      if (updatedUser.email?.toLowerCase().trim() === ADMIN_EMAIL || updatedUser.isAdmin) {
+                        updatedUser.coins = ADMIN_UNLIMITED_COINS;
+                        updatedUser.isAdmin = true;
+                      } else {
+                        updatedUser.coins = Math.max(parsed.coins || 100, updatedUser.coins || 100);
+                      }
+                      setUser(updatedUser);
+                      localStorage.setItem('atoviewer_user', JSON.stringify(updatedUser));
+                      saveUserCoinsToFirestore(updatedUser.id, updatedUser.coins, updatedUser.email);
+                    }
+                  })
+                  .catch(() => {});
+              }
               return;
             }
           } catch (err) {

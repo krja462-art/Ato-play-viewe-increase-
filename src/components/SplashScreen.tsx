@@ -3,12 +3,12 @@ import {
   Sparkles, 
   CheckCircle, 
   ArrowRight, 
-  Plus
+  Plus,
+  UserCheck
 } from 'lucide-react';
 import { User } from '../types';
 import { 
   signInWithGoogle, 
-  signInWithGoogleRedirect,
   syncFirebaseUserWithFirestore,
   saveUserAtoPlayProfileToFirestore
 } from '../lib/firebase';
@@ -218,28 +218,48 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onLoginSuccess }) =>
         throw new Error('Could not retrieve email from Google account.');
       }
     } catch (err: any) {
-      console.warn('Google Sign-In popup attempt:', err);
+      console.warn('Google Sign-In attempt:', err);
       const errCode = err?.code || '';
-      if (
-        errCode === 'auth/popup-blocked' ||
-        errCode === 'auth/operation-not-supported-in-this-environment'
-      ) {
-        try {
-          await signInWithGoogleRedirect();
-          return;
-        } catch (redirErr: any) {
-          loginInProgressRef.current = false;
-          setGoogleLoading(false);
-          setErrorMessage(redirErr?.message || 'Google Sign-In could not be started.');
-          return;
-        }
-      }
       loginInProgressRef.current = false;
       setGoogleLoading(false);
       if (errCode !== 'auth/popup-closed-by-user' && errCode !== 'auth/cancelled-popup-request') {
         setErrorMessage(err?.message || 'Google Sign-In failed. Please try again.');
       }
     }
+  };
+
+  const handleGuestLogin = () => {
+    setErrorMessage(null);
+    let existingGuest: User | null = null;
+    try {
+      const saved = localStorage.getItem('atoplay_guest_user') || localStorage.getItem('atoviewer_user');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && String(parsed.id).startsWith('guest_')) {
+          existingGuest = parsed;
+        }
+      }
+    } catch {}
+
+    const guestId = existingGuest?.id || `guest_${Math.random().toString(36).substring(2, 10)}`;
+    const guestUser: User = existingGuest || {
+      id: guestId,
+      name: 'Guest Creator',
+      email: `${guestId}@guest.atoplay.local`,
+      coins: 100,
+      avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(guestId)}`,
+      streak: 1,
+      lastCheckIn: new Date().toISOString().split('T')[0],
+      createdAt: new Date().toISOString(),
+      referralCode: `REF-${guestId.slice(-4).toUpperCase()}`,
+      referralsCount: 0,
+      referralEarnings: 0
+    };
+
+    localStorage.setItem('atoviewer_user', JSON.stringify(guestUser));
+    localStorage.setItem('atoplay_guest_user', JSON.stringify(guestUser));
+    localStorage.setItem('atoplay_active_user', JSON.stringify(guestUser));
+    onLoginSuccess(guestUser);
   };
 
   return (
@@ -280,7 +300,7 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onLoginSuccess }) =>
           </div>
         )}
 
-        {/* Primary Action: Continue with Google */}
+        {/* Primary Action: Continue with Google + Open Guest */}
         <div className="space-y-3">
           <div className="space-y-2.5">
             {/* Primary Top Button: Continue with Google */}
@@ -310,6 +330,19 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onLoginSuccess }) =>
                   <ArrowRight className="w-4 h-4 text-zinc-400 group-hover:translate-x-1 transition-transform" />
                 </div>
               )}
+            </button>
+
+            {/* Secondary Button: Open Guest */}
+            <button
+              type="button"
+              id="open-guest-btn"
+              onClick={handleGuestLogin}
+              disabled={googleLoading}
+              className="w-full py-3.5 px-5 rounded-2xl bg-white/15 hover:bg-white/25 border border-white/25 text-white font-extrabold text-sm sm:text-base shadow-lg flex items-center justify-center space-x-2.5 transition-all transform hover:scale-[1.01] active:scale-[0.98] cursor-pointer disabled:opacity-60 group"
+            >
+              <UserCheck className="w-4 h-4 text-amber-300 shrink-0" />
+              <span>Open Guest</span>
+              <ArrowRight className="w-4 h-4 text-blue-200 group-hover:translate-x-1 transition-transform" />
             </button>
           </div>
 

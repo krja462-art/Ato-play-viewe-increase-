@@ -5,6 +5,11 @@ import {
   signInWithPopup, 
   signInWithRedirect,
   getRedirectResult,
+  signInWithCredential,
+  browserPopupRedirectResolver,
+  indexedDBLocalPersistence,
+  browserLocalPersistence,
+  setPersistence,
   signOut, 
   onAuthStateChanged,
   User as FirebaseUser 
@@ -35,8 +40,11 @@ import { resolveCampaignType, getDeletedCampaignIds, addDeletedCampaignId, isRea
 // Initialize Firebase App
 export const app = initializeApp(firebaseConfig);
 
-// Initialize Firebase Auth
+// Initialize Firebase Auth with durable IndexedDB / LocalStorage persistence
 export const auth = getAuth(app);
+setPersistence(auth, indexedDBLocalPersistence).catch(() => {
+  setPersistence(auth, browserLocalPersistence).catch(() => {});
+});
 
 // Suppress benign connection retry / offline warnings in sandbox environment
 setLogLevel('silent');
@@ -56,64 +64,145 @@ export const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: 'select_account' });
 
 /**
- * Detects if the app is running inside an Android APK wrapper (Median.co, GoNative, WebIntoApp, TWA, WebView)
- * or mobile browser where cross-domain Firebase __\/auth\/handler popups/redirects lose sessionStorage
- * and fail with "Unable to process request due to missing initial state".
+ * Configures Median.co / GoNative native WebView link-handling rules so that
+ * Firebase Auth (`*.firebaseapp.com`) and Google OAuth (`accounts.google.com`)
+ * stay inside the same internal WebView context instead of splitting sessionStorage
+ * between the WebView and an external Chrome Custom Tab (which causes the
+ * "Unable to process request due to missing initial state" error).
  */
-export const shouldUseInAppGoogleAuth = (): boolean => {
-  if (typeof window === 'undefined' || typeof navigator === 'undefined') return false;
-  const ua = navigator.userAgent || '';
+export const configureMedianAuthRules = (): void => {
+  if (typeof window === 'undefined') return;
   const w = window as any;
+  const rules = [
+    { id: 1, regex: 'https?://accounts\\.google\\.com.*', mode: 'internal', internal: true },
+    { id: 2, regex: 'https?://.*\\.google\\.com.*', mode: 'internal', internal: true },
+    { id: 3, regex: 'https?://.*\\.firebaseapp\\.com.*', mode: 'internal', internal: true },
+    { id: 4, regex: 'https?://.*\\.firebase\\.com.*', mode: 'internal', internal: true },
+    { id: 5, regex: 'https?://.*\\.vercel\\.app.*', mode: 'internal', internal: true },
+    { id: 6, regex: '.*', mode: 'internal', internal: true }
+  ];
+  try {
+    w.median?.internalExternal?.set?.({ rules });
+    w.gonative?.internalExternal?.set?.({ rules });
+  } catch {}
+};
 
-  // 1. Explicit APK / WebView bridges (Median.co, GoNative, Cordova, Capacitor, ReactNative, Android WebView)
-  if (
-    w.median ||
-    w.gonative ||
-    w.ReactNativeWebView ||
-    w.Android ||
-    w.cordova ||
-    w.Capacitor ||
-    /median|gonative|webintoapp|wv\)|; wv\b|webview|version\/\d+\.\d+.*chrome\/\d+/i.test(ua)
-  ) {
-    return true;
-  }
+configureMedianAuthRules();
 
-  // 2. All Android & iOS devices (Median.co spoofs User-Agent to look like standard Android Chrome and intercepts window.open to firebaseapp.com, causing missing initial state)
-  if (/android|iphone|ipad|ipod/i.test(ua)) {
-    return true;
-  }
+/**
+ * Dynamically ensures the Google Identity Services script (`https://accounts.google.com/gsi/client`) is loaded
+ */
+const ensureGsiScriptLoaded = (): Promise<void> => {
+  if (typeof window === 'undefined') return Promise.resolve();
+  if ((window as any).google?.accounts?.oauth2) return Promise.resolve();
 
-  // 3. Standalone PWA / TWA display mode
-  if (
-    window.matchMedia?.('(display-mode: standalone)')?.matches ||
-    window.matchMedia?.('(display-mode: fullscreen)')?.matches ||
-    document.referrer.includes('android-app://')
-  ) {
-    return true;
-  }
-
-  return false;
+  return new Promise((resolve) => {
+    const existing = document.querySelector('script[src*="accounts.google.com/gsi/client"]');
+    if (existing) {
+      existing.addEventListener('load', () => resolve(), { once: true });
+      setTimeout(resolve, 1500);
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = 'https://accounts.google.com/gsi/client';
+    script.async = true;
+    script.defer = true;
+    script.onload = () => resolve();
+    script.onerror = () => resolve();
+    document.head.appendChild(script);
+  });
 };
 
 /**
- * Real Google Account Sign-In via Firebase Popup
+ * Direct Google Account Sign-In via Google Identity Services (OAuth2 Token Client + Firebase `signInWithCredential`).
+ * Bypasses `firebaseapp.com/__/auth/handler` and `sessionStorage` completely so it never hits
+ * "Unable to process request due to missing initial state" in storage-partitioned browsers or WebViews.
+ */
+export const signInWithGoogleGIS = async (): Promise<FirebaseUser> => {
+  configureMedianAuthRules();
+  await ensureGsiScriptLoaded();
+
+  const w = window as any;
+  const clientId = (firebaseConfig as any).oAuthClientId;
+
+  if (w.google?.accounts?.oauth2 && clientId) {
+    const accessToken = await new Promise<string>((resolve, reject) => {
+      try {
+        const tokenClient = w.google.accounts.oauth2.initTokenClient({
+          client_id: clientId,
+          scope: 'openid email profile',
+          prompt: 'select_account',
+          callback: (resp: any) => {
+            if (resp?.error) {
+              reject(new Error(resp.error_description || resp.error));
+              return;
+            }
+            if (resp?.access_token) {
+              resolve(resp.access_token);
+            } else {
+              reject(new Error('No access token returned from Google.'));
+            }
+          },
+          error_callback: (err: any) => {
+            reject(new Error(err?.message || err?.type || 'Google Sign-In window closed.'));
+          }
+        });
+        tokenClient.requestAccessToken({ prompt: 'select_account' });
+      } catch (e) {
+        reject(e);
+      }
+    });
+
+    const credential = GoogleAuthProvider.credential(null, accessToken);
+    const result = await signInWithCredential(auth, credential);
+    return result.user;
+  }
+
+  throw new Error('Google Sign-In service could not be initialized.');
+};
+
+/**
+ * Real Google Account Sign-In:
+ * 1. Configures Median.co / GoNative link rules so OAuth stays in the same WebView sessionStorage context.
+ * 2. Uses `signInWithPopup` with explicit `browserPopupRedirectResolver`.
+ * 3. If popup is blocked or unsupported in the environment, falls back to `signInWithGoogleGIS()`
+ *    (which uses `signInWithCredential` instead of `signInWithRedirect`, completely avoiding the
+ *    storage-partitioned `missing initial state` error).
  */
 export const signInWithGoogle = async (): Promise<FirebaseUser> => {
+  configureMedianAuthRules();
   googleProvider.setCustomParameters({ prompt: 'select_account' });
-  const result = await signInWithPopup(auth, googleProvider);
+
   try {
-    const credential = GoogleAuthProvider.credentialFromResult(result);
-    if (credential?.idToken) {
-      sessionStorage.setItem('atoplay_google_id_token', credential.idToken);
+    const result = await signInWithPopup(auth, googleProvider, browserPopupRedirectResolver);
+    try {
+      const credential = GoogleAuthProvider.credentialFromResult(result);
+      if (credential?.idToken) {
+        sessionStorage.setItem('atoplay_google_id_token', credential.idToken);
+      }
+    } catch {}
+    return result.user;
+  } catch (err: any) {
+    const errCode = err?.code || '';
+    if (errCode === 'auth/popup-closed-by-user' || errCode === 'auth/cancelled-popup-request') {
+      throw err;
     }
-  } catch {}
-  return result.user;
+    // Fall back to Google Identity Services + signInWithCredential (never cross-origin signInWithRedirect)
+    return await signInWithGoogleGIS();
+  }
 };
 
 /**
- * Real Google Account Sign-In via Firebase Redirect
+ * Safe fallback if signInWithGoogleRedirect is ever invoked directly:
+ * Uses `signInWithGoogle()` (Popup + GIS `signInWithCredential`) when on a custom domain (`vercel.app`)
+ * so it never triggers cross-origin `signInWithRedirect` storage partitioning (`missing initial state`).
  */
 export const signInWithGoogleRedirect = async (): Promise<void> => {
+  configureMedianAuthRules();
+  if (typeof window !== 'undefined' && window.location.hostname !== firebaseConfig.authDomain) {
+    await signInWithGoogle();
+    return;
+  }
   googleProvider.setCustomParameters({ prompt: 'select_account' });
   await signInWithRedirect(auth, googleProvider);
 };

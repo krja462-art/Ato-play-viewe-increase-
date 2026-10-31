@@ -137,12 +137,42 @@
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
 
+    <!-- Google Identity Services for Direct OAuth Token Flow without __\/auth\/handler sessionStorage loss -->
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+
+    <!-- Median.co / GoNative Bridge Rule Configuration: Keep Firebase & Google OAuth in the same internal WebView sessionStorage context -->
+    <script>
+      function applyMedianInternalAuthRules() {
+        var rules = [
+          { id: 1, regex: "https?://accounts\\.google\\.com.*", mode: "internal", internal: true },
+          { id: 2, regex: "https?://.*\\.google\\.com.*", mode: "internal", internal: true },
+          { id: 3, regex: "https?://.*\\.firebaseapp\\.com.*", mode: "internal", internal: true },
+          { id: 4, regex: "https?://.*\\.firebase\\.com.*", mode: "internal", internal: true },
+          { id: 5, regex: "https?://.*\\.vercel\\.app.*", mode: "internal", internal: true },
+          { id: 6, regex: ".*", mode: "internal", internal: true }
+        ];
+        try {
+          if (window.median && window.median.internalExternal && typeof window.median.internalExternal.set === "function") {
+            window.median.internalExternal.set({ rules: rules });
+          }
+          if (window.gonative && window.gonative.internalExternal && typeof window.gonative.internalExternal.set === "function") {
+            window.gonative.internalExternal.set({ rules: rules });
+          }
+        } catch (e) {}
+      }
+      window.median_library_ready = applyMedianInternalAuthRules;
+      window.gonative_library_ready = applyMedianInternalAuthRules;
+      applyMedianInternalAuthRules();
+      document.addEventListener("DOMContentLoaded", applyMedianInternalAuthRules);
+      window.addEventListener("load", applyMedianInternalAuthRules);
+    </script>
+
     <!-- PWA Service Worker Safe Registration & Stale Cache Cleanup -->
     <script>
       if ('caches' in window) {
         caches.keys().then(function(names) {
           names.forEach(function(name) {
-            if (name !== 'atoviewer-cache-v7' && name !== 'atoviewer-runtime-v7') {
+            if (name !== 'atoviewer-cache-v8' && name !== 'atoviewer-runtime-v8') {
               caches.delete(name);
             }
           });

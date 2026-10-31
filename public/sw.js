@@ -1,6 +1,6 @@
 // AtoViewer PWA Service Worker (PWABuilder & Google Play Store Ready)
-const CACHE_NAME = 'atoviewer-cache-v7';
-const RUNTIME_CACHE = 'atoviewer-runtime-v7';
+const CACHE_NAME = 'atoviewer-cache-v8';
+const RUNTIME_CACHE = 'atoviewer-runtime-v8';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -58,6 +58,11 @@ self.addEventListener('fetch', (event) => {
   }
 
   const url = new URL(request.url);
+
+  // Never intercept Firebase Auth handler or internal Firebase paths
+  if (url.pathname.startsWith('/__/')) {
+    return;
+  }
 
   // Special offline support for GET /api/campaigns
   if (url.pathname === '/api/campaigns') {
