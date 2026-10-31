@@ -2,7 +2,7 @@
       "relation": ["delegate_permission/common.handle_all_urls"],
       "target": {
         "namespace": "android_app",
-        "package_name": "Ato_play_viewe_increase.app",
-        "sha256_cert_fingerprints": ["77:3C:B7:C7:87:55:E2:A9:A3:90:F2:47:51:CC:79:D0:1E:BB:20:7C:10:3F:91:23:8E:F6:16:46:69:FF:84:52"]
+        "package_name": "ato_play_viewe_increase.ms",
+        "sha256_cert_fingerprints": ["68:DF:66:7B:AE:A3:3D:0E:C4:22:CC:9E:97:34:B6:ED:25:59:76:35:FA:D2:D6:EC:88:C3:B8:BF:E7:2B:4C:64"]
       }
     }]
