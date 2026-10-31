@@ -243,7 +243,7 @@ export default function App() {
         if (savedUserStr) {
           try {
             const parsed: User = JSON.parse(savedUserStr);
-            if (parsed && parsed.id) {
+            if (parsed && parsed.id && !String(parsed.id).startsWith('guest_')) {
               const isAdmin = parsed.email?.toLowerCase().trim() === ADMIN_EMAIL || parsed.id.includes('krja462') || parsed.isAdmin;
               if (isAdmin) {
                 parsed.coins = ADMIN_UNLIMITED_COINS;
