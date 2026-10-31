@@ -4334,6 +4334,28 @@ Guidelines:
   }
 });
 
+app.get("/.well-known/assetlinks.json", (_req, res) => {
+  res.setHeader("Content-Type", "application/json; charset=utf-8");
+  res.setHeader("Cache-Control", "public, max-age=0, must-revalidate");
+  const assetLinksPath = path.resolve(process.cwd(), "public", ".well-known", "assetlinks.json");
+  if (fs.existsSync(assetLinksPath)) {
+    return res.sendFile(assetLinksPath);
+  }
+  return res.json([
+    {
+      relation: ["delegate_permission/common.handle_all_urls"],
+      target: {
+        namespace: "android_app",
+        package_name: "Ato_play_viewe_increase.app",
+        sha256_cert_fingerprints: [
+          "77:3C:B7:C7:87:55:E2:A9:A3:90:F2:47:51:CC:79:D0:1E:BB:20:7C:10:3F:91:23:8E:F6:16:46:69:FF:84:52",
+          "BA:BE:03:A6:0A:AC:95:CA:85:1E:73:AD:55:CE:12:7E:CE:8C:50:6B:F5:F4:AE:7A:23:22:F4:9F:1A:CA:30:3E"
+        ]
+      }
+    }
+  ]);
+});
+
 function serveStatic(distPath: string) {
   if (fs.existsSync(distPath)) {
     app.use(express.static(distPath, { dotfiles: 'allow' }));

@@ -86,6 +86,8 @@
     }
   ],
   "rewrites": [
+    { "source": "/__/auth/(.*)", "destination": "https://available-9b788.firebaseapp.com/__/auth/$1" },
+    { "source": "/__/firebase/(.*)", "destination": "https://available-9b788.firebaseapp.com/__/firebase/$1" },
     { "source": "/.well-known/assetlinks.json", "destination": "/.well-known/assetlinks.json" },
     { "source": "/manifest.json", "destination": "/manifest.json" },
     { "source": "/sw.js", "destination": "/sw.js" },

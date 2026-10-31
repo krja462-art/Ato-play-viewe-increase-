@@ -56,9 +56,54 @@ export const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: 'select_account' });
 
 /**
- * Real Google Account Sign-In via Firebase Popup
+ * Detects if the app is running inside an Android APK wrapper (Median.co, GoNative, WebIntoApp, TWA, WebView)
+ * or mobile browser where cross-domain Firebase __\/auth\/handler popups/redirects lose sessionStorage
+ * and fail with "Unable to process request due to missing initial state".
+ */
+export const shouldUseInAppGoogleAuth = (): boolean => {
+  if (typeof window === 'undefined' || typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent || '';
+  const w = window as any;
+
+  // 1. Explicit APK / WebView bridges (Median.co, GoNative, Cordova, Capacitor, ReactNative, Android WebView)
+  if (
+    w.median ||
+    w.gonative ||
+    w.ReactNativeWebView ||
+    w.Android ||
+    w.cordova ||
+    w.Capacitor ||
+    /median|gonative|webintoapp|wv\)|; wv\b|webview|version\/\d+\.\d+.*chrome\/\d+/i.test(ua)
+  ) {
+    return true;
+  }
+
+  // 2. All Android & iOS devices (Median.co spoofs User-Agent to look like standard Android Chrome and intercepts window.open to firebaseapp.com, causing missing initial state)
+  if (/android|iphone|ipad|ipod/i.test(ua)) {
+    return true;
+  }
+
+  // 3. Standalone PWA / TWA display mode
+  if (
+    window.matchMedia?.('(display-mode: standalone)')?.matches ||
+    window.matchMedia?.('(display-mode: fullscreen)')?.matches ||
+    document.referrer.includes('android-app://')
+  ) {
+    return true;
+  }
+
+  return false;
+};
+
+/**
+ * Real Google Account Sign-In via Firebase Popup (used only on desktop browsers where popups share opener state)
  */
 export const signInWithGoogle = async (): Promise<FirebaseUser> => {
+  if (shouldUseInAppGoogleAuth()) {
+    const err: any = new Error('Use in-app Google sign-in for APK/mobile environment');
+    err.code = 'auth/use-in-app-google-chooser';
+    throw err;
+  }
   googleProvider.setCustomParameters({ prompt: 'select_account' });
   const result = await signInWithPopup(auth, googleProvider);
   try {
@@ -71,17 +116,21 @@ export const signInWithGoogle = async (): Promise<FirebaseUser> => {
 };
 
 /**
- * Real Google Account Sign-In via Firebase Redirect (for mobile browsers or strict popup blockers)
+ * Deprecated redirect helper: Never call cross-domain signInWithRedirect as it fails in storage-partitioned WebViews.
  */
 export const signInWithGoogleRedirect = async (): Promise<void> => {
-  googleProvider.setCustomParameters({ prompt: 'select_account' });
-  await signInWithRedirect(auth, googleProvider);
+  const err: any = new Error('Use in-app Google sign-in for APK/mobile environment');
+  err.code = 'auth/use-in-app-google-chooser';
+  throw err;
 };
 
 /**
- * Check redirect sign-in result on page mount
+ * Check redirect sign-in result safely on page mount without throwing if sessionStorage is partitioned
  */
 export const checkRedirectResult = async (): Promise<FirebaseUser | null> => {
+  if (shouldUseInAppGoogleAuth()) {
+    return null;
+  }
   try {
     const result = await getRedirectResult(auth);
     if (result) {

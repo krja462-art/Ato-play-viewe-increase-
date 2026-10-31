@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { 
   Sparkles, 
   CheckCircle, 
@@ -6,18 +6,50 @@ import {
   Plus,
   Eye,
   ShieldCheck,
-  HelpCircle
+  HelpCircle,
+  X,
+  Mail,
+  User as UserIcon
 } from 'lucide-react';
 import { User } from '../types';
 import { 
   signInWithGoogle, 
-  signInWithGoogleRedirect,
+  shouldUseInAppGoogleAuth,
   syncFirebaseUserWithFirestore,
   saveUserAtoPlayProfileToFirestore
 } from '../lib/firebase';
 import { apiFetch, loginAndFetchAtoPlayProfile, isRealAtoPlayAvatarUrl } from '../lib/api';
 import { AtoPlayBadge } from './AtoPlayBadge';
 import { LegalModal, LegalTabType } from './LegalModal';
+
+interface SavedGoogleAccount {
+  email: string;
+  name: string;
+  avatar: string;
+}
+
+const SAVED_GOOGLE_ACCOUNTS_KEY = 'atoplay_saved_google_accounts';
+
+function getSavedGoogleAccounts(): SavedGoogleAccount[] {
+  try {
+    const raw = localStorage.getItem(SAVED_GOOGLE_ACCOUNTS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((a) => a && a.email) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveGoogleAccountToDevice(account: SavedGoogleAccount) {
+  try {
+    const existing = getSavedGoogleAccounts().filter(
+      (a) => a.email.toLowerCase().trim() !== account.email.toLowerCase().trim()
+    );
+    const updated = [account, ...existing].slice(0, 5);
+    localStorage.setItem(SAVED_GOOGLE_ACCOUNTS_KEY, JSON.stringify(updated));
+  } catch {}
+}
 
 interface SplashScreenProps {
   onLoginSuccess: (user: User) => void;
@@ -32,9 +64,20 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onLoginSuccess, onOp
   
   const [referralInput, setReferralInput] = useState('');
   const [showReferralField, setShowReferralField] = useState(false);
-  const [showEmailLogin, setShowEmailLogin] = useState(false);
-  const [emailInput, setEmailInput] = useState('');
-  const [passwordInput, setPasswordInput] = useState('');
+
+  // In-App Google Account Chooser State (for Android APK / Median.co / WebView / Mobile where sessionStorage redirects fail)
+  const [showGoogleChooserModal, setShowGoogleChooserModal] = useState(false);
+  const [savedAccounts, setSavedAccounts] = useState<SavedGoogleAccount[]>([]);
+  const [showUseAnotherAccountForm, setShowUseAnotherAccountForm] = useState(false);
+  const [googleEmailInput, setGoogleEmailInput] = useState('');
+  const [googleNameInput, setGoogleNameInput] = useState('');
+  const [chooserError, setChooserError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const list = getSavedGoogleAccounts();
+    setSavedAccounts(list);
+    setShowUseAnotherAccountForm(list.length === 0);
+  }, []);
 
   const handleGuestLogin = () => {
     setGoogleLoading(false);
@@ -54,40 +97,6 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onLoginSuccess, onOp
     onLoginSuccess(guestUser);
   };
 
-  const handleNativeEmailLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (loginInProgressRef.current) return;
-    const cleanEmail = emailInput.trim().toLowerCase();
-    const cleanPassword = passwordInput.trim();
-    if (!cleanEmail || !cleanEmail.includes('@')) {
-      setErrorMessage('Please enter a valid AtoPlay email address.');
-      return;
-    }
-    if (!cleanPassword) {
-      setErrorMessage('Please enter your AtoPlay password.');
-      return;
-    }
-
-    loginInProgressRef.current = true;
-    setGoogleLoading(true);
-    setErrorMessage(null);
-    const atoRes = await loginAndFetchAtoPlayProfile(cleanEmail, cleanPassword);
-    if (!atoRes.success || !atoRes.atoPlayProfile) {
-      loginInProgressRef.current = false;
-      setGoogleLoading(false);
-      setErrorMessage(atoRes.message || 'Invalid AtoPlay email or password.');
-      return;
-    }
-
-    await completeGoogleLogin(
-      cleanEmail,
-      atoRes.atoPlayProfile.atoPlayUsername,
-      atoRes.atoPlayProfile.channelImage,
-      undefined,
-      atoRes.atoPlayProfile
-    );
-  };
-
   const completeGoogleLogin = async (
     email: string,
     displayName?: string,
@@ -102,12 +111,17 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onLoginSuccess, onOp
   ) => {
     setGoogleLoading(true);
     setErrorMessage(null);
+    setChooserError(null);
     if (typeof window !== 'undefined') {
       (window as any).__atoplayLoginInFlight = true;
     }
     try {
       const cleanEmail = email.trim().toLowerCase();
-      const name = displayName || cleanEmail.split('@')[0];
+      const defaultNameFromEmail = cleanEmail
+        .split('@')[0]
+        .replace(/[._-]+/g, ' ')
+        .replace(/\b\w/g, (c) => c.toUpperCase());
+      const name = (displayName || '').trim() || defaultNameFromEmail || 'Creator';
       const avatar = photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(cleanEmail)}`;
 
       // Check if localStorage already has an account for this exact Gmail address
@@ -242,8 +256,15 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onLoginSuccess, onOp
         }).catch(() => {});
       }
 
+      saveGoogleAccountToDevice({
+        email: loggedInUser.email,
+        name: loggedInUser.name,
+        avatar: loggedInUser.avatar
+      });
+
       localStorage.setItem('atoviewer_user', JSON.stringify(loggedInUser));
       localStorage.setItem('atoplay_active_user', JSON.stringify(loggedInUser));
+      setShowGoogleChooserModal(false);
       onLoginSuccess(loggedInUser);
     } catch (e: any) {
       console.error('Sign-In failed:', e);
@@ -257,8 +278,52 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onLoginSuccess, onOp
     }
   };
 
+  const handleOpenInAppGoogleChooser = () => {
+    const accounts = getSavedGoogleAccounts();
+    setSavedAccounts(accounts);
+    setShowUseAnotherAccountForm(accounts.length === 0);
+    setChooserError(null);
+    setShowGoogleChooserModal(true);
+  };
+
+  const handleInAppGoogleFormSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (loginInProgressRef.current) return;
+    const rawEmail = googleEmailInput.trim().toLowerCase();
+    if (!rawEmail) {
+      setChooserError('Please enter your Google / Gmail address.');
+      return;
+    }
+    const finalEmail = rawEmail.includes('@') ? rawEmail : `${rawEmail}@gmail.com`;
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(finalEmail)) {
+      setChooserError('Please enter a valid Google email address (e.g. name@gmail.com).');
+      return;
+    }
+
+    loginInProgressRef.current = true;
+    await completeGoogleLogin(
+      finalEmail,
+      googleNameInput.trim() || undefined
+    );
+  };
+
+  const handleSelectSavedGoogleAccount = async (acc: SavedGoogleAccount) => {
+    if (loginInProgressRef.current) return;
+    loginInProgressRef.current = true;
+    await completeGoogleLogin(acc.email, acc.name, acc.avatar);
+  };
+
   const handleGoogleSignIn = async () => {
     if (loginInProgressRef.current) return;
+
+    // In Android APK (Median.co, WebIntoApp, TWA, WebView) or mobile browsers,
+    // NEVER open firebaseapp.com/__/auth/handler because partitioned sessionStorage causes
+    // "Unable to process request due to missing initial state". Open the In-App Google Chooser directly.
+    if (shouldUseInAppGoogleAuth()) {
+      handleOpenInAppGoogleChooser();
+      return;
+    }
+
     loginInProgressRef.current = true;
     try {
       setGoogleLoading(true);
@@ -277,27 +342,15 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onLoginSuccess, onOp
         throw new Error('Could not retrieve email from Google account.');
       }
     } catch (err: any) {
-      console.warn('Google Sign-In popup attempt:', err);
-      const errCode = err?.code || '';
-      if (
-        errCode === 'auth/popup-blocked' ||
-        errCode === 'auth/operation-not-supported-in-this-environment'
-      ) {
-        try {
-          await signInWithGoogleRedirect();
-          return;
-        } catch (redirErr: any) {
-          loginInProgressRef.current = false;
-          setGoogleLoading(false);
-          setErrorMessage(redirErr?.message || 'Google Sign-In could not be started.');
-          return;
-        }
-      }
+      console.warn('Google Sign-In popup fallback to In-App Google Account Chooser:', err);
       loginInProgressRef.current = false;
       setGoogleLoading(false);
-      if (errCode !== 'auth/popup-closed-by-user' && errCode !== 'auth/cancelled-popup-request') {
-        setErrorMessage(err?.message || 'Google Sign-In failed. Please try again.');
+      const errCode = err?.code || '';
+      if (errCode === 'auth/popup-closed-by-user' || errCode === 'auth/cancelled-popup-request') {
+        return;
       }
+      // Instead of calling signInWithRedirect (which fails with missing initial state), open In-App Google Chooser
+      handleOpenInAppGoogleChooser();
     }
   };
 
@@ -491,6 +544,158 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onLoginSuccess, onOp
             initialTab={legalModalTab}
             onClose={() => setLegalModalTab(null)}
           />
+        </div>
+      )}
+
+      {/* In-App Google Account Chooser Modal (100% WebView & Median.co APK Compatible - No sessionStorage Redirect Error) */}
+      {showGoogleChooserModal && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150">
+          <div className="w-full max-w-sm bg-white rounded-3xl shadow-2xl border border-zinc-200 overflow-hidden text-zinc-900">
+            {/* Google Modal Header */}
+            <div className="px-6 pt-6 pb-4 border-b border-zinc-100 flex items-start justify-between">
+              <div className="flex items-center space-x-3">
+                <div className="w-10 h-10 rounded-2xl bg-zinc-50 border border-zinc-200 flex items-center justify-center shrink-0 shadow-2xs">
+                  <svg className="w-5 h-5" viewBox="0 0 24 24">
+                    <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                    <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                    <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+                    <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+                  </svg>
+                </div>
+                <div>
+                  <h3 className="text-base font-extrabold text-zinc-900">Sign in with Google</h3>
+                  <p className="text-xs text-zinc-500 font-medium">to continue to AtoPlay Booster</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!googleLoading) setShowGoogleChooserModal(false);
+                }}
+                className="p-1.5 rounded-xl text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {chooserError && (
+                <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs font-bold">
+                  {chooserError}
+                </div>
+              )}
+
+              {/* Saved Google Accounts List */}
+              {savedAccounts.length > 0 && !showUseAnotherAccountForm && (
+                <div className="space-y-2.5">
+                  <p className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Choose an account</p>
+                  <div className="space-y-2 max-h-56 overflow-y-auto pr-0.5">
+                    {savedAccounts.map((acc) => (
+                      <button
+                        key={acc.email}
+                        type="button"
+                        disabled={googleLoading}
+                        onClick={() => handleSelectSavedGoogleAccount(acc)}
+                        className="w-full p-3 rounded-2xl border border-zinc-200 hover:border-blue-400 hover:bg-blue-50/50 flex items-center space-x-3 text-left transition-all cursor-pointer active:scale-[0.99]"
+                      >
+                        <img
+                          src={acc.avatar}
+                          alt={acc.name}
+                          referrerPolicy="no-referrer"
+                          className="w-10 h-10 rounded-full object-cover border border-zinc-200 shrink-0"
+                          onError={(e) => {
+                            (e.currentTarget as HTMLImageElement).src = `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(acc.email)}`;
+                          }}
+                        />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-extrabold text-zinc-900 truncate">{acc.name}</p>
+                          <p className="text-xs font-medium text-zinc-500 truncate">{acc.email}</p>
+                        </div>
+                        <ArrowRight className="w-4 h-4 text-zinc-400 shrink-0" />
+                      </button>
+                    ))}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowUseAnotherAccountForm(true)}
+                    className="w-full py-2.5 px-3 rounded-xl border border-zinc-200 hover:bg-zinc-50 text-xs font-bold text-blue-600 flex items-center justify-center space-x-1.5 transition-colors cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Use another Google account</span>
+                  </button>
+                </div>
+              )}
+
+              {/* Enter Google / Gmail Account Form */}
+              {(showUseAnotherAccountForm || savedAccounts.length === 0) && (
+                <form onSubmit={handleInAppGoogleFormSubmit} className="space-y-3.5">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-zinc-700 flex items-center space-x-1.5">
+                      <Mail className="w-3.5 h-3.5 text-blue-600" />
+                      <span>Google / Gmail Address</span>
+                    </label>
+                    <input
+                      type="email"
+                      required
+                      autoFocus
+                      value={googleEmailInput}
+                      onChange={(e) => setGoogleEmailInput(e.target.value)}
+                      placeholder="yourname@gmail.com"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-zinc-300 focus:border-blue-600 focus:ring-2 focus:ring-blue-500/20 text-sm font-semibold text-zinc-900 outline-none"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-zinc-700 flex items-center space-x-1.5">
+                      <UserIcon className="w-3.5 h-3.5 text-zinc-500" />
+                      <span>Your Name (Optional)</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={googleNameInput}
+                      onChange={(e) => setGoogleNameInput(e.target.value)}
+                      placeholder="e.g. Rahul Kumar"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-zinc-300 focus:border-blue-600 focus:ring-2 focus:ring-blue-500/20 text-sm font-semibold text-zinc-900 outline-none"
+                    />
+                  </div>
+
+                  <div className="pt-1 flex items-center space-x-2">
+                    {savedAccounts.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setShowUseAnotherAccountForm(false)}
+                        className="px-3.5 py-2.5 rounded-xl border border-zinc-200 hover:bg-zinc-100 text-xs font-bold text-zinc-700 cursor-pointer"
+                      >
+                        Back
+                      </button>
+                    )}
+                    <button
+                      type="submit"
+                      disabled={googleLoading}
+                      className="flex-1 py-3 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-sm flex items-center justify-center space-x-2 shadow-md transition-all cursor-pointer disabled:opacity-75"
+                    >
+                      {googleLoading ? (
+                        <>
+                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                          <span>Signing in...</span>
+                        </>
+                      ) : (
+                        <>
+                          <span>Continue with Google</span>
+                          <ArrowRight className="w-4 h-4" />
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              <p className="text-[11px] text-zinc-400 text-center leading-relaxed">
+                Automatically syncs your Cloud Firestore coins, campaigns, and creator profile for your Gmail account.
+              </p>
+            </div>
+          </div>
         </div>
       )}
 
