@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Home, ShieldCheck, Plus, MoreVertical, RefreshCw, Sparkles } from 'lucide-react';
+import { Home, ShieldCheck, Plus, MoreVertical, RefreshCw, Sparkles, Clapperboard } from 'lucide-react';
 import { User } from '../types';
 import { SlideDrawer } from './SlideDrawer';
 import { RealCoin } from './RealCoin';
@@ -138,6 +138,18 @@ export const Navbar: React.FC<NavbarProps> = ({
               <span>AI Assistant</span>
             </button>
 
+            <button
+              onClick={() => setActiveTab('studio')}
+              className={`flex items-center space-x-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+                activeTab === 'studio'
+                  ? 'bg-blue-600 text-white shadow-sm shadow-blue-600/20'
+                  : 'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100/80'
+              }`}
+            >
+              <Clapperboard className="w-4 h-4" />
+              <span>Studio Tools</span>
+            </button>
+
             {Boolean(user?.isAdmin || user?.email?.toLowerCase().trim() === 'krja462@gmail.com') && (
               <button
                 onClick={() => setActiveTab('users')}
@@ -252,15 +264,30 @@ export const Navbar: React.FC<NavbarProps> = ({
           {/* AI Video Growth Assistant Tab Button */}
           <button
             onClick={() => setActiveTab('ai-assistant')}
-            className={`flex flex-col items-center justify-center py-1 px-3 rounded-xl transition-all cursor-pointer active:scale-95 whitespace-nowrap shrink-0 ${
+            className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition-all cursor-pointer active:scale-95 whitespace-nowrap shrink-0 ${
               activeTab === 'ai-assistant' 
                 ? 'text-blue-600' 
                 : 'text-zinc-500 hover:text-zinc-800'
             }`}
           >
             <Sparkles className="w-5 h-5 stroke-[2.2]" />
-            <span className={`text-[11px] pt-0.5 tracking-tight ${activeTab === 'ai-assistant' ? 'font-bold' : 'font-medium'}`}>
-              AI Assistant
+            <span className={`text-[10px] pt-0.5 tracking-tight ${activeTab === 'ai-assistant' ? 'font-bold' : 'font-medium'}`}>
+              AI SEO
+            </span>
+          </button>
+
+          {/* Native Creator Studio Toolkit Tab Button */}
+          <button
+            onClick={() => setActiveTab('studio')}
+            className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition-all cursor-pointer active:scale-95 whitespace-nowrap shrink-0 ${
+              activeTab === 'studio' 
+                ? 'text-blue-600' 
+                : 'text-zinc-500 hover:text-zinc-800'
+            }`}
+          >
+            <Clapperboard className="w-5 h-5 stroke-[2.2]" />
+            <span className={`text-[10px] pt-0.5 tracking-tight ${activeTab === 'studio' ? 'font-bold' : 'font-medium'}`}>
+              Studio
             </span>
           </button>
         </nav>

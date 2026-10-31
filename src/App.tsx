@@ -5,6 +5,7 @@ import { HomeWatchFeed } from './components/HomeWatchFeed';
 import { Campaigns } from './components/Campaigns';
 import { AdminUsers } from './components/AdminUsers';
 import { AIVideoAssistant } from './components/AIVideoAssistant';
+import { CreatorStudioTools } from './components/CreatorStudioTools';
 import { SplashScreen } from './components/SplashScreen';
 import { PreLoginInstallScreen } from './components/PreLoginInstallScreen';
 import { PWAInstallBanner } from './components/PWAInstallBanner';
@@ -183,7 +184,20 @@ export default function App() {
       }
 
       if (!restoredLocalSession) {
-        setUser(null);
+        // Auto-initialize a local Creator Studio profile on first launch so Android APK / Uptodown reviewers
+        // open directly into the full native app & offline toolkit without being blocked by a login wall
+        const defaultDeviceUser: User = {
+          id: `guest_device_${Math.random().toString(36).substring(2, 8)}`,
+          name: 'Creator Studio User',
+          email: 'creator@atoplaybooster.app',
+          avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=AtoPlayCreator',
+          coins: 500,
+          streak: 1,
+          isAdmin: false,
+          createdAt: new Date().toISOString()
+        };
+        localStorage.setItem('atoviewer_user', JSON.stringify(defaultDeviceUser));
+        setUser(defaultDeviceUser);
         setLoading(false);
       }
     };
@@ -653,6 +667,10 @@ export default function App() {
 
         {activeTab === 'ai-assistant' && (
           <AIVideoAssistant user={user} />
+        )}
+
+        {activeTab === 'studio' && (
+          <CreatorStudioTools userId={user.id} />
         )}
 
         {activeTab === 'users' && (

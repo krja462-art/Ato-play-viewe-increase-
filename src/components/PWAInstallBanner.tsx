@@ -3,31 +3,9 @@ import { Download, X, Share, PlusSquare, Smartphone, CheckCircle } from 'lucide-
 import { usePWAInstall } from '../hooks/usePWAInstall';
 
 export const PWAInstallBanner: React.FC = () => {
-  const { isInstallable, isInstalled, isIOS, isDismissed, install, dismiss } = usePWAInstall();
-  const [showIOSModal, setShowIOSModal] = useState(false);
-  const [isInstalling, setIsInstalling] = useState(false);
+  // Disabled to ensure Android APK builds never display a browser "Install Web App" banner during store review
+  return null;
 
-  // Never show web install banners inside an Android WebView APK or standalone app
-  if (typeof navigator !== 'undefined') {
-    const ua = navigator.userAgent || '';
-    const isAndroidWebView = /; wv\)/i.test(ua) || (/Android/i.test(ua) && /Version\/[\d.]+/i.test(ua));
-    if (isAndroidWebView) return null;
-  }
-
-  // If already installed or running standalone, hide completely
-  if (isInstalled) {
-    return null;
-  }
-
-  // If dismissed and not explicitly opened, hide banner
-  if (isDismissed && !showIOSModal) {
-    return null;
-  }
-
-  // If neither installable via beforeinstallprompt nor iOS Safari, don't show generic banner
-  if (!isInstallable && !isIOS) {
-    return null;
-  }
 
   const handleInstallClick = async () => {
     if (isIOS) {
